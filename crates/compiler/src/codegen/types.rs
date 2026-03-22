@@ -33,6 +33,10 @@ impl CodeGen {
         if let Some(word_name) = &self.current_word_name {
             let key = (word_name.clone(), self.current_stmt_index);
             if let Some(ty) = self.statement_types.get(&key) {
+                // In tagged-ptr mode, Float is heap-boxed (not trivially copyable)
+                if self.tagged_ptr {
+                    return matches!(ty, Type::Int | Type::Bool);
+                }
                 return matches!(ty, Type::Int | Type::Float | Type::Bool);
             }
         }

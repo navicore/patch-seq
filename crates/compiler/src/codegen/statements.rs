@@ -357,8 +357,10 @@ impl CodeGen {
                 && matches!(
                     &statements[i - 1],
                     Statement::IntLiteral(_)
-                        | Statement::FloatLiteral(_)
                         | Statement::BoolLiteral(_)
+                        // FloatLiteral is trivially copyable in 40-byte mode (inline bits)
+                        // but NOT in tagged-ptr mode (heap-boxed, needs clone)
+                        | Statement::FloatLiteral(_) if !self.tagged_ptr
                 );
 
             // Track the actual int value if previous was IntLiteral (Issue #192)

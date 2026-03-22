@@ -581,6 +581,7 @@ mod tests {
         // Test that dup on Int uses optimized load/store instead of clone_value
         // This verifies the Issue #186 optimization actually fires
         let mut codegen = CodeGen::new();
+        codegen.tagged_ptr = false; // Test asserts 40-byte IR patterns
 
         use crate::types::Type;
 
@@ -661,6 +662,7 @@ mod tests {
         // Test Issue #195: dup after literal push uses optimized path
         // Pattern: `42 dup` should be optimized even without type map info
         let mut codegen = CodeGen::new();
+        codegen.tagged_ptr = false; // Test asserts 40-byte IR patterns
 
         let program = Program {
             includes: vec![],
@@ -1178,6 +1180,7 @@ mod tests {
         use crate::types::{Effect, StackType, Type};
 
         let mut codegen = CodeGen::new();
+        codegen.tagged_ptr = false; // Test asserts 40-byte IR patterns
 
         // Create a specializable word: get-value ( Int -- Int )
         // This will get a specialized version that returns i64 directly

@@ -139,11 +139,17 @@ impl CodeGen {
     }
 
     /// Generate inline code for float binary operations (f.add, f.subtract, etc.)
+    /// In tagged-ptr mode, returns Ok(None) to fall through to runtime path.
     pub(in crate::codegen) fn codegen_inline_float_binary_op(
         &mut self,
         stack_var: &str,
         llvm_op: &str,
     ) -> Result<Option<String>, CodeGenError> {
+        // In tagged-ptr mode, floats are heap-boxed — use runtime path
+        if self.tagged_ptr {
+            return Ok(None);
+        }
+
         // Spill virtual registers (Issue #189)
         let stack_var = self.spill_virtual_stack(stack_var)?;
         let stack_var = stack_var.as_str();
@@ -175,6 +181,11 @@ impl CodeGen {
         stack_var: &str,
         fcmp_op: &str,
     ) -> Result<Option<String>, CodeGenError> {
+        // In tagged-ptr mode, floats are heap-boxed — use runtime path
+        if self.tagged_ptr {
+            return Ok(None);
+        }
+
         // Spill virtual registers (Issue #189)
         let stack_var = self.spill_virtual_stack(stack_var)?;
         let stack_var = stack_var.as_str();

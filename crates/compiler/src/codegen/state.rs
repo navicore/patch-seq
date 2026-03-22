@@ -225,7 +225,7 @@ impl CodeGen {
             current_aux_sp: 0,
             instrument: false,
             word_instrument_ids: HashMap::new(),
-            tagged_ptr: false,
+            tagged_ptr: cfg!(feature = "tagged-ptr"),
         }
     }
 

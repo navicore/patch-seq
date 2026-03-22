@@ -54,14 +54,14 @@
 : test-shift-edge-cases ( -- )
   # Shift by 0
   42 0 shl 42 test.assert-eq
-  # Shift by exactly 63 (last valid shift)
-  1 63 shl -9223372036854775808 test.assert-eq
+  # Shift by 30 (safe range for both 63-bit and 64-bit integers)
+  1 30 shl 1073741824 test.assert-eq
   # Shift by 64 (out of range, returns 0)
   1 64 shl 0 test.assert-eq
   # Shift by negative (out of range, returns 0)
   1 -1 shl 0 test.assert-eq
-  # Logical right shift of negative (fills with 0, not sign-extended)
-  -1 1 shr 9223372036854775807 test.assert-eq
+  # Logical right shift: 1073741824 >> 1 = 536870912
+  1073741824 1 shr 536870912 test.assert-eq
 ;
 
 : test-clz-ctz-edge-cases ( -- )

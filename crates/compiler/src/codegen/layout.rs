@@ -242,6 +242,11 @@ impl CodeGen {
         let ptr_a = self.emit_stack_gep(stack_var, -2)?;
 
         if self.tagged_ptr {
+            // In tagged-ptr mode, floats are heap-boxed. Use pop() to get them
+            // back as Values, then extract the float bits via runtime.
+            // For now, fall back to runtime calls for all float binary ops.
+            // The caller (codegen_inline_float_binary_op) will get None
+            // and fall through to the runtime path.
             Err(CodeGenError::Logic(
                 "tagged-ptr float load not yet implemented".to_string(),
             ))
@@ -438,7 +443,9 @@ mod tests {
     use super::*;
 
     fn codegen_default() -> CodeGen {
-        CodeGen::new()
+        let mut cg = CodeGen::new();
+        cg.tagged_ptr = false; // Explicitly test 40-byte path regardless of feature flag
+        cg
     }
 
     fn codegen_tagged() -> CodeGen {
