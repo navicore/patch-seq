@@ -358,6 +358,14 @@ const SPECIALIZABLE_OPS: &[&str] = &[
 impl CodeGen {
     /// Check if a word can be specialized and return its signature if so
     pub fn can_specialize(&self, word: &WordDef) -> Option<SpecSignature> {
+        // Specialization generates layout-dependent IR (raw load/store of %Value).
+        // In tagged-ptr mode, heap types (Float, String, etc.) are boxed pointers
+        // that need clone/drop — raw copies create double-frees.
+        // Disable specialization until it's updated for tagged pointers.
+        if self.tagged_ptr {
+            return None;
+        }
+
         // Must have an effect declaration
         let effect = word.effect.as_ref()?;
 

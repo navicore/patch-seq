@@ -353,13 +353,16 @@ impl CodeGen {
 
             // Check if previous statement was a trivially-copyable literal (Issue #195)
             // This enables optimized dup after patterns like `42 dup`
+            // FloatLiteral is trivially copyable in 40-byte mode (inline bits)
+            // but NOT in tagged-ptr mode (heap-boxed, needs clone).
+            // Note: match guards apply to the entire OR-pattern, so we split
+            // the check to avoid accidentally gating Int/Bool on tagged_ptr.
             self.prev_stmt_is_trivial_literal = i > 0
-                && matches!(
+                && (matches!(
                     &statements[i - 1],
-                    Statement::IntLiteral(_)
-                        | Statement::FloatLiteral(_)
-                        | Statement::BoolLiteral(_)
-                );
+                    Statement::IntLiteral(_) | Statement::BoolLiteral(_)
+                ) || (!self.tagged_ptr
+                    && matches!(&statements[i - 1], Statement::FloatLiteral(_))));
 
             // Track the actual int value if previous was IntLiteral (Issue #192)
             // This enables optimized roll/pick with constant N (e.g., `2 roll` -> rot)

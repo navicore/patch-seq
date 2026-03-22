@@ -37,6 +37,8 @@ path = "src/lib.rs"
 docsrs = []
 # Default: include seq-runtime for embedding in compiled binaries
 default = ["seq-runtime"]
+# WIP: 8-byte tagged pointer values (propagates to seq-runtime)
+tagged-ptr = ["seq-runtime/tagged-ptr"]
 
 [package.metadata.docs.rs]
 # Enable the docsrs feature when building on docs.rs

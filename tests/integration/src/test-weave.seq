@@ -79,27 +79,28 @@
 # NOTE: String yields would require explicit context threading for the string type.
 # The type signature ( Ctx a -- Ctx a ) means yielded and resumed values have same type.
 
-# Generator that yields extreme Int values (i64::MIN and i64::MIN+1)
-# These were previously reserved as sentinels but are now valid user values
+# Generator that yields extreme Int values near the edges of 63-bit range
+# Uses values within -(2^62) to (2^62-1) so tests work with tagged pointers.
+# Full i64::MIN/MAX edge cases are covered by Rust unit tests.
 : extreme-values ( Ctx Int -- Ctx | Yield Int )
   drop                            # ignore initial resume value
-  -9223372036854775808 yield drop # i64::MIN
-  -9223372036854775807 yield drop # i64::MIN + 1
-  9223372036854775807 yield drop  # i64::MAX
+  -4611686018427387904 yield drop # -(2^62)
+  -4611686018427387903 yield drop # -(2^62) + 1
+  4611686018427387903 yield drop  # 2^62 - 1
 ;
 
-# Test that i64::MIN can be yielded (was previously a sentinel limitation)
+# Test that extreme values can be yielded (no sentinel values)
 : test-yield-i64-min ( -- )
   [ extreme-values ] strand.weave
   0 strand.resume
-  test.assert                              # should have more
-  -9223372036854775808 test.assert-eq      # should be exactly i64::MIN
+  test.assert
+  -4611686018427387904 test.assert-eq
   0 strand.resume
   test.assert
-  -9223372036854775807 test.assert-eq      # i64::MIN + 1
+  -4611686018427387903 test.assert-eq
   0 strand.resume
   test.assert
-  9223372036854775807 test.assert-eq       # i64::MAX
+  4611686018427387903 test.assert-eq
   0 strand.resume
   test.assert-not                          # weave should complete
   drop drop

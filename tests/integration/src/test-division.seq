@@ -95,31 +95,36 @@
 #                         OVERFLOW EDGE CASES
 # =============================================================================
 
-# INT_MIN / -1 would mathematically overflow, but we use wrapping semantics
-# INT_MIN = -9223372036854775808, and -INT_MIN wraps back to INT_MIN
-: test-divide-int-min-by-neg-one ( -- )
-  -9223372036854775808 -1 i./
-  test.assert        # Bool should be true (wrapping is defined behavior)
-  -9223372036854775808 test.assert-eq  # wraps to INT_MIN
+# Large negative division edge cases
+# Uses values within 63-bit signed range (-(2^62) to 2^62-1) so tests work
+# with both 64-bit and tagged-pointer (63-bit) integer representations.
+# The full i64::MIN overflow behavior is tested by Rust unit tests in
+# arithmetic.rs (gated with #[cfg(not(feature = "tagged-ptr"))]).
+
+# Large negative / -1: wrapping semantics
+: test-divide-large-neg-by-neg-one ( -- )
+  -4611686018427387904 -1 i./
+  test.assert
+  4611686018427387904 test.assert-eq
 ;
 
-# INT_MIN % -1 = 0, which is safe (no overflow in modulo)
-: test-modulo-int-min-by-neg-one ( -- )
-  -9223372036854775808 -1 i.%
-  test.assert        # Bool should be true (no overflow for modulo)
-  0 test.assert-eq   # result should be 0
+# Large negative % -1 = 0
+: test-modulo-large-neg-by-neg-one ( -- )
+  -4611686018427387904 -1 i.%
+  test.assert
+  0 test.assert-eq
 ;
 
-# INT_MIN / 1 is fine (result is INT_MIN)
-: test-divide-int-min-by-one ( -- )
-  -9223372036854775808 1 i./
-  test.assert        # Bool should be true
-  -9223372036854775808 test.assert-eq
+# Large negative / 1 is identity
+: test-divide-large-neg-by-one ( -- )
+  -4611686018427387904 1 i./
+  test.assert
+  -4611686018427387904 test.assert-eq
 ;
 
-# INT_MIN / -2 is fine (result fits in i64)
-: test-divide-int-min-by-neg-two ( -- )
-  -9223372036854775808 -2 i./
-  test.assert        # Bool should be true
-  4611686018427387904 test.assert-eq  # INT_MIN / -2
+# Large negative / -2
+: test-divide-large-neg-by-neg-two ( -- )
+  -4611686018427387904 -2 i./
+  test.assert
+  2305843009213693952 test.assert-eq
 ;
