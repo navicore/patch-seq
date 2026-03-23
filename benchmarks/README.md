@@ -129,7 +129,7 @@ Results from a MacBook Pro M-series (tagged-ptr / 8-byte values):
 |-----------|-----|------|-----|-------|
 | Pingpong | 31ms | 394ms | 16ms | Seq 2x Go, Rust std::thread is slow |
 | Fanout | 3ms | 8ms | 33ms | Seq faster than Go and Rust |
-| Skynet | 3918ms | 2ms | 21ms | May coroutine spawn overhead |
+| Skynet | 3918ms | 2ms | 21ms | May's coroutine spawn overhead |
 
 ### Compute Benchmarks
 
@@ -143,6 +143,11 @@ Results from a MacBook Pro M-series (tagged-ptr / 8-byte values):
 - Fanout and pingpong channel throughput is excellent (Seq beats Go on fanout)
 - Skynet remains slow due to May's mmap-per-coroutine spawn overhead
 - Collection operations (build-100k: 18s) are still slow — COW optimization planned
+
+### Directories
+
+- `baseline/` — Reference results for regression detection. Updated when intentional performance changes land.
+- `results/` — Latest benchmark run. Compared against baseline by `just bench-check`.
 
 ## Interpreting Results
 

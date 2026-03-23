@@ -73,7 +73,9 @@ pub unsafe fn stack_value_to_value(sv: StackValue) -> Value {
     } else {
         // Heap pointer — take ownership of the Arc<Value>
         let arc = unsafe { Arc::from_raw(sv as *const Value) };
-        // Try to unwrap without cloning if we're the sole owner
+        // Try to unwrap without cloning if we're the sole owner.
+        // Clone fallback happens when the value was dup'd on the stack
+        // (multiple Arc references exist and haven't been dropped yet).
         Arc::try_unwrap(arc).unwrap_or_else(|arc| (*arc).clone())
     }
 }
