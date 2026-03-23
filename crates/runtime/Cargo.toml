@@ -14,7 +14,7 @@ categories = ["compilers", "development-tools"]
 crate-type = ["staticlib", "rlib"]  # staticlib for LLVM linking, rlib for testing
 
 [features]
-default = ["full", "diagnostics", "report-json"]
+default = ["full", "diagnostics", "report-json", "tagged-ptr"]
 
 # Full batteries - enable all optional modules
 full = ["crypto", "http", "regex", "compression"]

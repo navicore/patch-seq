@@ -14,6 +14,7 @@
 
 use crate::tagged_stack::{StackValue, TAG_FALSE, TAG_TRUE, is_tagged_int, tag_int, untag_int};
 use crate::value::Value;
+use std::sync::Arc;
 
 /// Stack: A pointer to the current position in a contiguous array of u64.
 pub type Stack = *mut StackValue;
@@ -50,8 +51,8 @@ pub fn value_to_stack_value(value: Value) -> StackValue {
         Value::Bool(false) => TAG_FALSE,
         Value::Bool(true) => TAG_TRUE,
         other => {
-            // Heap-allocate all other types as Box<Value>
-            Box::into_raw(Box::new(other)) as u64
+            // Heap-allocate via Arc for O(1) clone (refcount bump)
+            Arc::into_raw(Arc::new(other)) as u64
         }
     }
 }
@@ -60,7 +61,7 @@ pub fn value_to_stack_value(value: Value) -> StackValue {
 ///
 /// # Safety
 /// The StackValue must contain valid data — either a tagged int, bool,
-/// or a valid heap pointer from Box::into_raw.
+/// or a valid heap pointer from Arc::into_raw.
 #[inline]
 pub unsafe fn stack_value_to_value(sv: StackValue) -> Value {
     if is_tagged_int(sv) {
@@ -70,8 +71,10 @@ pub unsafe fn stack_value_to_value(sv: StackValue) -> Value {
     } else if sv == TAG_TRUE {
         Value::Bool(true)
     } else {
-        // Heap pointer — take ownership of the Box<Value>
-        unsafe { *Box::from_raw(sv as *mut Value) }
+        // Heap pointer — take ownership of the Arc<Value>
+        let arc = unsafe { Arc::from_raw(sv as *const Value) };
+        // Try to unwrap without cloning if we're the sole owner
+        Arc::try_unwrap(arc).unwrap_or_else(|arc| (*arc).clone())
     }
 }
 
@@ -101,11 +104,12 @@ pub unsafe fn clone_stack_value(sv: StackValue) -> StackValue {
         // Int or Bool — just copy
         sv
     } else {
-        // Heap pointer — clone the Value and create a new Box
+        // Heap pointer — increment Arc refcount (O(1), no allocation)
         unsafe {
-            let val_ref = &*(sv as *const Value);
-            let cloned = val_ref.clone();
-            Box::into_raw(Box::new(cloned)) as u64
+            let arc = Arc::from_raw(sv as *const Value);
+            let cloned = Arc::clone(&arc);
+            std::mem::forget(arc); // Don't decrement the original
+            Arc::into_raw(cloned) as u64
         }
     }
 }
@@ -120,9 +124,9 @@ pub unsafe fn drop_stack_value(sv: StackValue) {
         // Int or Bool — nothing to do
         return;
     }
-    // Heap pointer — reconstruct Box and drop it
+    // Heap pointer — decrement Arc refcount, free if last reference
     unsafe {
-        let _ = Box::from_raw(sv as *mut Value);
+        let _ = Arc::from_raw(sv as *const Value);
     }
 }
 
