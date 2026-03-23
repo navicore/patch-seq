@@ -6,7 +6,7 @@
 //! - Odd (bit 0 = 1): Int — 63-bit signed integer, value = tagged >> 1
 //! - 0x0: Bool false
 //! - 0x2: Bool true
-//! - Even > 2: Heap pointer to Box<Value>
+//! - Even > 2: Heap pointer to Arc<Value>
 //!
 //! The Stack type is a pointer to the "current position" (where next push goes).
 //! - Push: store at *sp, return sp + 1
@@ -896,6 +896,23 @@ mod tests {
             );
             let (_, val) = pop(stack);
             assert!(matches!(val, Value::WeaveCtx { .. }));
+        }
+    }
+
+    #[test]
+    fn test_dup_pop_pop_heap_type() {
+        // Verify Arc refcount handling: push a heap value, dup it (refcount 2),
+        // then pop both. No double-free or corruption should occur.
+        unsafe {
+            let stack = alloc_test_stack();
+            let stack = push(stack, Value::Float(2.5));
+            // dup: clones via Arc refcount bump
+            let stack = patch_seq_dup(stack);
+            // pop both copies
+            let (stack, val1) = pop(stack);
+            let (_, val2) = pop(stack);
+            assert_eq!(val1, Value::Float(2.5));
+            assert_eq!(val2, Value::Float(2.5));
         }
     }
 }
