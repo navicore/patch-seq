@@ -1,5 +1,5 @@
 # Benchmark run record - DO NOT EDIT MANUALLY
 # This file is checked by CI to ensure benchmarks are run regularly
-timestamp: 2026-03-23T21:40:10Z
-commit: b73d118
-benchmarks_run: fanout
+timestamp: 2026-03-23T21:57:48Z
+commit: 8613b9e
+benchmarks_run: all

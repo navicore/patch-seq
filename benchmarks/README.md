@@ -121,29 +121,28 @@ Count primes up to 100,000 using trial division.
 
 ## Sample Results
 
-Results from a MacBook Pro M-series:
+Results from a MacBook Pro M-series (tagged-ptr / 8-byte values):
 
 ### Concurrency Benchmarks
 
 | Benchmark | Seq | Rust | Go | Notes |
 |-----------|-----|------|-----|-------|
-| Pingpong | 269ms | 3875ms | 206ms | Rust std::thread is slow for this |
-| Fanout | 551ms | 29ms | 249ms | Rust thread pool excels here |
-| Skynet | 4779ms | 2ms | 170ms | Rust uses threshold-based parallelism |
+| Pingpong | 31ms | 394ms | 16ms | Seq 2x Go, Rust std::thread is slow |
+| Fanout | 3ms | 8ms | 33ms | Seq faster than Go and Rust |
+| Skynet | 3918ms | 2ms | 21ms | May coroutine spawn overhead |
 
 ### Compute Benchmarks
 
 | Benchmark | Seq | Rust | Go | Seq/Rust |
 |-----------|-----|------|-----|----------|
-| fib(40) | 2200ms | 168ms | 224ms | 13x |
-| sum_squares | 48ms | 2ms | 2ms | 30x |
-| primes | 84ms | 3ms | 3ms | 28x |
-| leibniz_pi | 2900ms | 90ms | 100ms | 32x |
+| fib-naive-35 | 18ms | 28ms | 27ms | 0.6x (faster) |
+| primes(100k) | 2ms | 1ms | 1ms | 2x |
 
 **Notes:**
-- Seq pingpong and fanout are competitive with Go for message-passing workloads
-- Rust std::thread pingpong is slow because OS thread context switches are expensive
-- Compute benchmarks show ~15-30x overhead for Seq vs native code (expected for interpreter)
+- Seq compute performance is now competitive with Go and Rust for numeric code
+- Fanout and pingpong channel throughput is excellent (Seq beats Go on fanout)
+- Skynet remains slow due to May's mmap-per-coroutine spawn overhead
+- Collection operations (build-100k: 18s) are still slow — COW optimization planned
 
 ## Interpreting Results
 
