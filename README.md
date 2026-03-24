@@ -5,10 +5,6 @@
 [![seq-repl](https://img.shields.io/crates/v/seq-repl.svg?label=seq-repl)](https://crates.io/crates/seq-repl)
 [![seq-lsp](https://img.shields.io/crates/v/seq-lsp.svg?label=seq-lsp)](https://crates.io/crates/seq-lsp)
 
-[![seq-compiler docs](https://img.shields.io/docsrs/seq-compiler?label=seq-compiler%20docs)](https://docs.rs/seq-compiler)
-[![seq-runtime docs](https://img.shields.io/docsrs/seq-runtime?label=seq-runtime%20docs)](https://docs.rs/seq-runtime)
-[![vim-line docs](https://img.shields.io/docsrs/vim-line?label=vim-line%20docs)](https://docs.rs/vim-line)
-
 # Seq - Concatenative Language
 
 A concatenative, stack-based programming language that compiles to native executables. Seq combines the elegance of stack-based programming with a sophisticated type system, guaranteed tail call optimization, and CSP-style concurrency.
