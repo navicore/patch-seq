@@ -8,6 +8,8 @@
 [![seq-runtime docs](https://img.shields.io/docsrs/seq-runtime?label=seq-runtime%20docs)](https://docs.rs/seq-runtime)
 [![vim-line docs](https://img.shields.io/docsrs/vim-line?label=vim-line%20docs)](https://docs.rs/vim-line)
 
+[![Daily Benchmarks](https://github.com/navicore/patch-seq/actions/workflows/bench.yml/badge.svg)](https://github.com/navicore/patch-seq/actions/workflows/bench.yml)
+
 # Seq - Concatenative Language
 
 A concatenative, stack-based programming language that compiles to native executables. Seq combines the elegance of stack-based programming with a sophisticated type system, guaranteed tail call optimization, and CSP-style concurrency.
