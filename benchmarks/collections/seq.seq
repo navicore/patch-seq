@@ -16,7 +16,14 @@ include std:list
   dup 3 pick i.>= if
     drop nip
   else
-    dup rot swap list.push! swap 1 i.+ build-list-loop
+    # ( limit List current )
+    dup         # ( limit List current current )
+    rot         # ( limit current current List )
+    swap        # ( limit current List current )
+    list.push!  # ( limit current List' )
+    swap        # ( limit List' current )
+    1 i.+       # ( limit List' current+1 )
+    build-list-loop
   then
 ;
 
