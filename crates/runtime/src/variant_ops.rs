@@ -579,18 +579,20 @@ pub unsafe extern "C" fn patch_seq_variant_append(stack: Stack) -> Stack {
         let (stack, variant_val) = pop(stack);
 
         match variant_val {
-            Value::Variant(variant_data) => {
-                // Create new fields vector with the appended value
-                let mut new_fields = variant_data.fields.to_vec();
-                new_fields.push(value);
-
-                // Create new variant with same tag (clone the SeqString)
-                let new_variant = Value::Variant(Arc::new(VariantData::new(
-                    variant_data.tag.clone(),
-                    new_fields,
-                )));
-
-                push(stack, new_variant)
+            Value::Variant(mut arc) => {
+                // COW: if we're the sole owner, mutate in place
+                if let Some(data) = Arc::get_mut(&mut arc) {
+                    data.fields.push(value);
+                    push(stack, Value::Variant(arc))
+                } else {
+                    // Shared — clone and append
+                    let mut new_fields = Vec::with_capacity(arc.fields.len() + 1);
+                    new_fields.extend(arc.fields.iter().cloned());
+                    new_fields.push(value);
+                    let new_variant =
+                        Value::Variant(Arc::new(VariantData::new(arc.tag.clone(), new_fields)));
+                    push(stack, new_variant)
+                }
             }
             _ => panic!("variant-append: expected Variant, got {:?}", variant_val),
         }
