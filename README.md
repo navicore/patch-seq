@@ -11,6 +11,8 @@ A concatenative, stack-based programming language that compiles to native execut
 
 **Resources:** [Documentation](https://navicore.github.io/patch-seq/) | [GitHub Repository](https://github.com/navicore/patch-seq)
 
+> **Naming guide:** The GitHub repository is `patch-seq`. On [crates.io](https://crates.io), the packages are published as `seq-compiler`, `seq-repl`, and `seq-lsp`. Once installed, the binaries are `seqc`, `seqr`, and `seq-lsp`.
+
 ```seq
 : factorial ( Int -- Int )
   dup 1 i.<= if
@@ -67,7 +69,13 @@ cargo install seq-repl
 cargo install seq-lsp
 ```
 
-This installs `seqc` (compiler), `seqr` (REPL), and `seq-lsp` (language server).
+This installs the following binaries:
+
+| Crate | Binary | Description |
+|-------|--------|-------------|
+| `seq-compiler` | `seqc` | Compiler (`.seq` to native executable) |
+| `seq-repl` | `seqr` | Interactive REPL |
+| `seq-lsp` | `seq-lsp` | Language server for editor integration |
 
 *Build from source:*
 
