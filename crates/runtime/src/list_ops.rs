@@ -463,29 +463,21 @@ pub unsafe extern "C" fn patch_seq_list_push_in_place(stack: Stack) -> Stack {
         }
 
         // The StackValue is an Arc<Value> raw pointer.
-        // We peek at the refcount without taking ownership, then either
-        // mutate in place or fall through to the normal pop/push path.
-
-        // Peek at refcount without taking ownership. This is an early exit
-        // optimization — the real safety gate is Arc::get_mut below, which
-        // atomically verifies sole ownership of the inner VariantData.
-        // No TOCTOU risk: strand stacks are single-threaded, so no concurrent
-        // clone can occur between this check and the mutation.
-        let outer_arc = Arc::from_raw(list_sv as *const Value);
-        let is_sole_owner = Arc::strong_count(&outer_arc) == 1;
-        std::mem::forget(outer_arc);
-
-        if is_sole_owner {
-            let value_ptr = list_sv as *mut Value;
-            let value_ref = &mut *value_ptr;
-            if let Value::Variant(variant_arc) = value_ref
-                && let Some(data) = Arc::get_mut(variant_arc)
-            {
-                data.fields.push(value);
-                // Stack unchanged — list is still at sp-1, value was consumed
-                return stack;
-            }
+        // Use Arc::get_mut on the outer Arc to safely verify sole ownership
+        // (checks both strong and weak refcounts). Then Arc::get_mut on the
+        // inner Arc<VariantData> for the actual mutation guard.
+        // Strand stacks are single-threaded, so no concurrent access.
+        let mut outer_arc = Arc::from_raw(list_sv as *const Value);
+        if let Some(inner_val) = Arc::get_mut(&mut outer_arc)
+            && let Value::Variant(variant_arc) = inner_val
+            && let Some(data) = Arc::get_mut(variant_arc)
+        {
+            data.fields.push(value);
+            std::mem::forget(outer_arc); // Don't drop — Arc stays on the stack
+            return stack; // Stack unchanged — list is still at sp-1
         }
+        // Couldn't mutate in place — put the Arc back before falling through
+        std::mem::forget(outer_arc);
 
         // Fallback: couldn't mutate in place — pop and use shared COW helper
         let (stack, list_val) = pop(stack);

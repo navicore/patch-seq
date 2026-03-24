@@ -12,7 +12,8 @@ include std:list
   # Stack: ( limit List current )
   # list.push! mutates in place when List is sole-owner (Arc refcount == 1).
   # rot/swap move raw pointers without cloning, so refcount stays 1.
-  # Only 3 pick clones, but limit is an Int (inline, no Arc).
+  # 3 pick (below) clones limit for the comparison, but limit is an Int
+  # (inline tagged value, no Arc), so the clone is just a register copy.
   dup 3 pick i.>= if
     drop nip
   else
