@@ -45,7 +45,7 @@ tagged-ptr = ["seq-core/tagged-ptr"]
 
 [dependencies]
 # Core runtime primitives (shared foundation for stack-based languages)
-seq-core = { path = "../core", version = "=4.0.3" }
+seq-core = { path = "../core", version = "=4.1.0" }
 
 # May - Erlang-style green threads / coroutines for CSP concurrency
 may.workspace = true
