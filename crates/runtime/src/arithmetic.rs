@@ -676,37 +676,6 @@ mod tests {
         }
     }
 
-    // This test uses i64::MAX and i64::MIN which overflow the 63-bit tagged-ptr range
-    #[cfg(not(feature = "tagged-ptr"))]
-    #[test]
-    fn test_overflow_wrapping() {
-        // Test that arithmetic uses wrapping semantics (defined overflow behavior)
-        unsafe {
-            // Test add overflow: i64::MAX + 1 should wrap
-            let stack = crate::stack::alloc_test_stack();
-            let stack = push_int(stack, i64::MAX);
-            let stack = push_int(stack, 1);
-            let stack = add(stack);
-            let (_stack, result) = pop(stack);
-            assert_eq!(result, Value::Int(i64::MIN)); // Wraps to minimum
-
-            // Test multiply overflow
-            let stack = push_int(stack, i64::MAX);
-            let stack = push_int(stack, 2);
-            let stack = multiply(stack);
-            let (_stack, result) = pop(stack);
-            // Result is well-defined (wrapping)
-            assert!(matches!(result, Value::Int(_)));
-
-            // Test subtract underflow
-            let stack = push_int(stack, i64::MIN);
-            let stack = push_int(stack, 1);
-            let stack = subtract(stack);
-            let (_stack, result) = pop(stack);
-            assert_eq!(result, Value::Int(i64::MAX)); // Wraps to maximum
-        }
-    }
-
     #[test]
     fn test_negative_division() {
         unsafe {
@@ -737,25 +706,6 @@ mod tests {
             assert_eq!(success, Value::Bool(true));
             let (_stack, result) = pop(stack);
             assert_eq!(result, Value::Int(3));
-        }
-    }
-
-    // This test uses i64::MIN which overflows the 63-bit tagged-ptr range
-    #[cfg(not(feature = "tagged-ptr"))]
-    #[test]
-    fn test_division_overflow_edge_case() {
-        // Critical edge case: i64::MIN / -1 would overflow
-        // Regular division panics, but wrapping_div wraps to i64::MIN
-        unsafe {
-            let stack = crate::stack::alloc_test_stack();
-            let stack = push_int(stack, i64::MIN);
-            let stack = push_int(stack, -1);
-            let stack = divide(stack);
-            let (stack, success) = pop(stack);
-            assert_eq!(success, Value::Bool(true));
-            let (_stack, result) = pop(stack);
-            // i64::MIN / -1 would be i64::MAX + 1, which wraps to i64::MIN
-            assert_eq!(result, Value::Int(i64::MIN));
         }
     }
 

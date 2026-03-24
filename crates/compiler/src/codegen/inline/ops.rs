@@ -4,8 +4,8 @@
 //! for common operations like comparisons, arithmetic, and loops.
 //! These are called by try_codegen_inline_op in the main module.
 //!
-//! Layout-dependent operations use helpers from `layout.rs` to support
-//! both 40-byte StackValue and 8-byte tagged pointer representations.
+//! Layout-dependent operations use helpers from `layout.rs` for
+//! 8-byte tagged pointer stack value generation.
 
 use super::super::{CodeGen, CodeGenError, VirtualValue};
 use std::fmt::Write as _;
@@ -139,83 +139,24 @@ impl CodeGen {
     }
 
     /// Generate inline code for float binary operations (f.add, f.subtract, etc.)
-    /// In tagged-ptr mode, returns Ok(None) to fall through to runtime path.
+    /// Float binary ops use the runtime path (floats are heap-boxed).
     pub(in crate::codegen) fn codegen_inline_float_binary_op(
         &mut self,
-        stack_var: &str,
-        llvm_op: &str,
+        _stack_var: &str,
+        _llvm_op: &str,
     ) -> Result<Option<String>, CodeGenError> {
-        // In tagged-ptr mode, floats are heap-boxed — use runtime path
-        if self.tagged_ptr {
-            return Ok(None);
-        }
-
-        // Spill virtual registers (Issue #189)
-        let stack_var = self.spill_virtual_stack(stack_var)?;
-        let stack_var = stack_var.as_str();
-
-        // Load operands as doubles
-        let (ptr_a, val_a, val_b) = self.emit_load_two_float_operands(stack_var)?;
-
-        // Perform the float operation
-        let op_result = self.fresh_temp();
-        writeln!(
-            &mut self.output,
-            "  %{} = {} double %{}, %{}",
-            op_result, llvm_op, val_a, val_b
-        )?;
-
-        // Store result
-        self.emit_store_float_result(&ptr_a, &op_result)?;
-
-        // SP = SP - 1 (consumed b)
-        let result_var = self.emit_stack_gep(stack_var, -1)?;
-
-        Ok(Some(result_var))
+        Ok(None)
     }
 
     /// Generate inline code for float comparison operations.
     /// Result is a Bool value.
+    /// Float comparison ops use the runtime path (floats are heap-boxed).
     pub(in crate::codegen) fn codegen_inline_float_comparison(
         &mut self,
-        stack_var: &str,
-        fcmp_op: &str,
+        _stack_var: &str,
+        _fcmp_op: &str,
     ) -> Result<Option<String>, CodeGenError> {
-        // In tagged-ptr mode, floats are heap-boxed — use runtime path
-        if self.tagged_ptr {
-            return Ok(None);
-        }
-
-        // Spill virtual registers (Issue #189)
-        let stack_var = self.spill_virtual_stack(stack_var)?;
-        let stack_var = stack_var.as_str();
-
-        // Load operands as doubles
-        let (ptr_a, val_a, val_b) = self.emit_load_two_float_operands(stack_var)?;
-
-        // Compare using fcmp
-        let cmp_result = self.fresh_temp();
-        writeln!(
-            &mut self.output,
-            "  %{} = fcmp {} double %{}, %{}",
-            cmp_result, fcmp_op, val_a, val_b
-        )?;
-
-        // Convert i1 to i64
-        let zext = self.fresh_temp();
-        writeln!(
-            &mut self.output,
-            "  %{} = zext i1 %{} to i64",
-            zext, cmp_result
-        )?;
-
-        // Store result as Bool
-        self.emit_store_bool(&ptr_a, &zext)?;
-
-        // SP = SP - 1 (consumed b)
-        let result_var = self.emit_stack_gep(stack_var, -1)?;
-
-        Ok(Some(result_var))
+        Ok(None)
     }
 
     /// Generate inline code for integer bitwise binary operations.

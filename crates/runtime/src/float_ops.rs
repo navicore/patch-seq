@@ -523,36 +523,6 @@ mod tests {
         }
     }
 
-    // This test uses i64::MAX which overflows the 63-bit tagged-ptr range
-    #[cfg(not(feature = "tagged-ptr"))]
-    #[test]
-    fn test_float_to_int_overflow_positive() {
-        unsafe {
-            let stack = crate::stack::alloc_test_stack();
-            let stack = push(stack, Value::Float(1e20)); // Much larger than i64::MAX
-
-            let stack = float_to_int(stack);
-
-            let (_stack, result) = pop(stack);
-            assert_eq!(result, Value::Int(i64::MAX)); // Clamped to max
-        }
-    }
-
-    // This test uses i64::MIN which overflows the 63-bit tagged-ptr range
-    #[cfg(not(feature = "tagged-ptr"))]
-    #[test]
-    fn test_float_to_int_overflow_negative() {
-        unsafe {
-            let stack = crate::stack::alloc_test_stack();
-            let stack = push(stack, Value::Float(-1e20)); // Much smaller than i64::MIN
-
-            let stack = float_to_int(stack);
-
-            let (_stack, result) = pop(stack);
-            assert_eq!(result, Value::Int(i64::MIN)); // Clamped to min
-        }
-    }
-
     #[test]
     fn test_float_to_int_nan() {
         unsafe {
@@ -563,21 +533,6 @@ mod tests {
 
             let (_stack, result) = pop(stack);
             assert_eq!(result, Value::Int(0)); // NaN becomes 0
-        }
-    }
-
-    // This test uses i64::MAX which overflows the 63-bit tagged-ptr range
-    #[cfg(not(feature = "tagged-ptr"))]
-    #[test]
-    fn test_float_to_int_infinity() {
-        unsafe {
-            let stack = crate::stack::alloc_test_stack();
-            let stack = push(stack, Value::Float(f64::INFINITY));
-
-            let stack = float_to_int(stack);
-
-            let (_stack, result) = pop(stack);
-            assert_eq!(result, Value::Int(i64::MAX)); // +Inf becomes MAX
         }
     }
 

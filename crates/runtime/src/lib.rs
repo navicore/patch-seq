@@ -2,7 +2,7 @@
 //!
 //! Key design principles:
 //! - Value: What the language talks about (Int, Bool, Variant, etc.)
-//! - StackValue: 40-byte tagged stack entry (discriminant + 4 payload slots)
+//! - StackValue: 8-byte tagged pointer (Int/Bool inline, heap types Arc-wrapped)
 //! - Stack: Contiguous array of StackValue entries for efficient operations
 
 // Re-export core modules from seq-core (foundation for stack-based languages)

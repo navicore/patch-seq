@@ -5,7 +5,7 @@
 //!
 //! Key design principles:
 //! - Value: What the language talks about (Int, Bool, Variant, etc.)
-//! - StackValue: 40-byte tagged entry (default) or 8-byte tagged pointer (`tagged-ptr` feature)
+//! - StackValue: 8-byte tagged pointer (Int/Bool inline, heap types Arc-wrapped)
 //! - Stack: Contiguous array of StackValue entries for efficient operations
 //!
 //! # Modules

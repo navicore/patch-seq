@@ -83,7 +83,7 @@ impl CodeGen {
         writeln!(&mut ir, "target triple = \"{}\"", get_target_triple())?;
         writeln!(&mut ir)?;
 
-        // Value type definition (layout depends on tagged_ptr flag)
+        // Value type definition (8-byte tagged pointer)
         self.emit_value_type_def(&mut ir)?;
 
         // String and symbol constants
@@ -180,7 +180,7 @@ impl CodeGen {
         writeln!(&mut ir, "target triple = \"{}\"", get_target_triple())?;
         writeln!(&mut ir)?;
 
-        // Value type definition (layout depends on tagged_ptr flag)
+        // Value type definition (8-byte tagged pointer)
         self.emit_value_type_def(&mut ir)?;
 
         // String and symbol constants

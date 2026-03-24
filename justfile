@@ -106,30 +106,6 @@ ci: fmt-check lint test build build-examples test-integration lint-seq
     @echo ""
     @echo "Safe to push to GitHub - CI will pass."
 
-# This is what developers should run to validate tagged-ptr (8-byte values).
-# Requires a clean build because the embedded runtime must match the feature flag.
-# When this passes all tests, tagged-ptr becomes the default and this folds into `ci`.
-ci-tptr:
-    @echo "=== Tagged Pointer CI ==="
-    @echo "Cleaning build artifacts (runtime must match feature flag)..."
-    cargo clean
-    @echo "Building with tagged-ptr..."
-    cargo build --release --features tagged-ptr
-    @echo "Running Rust unit tests with tagged-ptr..."
-    cargo test --workspace --all-targets --features tagged-ptr
-    @echo "Running integration tests with tagged-ptr seqc..."
-    ./target/release/seqc test tests/integration/src/
-    @echo ""
-    @echo "✅ Tagged-ptr CI passed!"
-    @echo "   - Clean build with tagged-ptr ✓"
-    @echo "   - Rust unit tests ✓"
-    @echo "   - Integration tests (433) ✓"
-    @echo ""
-    @echo "Restoring default build..."
-    cargo clean
-    cargo build --release
-    @echo "Default build restored."
-
 # Check that benchmarks have been run recently (within 48 hours)
 # This catches performance regressions by ensuring benchmarks are run regularly
 check-bench-freshness:
