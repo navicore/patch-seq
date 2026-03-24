@@ -5,26 +5,31 @@ include std:list
 
 : num-elements ( -- Int ) 100000 ;
 
-# Build list iteratively to avoid stack complexity
-: build-list-loop ( Variant Int Int -- Variant )
-  # ( list current limit )
-  2dup i.>= if
-    drop drop  # return list
+# Build list using list.push! for in-place mutation (amortized O(1) per push).
+# Stack layout: ( limit List current ) keeps list accessible for list.push!
+# without pick/over (which would clone the Arc and defeat COW).
+: build-list-loop ( Int Variant Int -- Variant )
+  # Stack: ( limit List current )
+  # list.push! mutates in place when List is sole-owner (Arc refcount == 1).
+  # rot/swap move raw pointers without cloning, so refcount stays 1.
+  # 3 pick (below) clones limit for the comparison, but limit is an Int
+  # (inline tagged value, no Arc), so the clone is just a register copy.
+  dup 3 pick i.>= if
+    drop nip
   else
-    # Push current onto list
-    over 3 pick swap list.push
-    # ( list current limit new-list )
-    # Need: ( new-list current+1 limit )
-    3 roll drop     # ( current limit new-list )
-    rot             # ( limit new-list current )
-    1 i.+           # ( limit new-list current+1 )
-    rot             # ( new-list current+1 limit )
+    # ( limit List current )
+    dup         # ( limit List current current )
+    rot         # ( limit current current List )
+    swap        # ( limit current List current )
+    list.push!  # ( limit current List' )
+    swap        # ( limit List' current )
+    1 i.+       # ( limit List' current+1 )
     build-list-loop
   then
 ;
 
 : build-list ( Int -- Variant )
-  list.make 0 rot build-list-loop
+  list.make 0 build-list-loop
 ;
 
 : main ( -- Int )
