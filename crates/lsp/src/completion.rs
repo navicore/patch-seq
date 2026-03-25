@@ -474,7 +474,10 @@ mod tests {
         let items = get_builtin_completions();
         // Verify that dotted builtins like int.add, f.add, etc. are present
         let has_dotted = items.iter().any(|item| item.label.contains('.'));
-        assert!(has_dotted, "Builtin completions should include dotted names like int.add");
+        assert!(
+            has_dotted,
+            "Builtin completions should include dotted names like int.add"
+        );
     }
 
     #[test]
