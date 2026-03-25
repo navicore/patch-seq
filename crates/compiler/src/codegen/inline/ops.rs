@@ -138,9 +138,10 @@ impl CodeGen {
         Ok(Some(result_var))
     }
 
-    /// Float binary ops return Ok(None) to fall through to the runtime path.
-    /// Floats are heap-boxed as Arc<Value>, so inline IR can't operate on them
-    /// directly. TODO: Inline float ops by unboxing, operating, and re-boxing.
+    /// Float binary ops use the runtime path. Floats are heap-boxed as
+    /// Arc<Value>, so the runtime handles unboxing, operating, and re-boxing.
+    /// The specialization module handles float-heavy words by passing doubles
+    /// directly in registers, bypassing this path entirely.
     pub(in crate::codegen) fn codegen_inline_float_binary_op(
         &mut self,
         _stack_var: &str,
@@ -149,8 +150,7 @@ impl CodeGen {
         Ok(None)
     }
 
-    /// Float comparison ops return Ok(None) to fall through to the runtime path.
-    /// TODO: Inline float comparisons by unboxing operands.
+    /// Float comparison ops use the runtime path (same rationale as above).
     pub(in crate::codegen) fn codegen_inline_float_comparison(
         &mut self,
         _stack_var: &str,
