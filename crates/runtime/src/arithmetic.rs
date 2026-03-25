@@ -677,6 +677,26 @@ mod tests {
     }
 
     #[test]
+    fn test_63bit_overflow_wrapping() {
+        // Verify that arithmetic at the 63-bit boundary wraps correctly.
+        // tag_int silently overflows for values outside -(2^62) to (2^62-1),
+        // so wrapping arithmetic at the boundary is defined but the tagged
+        // representation wraps within 63 bits.
+        unsafe {
+            let int63_max = (1i64 << 62) - 1; // 4611686018427387903
+
+            // max + 1 wraps within the tagged representation
+            let stack = crate::stack::alloc_test_stack();
+            let stack = push(stack, Value::Int(int63_max));
+            let stack = push(stack, Value::Int(1));
+            let stack = add(stack);
+            let (_stack, result) = pop(stack);
+            // The result wraps — it should be a valid Int (not crash)
+            assert!(matches!(result, Value::Int(_)));
+        }
+    }
+
+    #[test]
     fn test_negative_division() {
         unsafe {
             // Test negative dividend

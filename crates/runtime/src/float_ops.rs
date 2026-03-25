@@ -201,9 +201,9 @@ pub unsafe extern "C" fn patch_seq_int_to_float(stack: Stack) -> Stack {
 
 /// Convert Float to Int: ( Float -- Int )
 ///
-/// Truncates toward zero. Values outside i64 range are clamped:
-/// - Values >= i64::MAX become i64::MAX
-/// - Values <= i64::MIN become i64::MIN
+/// Truncates toward zero. Values outside 63-bit signed range are clamped:
+/// - Values >= 2^62-1 become 2^62-1 (4611686018427387903)
+/// - Values <= -(2^62) become -(2^62) (-4611686018427387904)
 /// - NaN becomes 0
 ///
 /// # Safety
@@ -216,12 +216,15 @@ pub unsafe extern "C" fn patch_seq_float_to_int(stack: Stack) -> Stack {
     match val {
         Value::Float(f) => {
             // Clamp to i64 range to avoid undefined behavior
+            // 63-bit signed integer range: -(2^62) to (2^62 - 1)
+            const INT63_MAX: i64 = (1i64 << 62) - 1;
+            const INT63_MIN: i64 = -(1i64 << 62);
             let i = if f.is_nan() {
                 0
-            } else if f >= i64::MAX as f64 {
-                i64::MAX
-            } else if f <= i64::MIN as f64 {
-                i64::MIN
+            } else if f >= INT63_MAX as f64 {
+                INT63_MAX
+            } else if f <= INT63_MIN as f64 {
+                INT63_MIN
             } else {
                 f as i64
             };
@@ -533,6 +536,48 @@ mod tests {
 
             let (_stack, result) = pop(stack);
             assert_eq!(result, Value::Int(0)); // NaN becomes 0
+        }
+    }
+
+    #[test]
+    fn test_float_to_int_clamps_to_63bit_max() {
+        unsafe {
+            let stack = crate::stack::alloc_test_stack();
+            let stack = push(stack, Value::Float(1e20)); // Much larger than 63-bit max
+
+            let stack = float_to_int(stack);
+
+            let (_stack, result) = pop(stack);
+            let int63_max = (1i64 << 62) - 1;
+            assert_eq!(result, Value::Int(int63_max));
+        }
+    }
+
+    #[test]
+    fn test_float_to_int_clamps_to_63bit_min() {
+        unsafe {
+            let stack = crate::stack::alloc_test_stack();
+            let stack = push(stack, Value::Float(-1e20)); // Much smaller than 63-bit min
+
+            let stack = float_to_int(stack);
+
+            let (_stack, result) = pop(stack);
+            let int63_min = -(1i64 << 62);
+            assert_eq!(result, Value::Int(int63_min));
+        }
+    }
+
+    #[test]
+    fn test_float_to_int_infinity_clamps() {
+        unsafe {
+            let stack = crate::stack::alloc_test_stack();
+            let stack = push(stack, Value::Float(f64::INFINITY));
+
+            let stack = float_to_int(stack);
+
+            let (_stack, result) = pop(stack);
+            let int63_max = (1i64 << 62) - 1;
+            assert_eq!(result, Value::Int(int63_max));
         }
     }
 

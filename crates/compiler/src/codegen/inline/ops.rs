@@ -138,8 +138,9 @@ impl CodeGen {
         Ok(Some(result_var))
     }
 
-    /// Generate inline code for float binary operations (f.add, f.subtract, etc.)
-    /// Float binary ops use the runtime path (floats are heap-boxed).
+    /// Float binary ops return Ok(None) to fall through to the runtime path.
+    /// Floats are heap-boxed as Arc<Value>, so inline IR can't operate on them
+    /// directly. TODO: Inline float ops by unboxing, operating, and re-boxing.
     pub(in crate::codegen) fn codegen_inline_float_binary_op(
         &mut self,
         _stack_var: &str,
@@ -148,9 +149,8 @@ impl CodeGen {
         Ok(None)
     }
 
-    /// Generate inline code for float comparison operations.
-    /// Result is a Bool value.
-    /// Float comparison ops use the runtime path (floats are heap-boxed).
+    /// Float comparison ops return Ok(None) to fall through to the runtime path.
+    /// TODO: Inline float comparisons by unboxing operands.
     pub(in crate::codegen) fn codegen_inline_float_comparison(
         &mut self,
         _stack_var: &str,
