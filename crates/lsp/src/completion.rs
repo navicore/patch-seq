@@ -461,6 +461,23 @@ mod tests {
     }
 
     #[test]
+    fn test_detect_context_dotted_prefix() {
+        // Typing "int." or "f." should remain in Code context so completions stay open
+        assert_eq!(detect_context("int."), ContextType::Code);
+        assert_eq!(detect_context("f."), ContextType::Code);
+        assert_eq!(detect_context("list.m"), ContextType::Code);
+        assert_eq!(detect_context("  map.get"), ContextType::Code);
+    }
+
+    #[test]
+    fn test_completions_include_dotted_builtins() {
+        let items = get_builtin_completions();
+        // Verify that dotted builtins like int.add, f.add, etc. are present
+        let has_dotted = items.iter().any(|item| item.label.contains('.'));
+        assert!(has_dotted, "Builtin completions should include dotted names like int.add");
+    }
+
+    #[test]
     fn test_is_in_string() {
         assert!(!is_in_string("hello"));
         assert!(is_in_string("\"hello"));

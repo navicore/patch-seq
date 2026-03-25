@@ -131,6 +131,7 @@ impl LanguageServer for SeqLanguageServer {
                         " ".to_string(),
                         "\n".to_string(),
                         ":".to_string(),
+                        ".".to_string(),
                     ]),
                     ..Default::default()
                 }),
