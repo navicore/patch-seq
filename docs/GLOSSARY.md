@@ -170,7 +170,7 @@ NaN-boxed Ptr: 0xFFF8 | (tag << 47) | (pointer)
 
 **History:** The technique emerged from Lisp implementations in the 1970s-80s, where tagged pointers were common. Modern popularization came from LuaJIT (Mike Pall, 2005) and JavaScript engines. WebKit's JavaScriptCore, Mozilla's SpiderMonkey, and early V8 all use NaN-boxing or similar "pointer tagging" schemes.
 
-**In other languages:** LuaJIT uses NaN-boxing extensively. JavaScript engines use it for the `number` type. Ruby's CRuby uses tagged pointers (a related technique). OCaml uses tagged integers with the low bit. Seq explored NaN-boxing but currently uses 40-byte tagged values to preserve full 64-bit integer range.
+**In other languages:** LuaJIT uses NaN-boxing extensively. JavaScript engines use it for the `number` type. Ruby's CRuby uses tagged pointers (a related technique). OCaml uses tagged integers with the low bit. Seq uses 8-byte tagged pointers — integers are stored inline (63-bit, shifted left 1 with low bit set), heap types use the low 3 bits of aligned pointers as a type tag.
 
 ---
 

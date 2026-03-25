@@ -7,7 +7,7 @@ row polymorphism, and green-thread concurrency.
 
 1. **Values are independent of stack structure** - A value can be duplicated,
    shuffled, or stored without corruption. The stack is a contiguous array of
-   40-byte tagged values.
+   8-byte tagged pointer values.
 
 2. **Functional style** - Operations produce new values rather than mutating.
    `list.push` returns a new list, it doesn't modify the original.
@@ -26,7 +26,7 @@ patch-seq/
 │   ├── core/           # Rust - seq-core foundational types
 │   │   └── src/
 │   │       ├── value.rs        # Value enum (Int, Float, String, Variant, Channel, etc.)
-│   │       ├── tagged_stack.rs # Contiguous 40-byte tagged value stack
+│   │       ├── tagged_stack.rs # Contiguous 8-byte tagged pointer stack
 │   │       ├── arena.rs        # Thread-local bump allocator (bumpalo)
 │   │       ├── seqstring.rs    # Reference-counted string type
 │   │       └── memory_stats.rs # Memory tracking
@@ -91,22 +91,18 @@ pub struct VariantData {
 }
 ```
 
-Value is exactly 40 bytes with 8-byte alignment, matching the stack entry size.
+The Rust `Value` enum is 40 bytes (used for storage and FFI), but on the stack
+values are encoded as 8-byte tagged pointers (`StackValue = u64`). Integers are
+stored inline (shifted left 1, low bit set); all other types are heap-allocated
+behind 8-byte-aligned pointers with a tag in the low 3 bits.
 
 ## Stack Model
 
-The stack is a contiguous array of 40-byte tagged values (`StackValue`),
+The stack is a contiguous array of 8-byte tagged pointer values (`StackValue`),
 defined in `core/src/tagged_stack.rs`:
 
 ```rust
-#[repr(C)]
-pub struct StackValue {
-    pub slot0: u64,  // Discriminant (type tag)
-    pub slot1: u64,  // Payload slot 1
-    pub slot2: u64,  // Payload slot 2
-    pub slot3: u64,  // Payload slot 3
-    pub slot4: u64,  // Payload slot 4
-}
+pub type StackValue = u64;  // 8 bytes — tagged pointer encoding
 
 pub struct TaggedStack {
     pub base: *mut StackValue,  // Heap-allocated array
@@ -335,7 +331,8 @@ deployments where `kill -3` debugging is needed.
 
 ## Memory Management
 
-The tagged stack design eliminates per-operation allocation overhead. The stack
+The tagged pointer stack eliminates per-operation allocation overhead for integers
+(inline in the 8-byte slot) and provides O(1) push/pop for all types. The stack
 is a single contiguous array that grows/shrinks by adjusting the stack pointer.
 Heap types (String, Variant, Closure) use reference counting for correct cleanup.
 

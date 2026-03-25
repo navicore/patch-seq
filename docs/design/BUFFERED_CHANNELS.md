@@ -22,7 +22,7 @@ pub struct ChannelData {
 ```
 
 Each `chan.send`:
-1. Clone the `Value` (40 bytes, plus deep clone for strings/variants)
+1. Clone the `Value` (8-byte tagged pointer, plus deep clone for heap types like strings/variants)
 2. Acquire internal lock in May's MPMC queue
 3. Enqueue the value
 4. Wake a waiting receiver (if any)
@@ -34,7 +34,7 @@ Each `chan.receive`:
 3. Return value + success flag
 
 **Root causes from #306**:
-- 40-byte `Value` clone per message (even for bare integers)
+- `Value` clone per message (heap types require deep clone)
 - Lock contention: every send/receive acquires May's internal lock
 - No batching: each message is an individual lock acquire/release
 - Cooperative yield overhead between operations
@@ -47,9 +47,9 @@ Each `chan.receive`:
   when blocking (not spin or OS-block).
 - **MPMC required** — Multiple senders and multiple receivers must work.
   The fanout benchmark depends on this.
-- **Don't change Value size yet** — 40-byte values are a separate
-  concern (NaN-boxing). This design optimizes the channel machinery
-  independent of value size.
+- **Value encoding is now 8-byte tagged pointers** — Stack values are
+  `u64`. This design optimizes the channel machinery independent of
+  value encoding.
 
 ## Approach
 
@@ -90,7 +90,7 @@ synchronization cost.
 
 When the compiler knows a channel carries only integers (from type
 inference), generate specialized send/receive that passes `i64` directly
-instead of cloning a 40-byte `Value`. This avoids the clone entirely.
+instead of going through the `Value` encoding. This avoids heap allocation entirely.
 
 ```rust
 // Specialized: no Value wrapping
@@ -113,8 +113,9 @@ strategy while keeping May compatibility.
 
 ## What This Does NOT Fix
 
-- **40-byte Value clone cost** — Each message still copies 40 bytes.
-  NaN-boxing would reduce this to 8 bytes but is a separate effort.
+- **Value clone cost** — Each message still clones the value. Integer
+  messages are cheap (inline `u64`), but heap types (strings, variants)
+  require deep cloning.
 - **Strand spawn overhead** — Skynet is slow because of mmap per strand,
   not channel throughput.
 - **Single-consumer patterns** — Pingpong is already competitive; this
