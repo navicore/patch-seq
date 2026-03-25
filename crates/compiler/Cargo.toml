@@ -35,10 +35,8 @@ path = "src/lib.rs"
 [features]
 # Feature enabled when building on docs.rs to skip runtime embedding
 docsrs = []
-# Default: include seq-runtime with 8-byte tagged pointer values
-default = ["seq-runtime", "tagged-ptr"]
-# 8-byte tagged pointer values (propagates to seq-runtime -> seq-core)
-tagged-ptr = ["seq-runtime/tagged-ptr"]
+# Default: include seq-runtime for embedding in compiled binaries
+default = ["seq-runtime"]
 
 [package.metadata.docs.rs]
 # Enable the docsrs feature when building on docs.rs

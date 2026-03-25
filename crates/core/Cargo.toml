@@ -10,10 +10,6 @@ readme = "README.md"
 keywords = ["runtime", "language", "stack", "core"]
 categories = ["compilers", "development-tools"]
 
-[features]
-default = ["tagged-ptr"]
-tagged-ptr = []  # 8-byte tagged pointer values (replaces 40-byte StackValue)
-
 [lib]
 crate-type = ["staticlib", "rlib"]  # staticlib for LLVM linking, rlib for dependencies
 

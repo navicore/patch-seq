@@ -1,8 +1,8 @@
 //! Register-Based Specialization for Seq Compiler
 //!
 //! This module generates optimized register-based LLVM IR for words that operate
-//! purely on primitive types (Int, Float, Bool), eliminating the 40-byte `%Value`
-//! struct overhead at function boundaries.
+//! purely on primitive types (Int, Float, Bool), eliminating the tagged pointer
+//! overhead at function boundaries.
 //!
 //! ## Performance
 //!
@@ -14,8 +14,8 @@
 //! ## How It Works
 //!
 //! The standard Seq calling convention passes a pointer to a heap-allocated stack
-//! of 40-byte `%Value` structs (discriminant + 4×i64 payload). This is flexible
-//! but expensive for primitive operations.
+//! of 8-byte tagged pointers. This is flexible but expensive for primitive
+//! operations due to tagging/untagging and heap boxing.
 //!
 //! Specialization detects words that only use primitives and generates a parallel
 //! "fast path" that passes values directly in CPU registers:
@@ -516,7 +516,7 @@ impl CodeGen {
     /// Generate a specialized version of a word.
     ///
     /// This creates a register-based function that passes values directly in
-    /// CPU registers instead of through the 40-byte `%Value` stack.
+    /// CPU registers instead of through the tagged pointer stack.
     ///
     /// The generated function:
     /// - Takes primitive arguments directly (i64 for Int/Bool, double for Float)

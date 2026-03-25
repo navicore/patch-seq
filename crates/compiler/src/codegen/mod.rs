@@ -7,9 +7,9 @@
 //!
 //! ## Value Representation
 //!
-//! All Seq values use the `%Value` type, a 40-byte Rust enum with `#[repr(C)]`.
-//! Layout: `{ i64, i64, i64, i64, i64 }` (discriminant + largest variant payload).
-//! This fixed size allows pass-by-value, required for Alpine/musl compatibility.
+//! All Seq values use the `%Value` type, an 8-byte tagged pointer (i64).
+//! Int and Bool are encoded inline; heap types (Float, String, Variant, etc.)
+//! are stored as Arc<Value> pointers.
 //!
 //! ## Calling Conventions
 //!
@@ -581,7 +581,6 @@ mod tests {
         // Test that dup on Int uses optimized load/store instead of clone_value
         // This verifies the Issue #186 optimization actually fires
         let mut codegen = CodeGen::new();
-        codegen.tagged_ptr = false; // Test asserts 40-byte IR patterns
 
         use crate::types::Type;
 
@@ -639,13 +638,13 @@ mod tests {
 
         // The optimized path should use load/store directly (no clone_value call)
         assert!(
-            test_dup_fn.contains("load %Value"),
-            "Optimized dup should use 'load %Value', got:\n{}",
+            test_dup_fn.contains("load i64"),
+            "Optimized dup should use 'load i64', got:\n{}",
             test_dup_fn
         );
         assert!(
-            test_dup_fn.contains("store %Value"),
-            "Optimized dup should use 'store %Value', got:\n{}",
+            test_dup_fn.contains("store i64"),
+            "Optimized dup should use 'store i64', got:\n{}",
             test_dup_fn
         );
 
@@ -662,7 +661,6 @@ mod tests {
         // Test Issue #195: dup after literal push uses optimized path
         // Pattern: `42 dup` should be optimized even without type map info
         let mut codegen = CodeGen::new();
-        codegen.tagged_ptr = false; // Test asserts 40-byte IR patterns
 
         let program = Program {
             includes: vec![],
@@ -715,12 +713,12 @@ mod tests {
 
         // With literal heuristic, should use optimized path
         assert!(
-            test_dup_fn.contains("load %Value"),
+            test_dup_fn.contains("load i64"),
             "Dup after int literal should use optimized load, got:\n{}",
             test_dup_fn
         );
         assert!(
-            test_dup_fn.contains("store %Value"),
+            test_dup_fn.contains("store i64"),
             "Dup after int literal should use optimized store, got:\n{}",
             test_dup_fn
         );
@@ -1180,7 +1178,6 @@ mod tests {
         use crate::types::{Effect, StackType, Type};
 
         let mut codegen = CodeGen::new();
-        codegen.tagged_ptr = false; // Test asserts 40-byte IR patterns
 
         // Create a specializable word: get-value ( Int -- Int )
         // This will get a specialized version that returns i64 directly

@@ -312,20 +312,12 @@ mod tests {
             size_of::<Value>()
         );
 
-        // StackValue size depends on feature flag
+        // StackValue is 8 bytes (tagged pointer / u64)
         use crate::tagged_stack::StackValue;
-        #[cfg(not(feature = "tagged-ptr"))]
-        assert_eq!(
-            size_of::<StackValue>(),
-            40,
-            "StackValue must be 40 bytes (default), got {}",
-            size_of::<StackValue>()
-        );
-        #[cfg(feature = "tagged-ptr")]
         assert_eq!(
             size_of::<StackValue>(),
             8,
-            "StackValue must be 8 bytes (tagged-ptr), got {}",
+            "StackValue must be 8 bytes, got {}",
             size_of::<StackValue>()
         );
 
