@@ -353,7 +353,8 @@ All regex operations return a Bool success flag (false for invalid regex).
 | Word | Stack Effect | Description |
 |------|--------------|-------------|
 | `list.make` | `( -- List )` | Create empty list |
-| `list.push` | `( List T -- List )` | Push value onto list |
+| `list.push` | `( List T -- List )` | Push value onto list (returns new list) |
+| `list.push!` | `( List T -- List )` | Push value onto list (mutates in place if sole owner, else copies) |
 | `list.get` | `( List Int -- T Bool )` | Get value at index. Returns (value, success) |
 | `list.set` | `( List Int T -- List Bool )` | Set value at index. Returns (list, success) |
 | `list.length` | `( List -- Int )` | Get number of elements |

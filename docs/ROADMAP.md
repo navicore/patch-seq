@@ -8,7 +8,7 @@ Inspired by the Tokio ecosystem (tokio-console, tracing, metrics, tower), we asp
 
 ---
 
-## Current (v4.0)
+## Current (v4.2)
 
 ### Union Type Safety
 
@@ -113,9 +113,5 @@ Seq's philosophy: type safety through inference, not annotation.
 
 ## Design Documents
 
-- [FFI Design](design/ffi.md)
-- [FFI Callbacks](design/ffi-callbacks.md) *(shelved)*
-- [ADT Design](design/ADT_DESIGN.md)
-- [Lint Design](design/LINT_DESIGN.md)
-- [SON Design](design/SON_DESIGN.md)
-- [Tagged Stack Codegen](design/tagged-stack-codegen.md) *(historical - superseded by current 40-byte StackValue design)*
+- [Buffered Channels](design/BUFFERED_CHANNELS.md)
+- [Loop Lowering](design/LOOP_LOWERING.md)
