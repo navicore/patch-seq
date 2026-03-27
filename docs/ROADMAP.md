@@ -113,5 +113,4 @@ Seq's philosophy: type safety through inference, not annotation.
 
 ## Design Documents
 
-- [Buffered Channels](design/BUFFERED_CHANNELS.md)
 - [Loop Lowering](design/LOOP_LOWERING.md)
