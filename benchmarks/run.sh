@@ -12,6 +12,10 @@
 set -e
 cd "$(dirname "$0")"
 
+# Clean up temp files on unexpected exit
+TEMP_FILES=()
+trap 'rm -f "${TEMP_FILES[@]}"' EXIT
+
 # Configuration
 BENCHMARKS="fibonacci collections primes skynet pingpong fanout"
 LANGUAGES="seq python go rust"
@@ -112,6 +116,7 @@ compute_median_results() {
     # Collect all unique test keys (everything except the trailing time)
     local keys_file
     keys_file=$(mktemp)
+    TEMP_FILES+=("$keys_file")
     for f in "${run_files[@]}"; do
         grep "^BENCH:" "$f" 2>/dev/null | while IFS= read -r line; do
             # Key = first 4 colon-separated fields: BENCH:cat:test:result
@@ -166,9 +171,9 @@ for bench in $BENCHMARKS; do
 
         # Run BENCH_RUNS times, collect per-run results
         run_files=()
-        run_ok=true
         for i in $(seq 1 "$BENCH_RUNS"); do
             run_file=$(mktemp)
+            TEMP_FILES+=("$run_file")
             if run_bench_once "$bench" "$lang" > "$run_file" 2>&1; then
                 if grep -q "^BENCH:" "$run_file" 2>/dev/null; then
                     run_files+=("$run_file")
