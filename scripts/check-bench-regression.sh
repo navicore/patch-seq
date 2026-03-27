@@ -1,10 +1,13 @@
 #!/bin/bash
 # Check for benchmark regressions against baseline
 # Fails if any Seq benchmark regresses more than THRESHOLD percent
+#
+# Baselines and results should both be median-of-N values (see run.sh).
 
 set -euo pipefail
 
 THRESHOLD=20  # Percent regression that triggers failure
+FLOOR_MS=1    # Skip tests with baseline <1ms (integer division can't produce a meaningful %)
 BASELINE_DIR="benchmarks/baseline"
 RESULTS_DIR="benchmarks/results"
 REPORT_FILE="benchmarks/regression-report.txt"
@@ -53,8 +56,8 @@ for result_file in "$RESULTS_DIR"/*_seq.txt; do
 
         baseline_time=$(echo "$baseline_line" | rev | cut -d: -f1 | rev)
 
-        # Skip if baseline time is 0 (can't compute percentage)
-        if [ "$baseline_time" -eq 0 ]; then
+        # Skip sub-millisecond baselines (can't compute meaningful percentage)
+        if [ "$baseline_time" -lt "$FLOOR_MS" ]; then
             continue
         fi
 
