@@ -2,6 +2,8 @@
 # Unified Benchmark Runner
 #
 # Runs all benchmarks in all languages and produces a comparison table.
+# Each benchmark is run BENCH_RUNS times (default 5) and the median
+# time is recorded, reducing noise from OS/CI scheduling jitter.
 #
 # Usage:
 #   ./run.sh             # Run all benchmarks
@@ -10,11 +12,16 @@
 set -e
 cd "$(dirname "$0")"
 
+# Clean up temp files on unexpected exit
+TEMP_FILES=()
+trap 'rm -f "${TEMP_FILES[@]}"' EXIT
+
 # Configuration
 BENCHMARKS="fibonacci collections primes skynet pingpong fanout"
 LANGUAGES="seq python go rust"
 RESULTS_DIR="results"
 SEQC="../target/release/seqc"
+BENCH_RUNS="${BENCH_RUNS:-5}"  # Number of runs per benchmark; override with env var
 
 # Colors
 RED='\033[0;31m'
@@ -32,6 +39,7 @@ mkdir -p "$RESULTS_DIR"
 rm -f "$RESULTS_DIR"/*.txt
 
 echo -e "${GREEN}${BOLD}=== Seq Benchmark Suite ===${NC}"
+echo -e "Runs per benchmark: ${BENCH_RUNS} (median selected)"
 echo
 
 # Check dependencies
@@ -51,37 +59,97 @@ command -v rustc &>/dev/null || { echo -e "${YELLOW}Warning: rustc not found${NC
 
 echo
 
-# Run a single benchmark for a single language
-run_bench() {
+# Build a single benchmark binary (compile once, run many times)
+build_bench() {
     local bench=$1
     local lang=$2
-    local output_file="$RESULTS_DIR/${bench}_${lang}.txt"
 
     case $lang in
         seq)
-            [ "$HAS_SEQ" = false ] && { echo "SKIP:$bench:$lang:seqc not available" > "$output_file"; return; }
+            [ "$HAS_SEQ" = false ] && return 1
             local src="$bench/seq.seq"
             local bin="/tmp/bench_${bench}_seq"
-            [ -f "$src" ] && "$SEQC" build "$src" -o "$bin" 2>/dev/null && "$bin" > "$output_file" 2>&1 || echo "ERROR:$bench:$lang:failed" > "$output_file"
+            [ -f "$src" ] && "$SEQC" build "$src" -o "$bin" 2>/dev/null
             ;;
         python)
-            [ "$HAS_PYTHON" = false ] && { echo "SKIP:$bench:$lang:python3 not available" > "$output_file"; return; }
-            local src="$bench/python.py"
-            [ -f "$src" ] && python3 "$src" > "$output_file" 2>&1 || echo "ERROR:$bench:$lang:failed" > "$output_file"
+            [ "$HAS_PYTHON" = false ] && return 1
+            [ -f "$bench/python.py" ]
             ;;
         go)
-            [ "$HAS_GO" = false ] && { echo "SKIP:$bench:$lang:go not available" > "$output_file"; return; }
+            [ "$HAS_GO" = false ] && return 1
             local src="$bench/go.go"
             local bin="/tmp/bench_${bench}_go"
-            [ -f "$src" ] && go build -o "$bin" "$src" 2>/dev/null && "$bin" > "$output_file" 2>&1 || echo "ERROR:$bench:$lang:failed" > "$output_file"
+            [ -f "$src" ] && go build -o "$bin" "$src" 2>/dev/null
             ;;
         rust)
-            [ "$HAS_RUST" = false ] && { echo "SKIP:$bench:$lang:rustc not available" > "$output_file"; return; }
+            [ "$HAS_RUST" = false ] && return 1
             local src="$bench/rust.rs"
             local bin="/tmp/bench_${bench}_rust"
-            [ -f "$src" ] && rustc -O -o "$bin" "$src" 2>/dev/null && "$bin" > "$output_file" 2>&1 || echo "ERROR:$bench:$lang:failed" > "$output_file"
+            [ -f "$src" ] && rustc -O -o "$bin" "$src" 2>/dev/null
             ;;
     esac
+}
+
+# Run an already-built benchmark binary once, output to stdout
+run_bench_once() {
+    local bench=$1
+    local lang=$2
+
+    case $lang in
+        seq)    /tmp/bench_${bench}_seq 2>&1 ;;
+        python) python3 "$bench/python.py" 2>&1 ;;
+        go)     /tmp/bench_${bench}_go 2>&1 ;;
+        rust)   /tmp/bench_${bench}_rust 2>&1 ;;
+    esac
+}
+
+# Given N result files (one per run), compute the median time for each
+# BENCH: line and write a single output file with median times.
+#
+# For each unique test key (BENCH:category:test:result), collect all
+# times across runs, sort them, and pick the middle value.
+compute_median_results() {
+    local output_file=$1
+    shift
+    local run_files=("$@")
+
+    # Collect all unique test keys (everything except the trailing time)
+    local keys_file
+    keys_file=$(mktemp)
+    TEMP_FILES+=("$keys_file")
+    for f in "${run_files[@]}"; do
+        grep "^BENCH:" "$f" 2>/dev/null | while IFS= read -r line; do
+            # Key = first 4 colon-separated fields: BENCH:cat:test:result
+            echo "$line" | rev | cut -d: -f2- | rev
+        done
+    done | sort -u > "$keys_file"
+
+    # For each key, collect times and pick median
+    > "$output_file"
+    while IFS= read -r key; do
+        local times=()
+        for f in "${run_files[@]}"; do
+            local t
+            t=$(grep "^${key}:" "$f" 2>/dev/null | rev | cut -d: -f1 | rev)
+            if [[ "$t" =~ ^[0-9]+$ ]]; then
+                times+=("$t")
+            fi
+        done
+
+        if [ ${#times[@]} -eq 0 ]; then
+            continue
+        fi
+
+        # Sort numerically and pick the middle element
+        local sorted
+        sorted=($(printf '%s\n' "${times[@]}" | sort -n))
+        local mid=$(( ${#sorted[@]} / 2 ))
+        local median=${sorted[$mid]}
+
+        echo "${key}:${median}" >> "$output_file"
+    done < "$keys_file"
+
+    rm -f "$keys_file"
 }
 
 # Run benchmarks
@@ -91,11 +159,46 @@ for bench in $BENCHMARKS; do
     echo -e "${CYAN}Running $bench benchmark...${NC}"
     for lang in $LANGUAGES; do
         printf "  %-8s " "$lang"
-        run_bench "$bench" "$lang"
-        if grep -q "^BENCH:" "$RESULTS_DIR/${bench}_${lang}.txt" 2>/dev/null; then
-            echo -e "${GREEN}✓${NC}"
-        elif grep -q "^SKIP:" "$RESULTS_DIR/${bench}_${lang}.txt" 2>/dev/null; then
+
+        output_file="$RESULTS_DIR/${bench}_${lang}.txt"
+
+        # Build once
+        if ! build_bench "$bench" "$lang" 2>/dev/null; then
+            echo "SKIP:$bench:$lang:not available" > "$output_file"
             echo -e "${YELLOW}skipped${NC}"
+            continue
+        fi
+
+        # Run BENCH_RUNS times, collect per-run results
+        run_files=()
+        for i in $(seq 1 "$BENCH_RUNS"); do
+            run_file=$(mktemp)
+            TEMP_FILES+=("$run_file")
+            if run_bench_once "$bench" "$lang" > "$run_file" 2>&1; then
+                if grep -q "^BENCH:" "$run_file" 2>/dev/null; then
+                    run_files+=("$run_file")
+                else
+                    rm -f "$run_file"
+                fi
+            else
+                rm -f "$run_file"
+            fi
+        done
+
+        if [ ${#run_files[@]} -eq 0 ]; then
+            echo "ERROR:$bench:$lang:failed" > "$output_file"
+            echo -e "${RED}✗${NC}"
+            continue
+        fi
+
+        # Compute median across runs
+        compute_median_results "$output_file" "${run_files[@]}"
+
+        # Clean up temp files
+        rm -f "${run_files[@]}"
+
+        if grep -q "^BENCH:" "$output_file" 2>/dev/null; then
+            echo -e "${GREEN}✓${NC} (${#run_files[@]}/${BENCH_RUNS} runs)"
         else
             echo -e "${RED}✗${NC}"
         fi
@@ -104,7 +207,7 @@ for bench in $BENCHMARKS; do
 done
 
 # Generate report
-echo -e "${GREEN}${BOLD}=== Results ===${NC}"
+echo -e "${GREEN}${BOLD}=== Results (median of ${BENCH_RUNS} runs) ===${NC}"
 echo
 
 # Helper to get time from results
@@ -154,6 +257,7 @@ cat > LATEST_RUN.txt << EOF
 timestamp: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
 commit: $(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 benchmarks_run: ${FILTER:-all}
+runs_per_benchmark: ${BENCH_RUNS}
 EOF
 
 echo
