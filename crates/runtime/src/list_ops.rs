@@ -400,7 +400,9 @@ pub unsafe extern "C" fn patch_seq_list_make(stack: Stack) -> Stack {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn patch_seq_list_push(stack: Stack) -> Stack {
     unsafe {
-        // Try the fast path: peek at the list without popping
+        // Try the fast path: peek at the list without popping.
+        // SAFETY: list.push requires two values on the stack (enforced by
+        // the type checker), so stack.sub(2) is valid.
         if let Some(Value::Variant(variant_arc)) = peek_heap_mut_second(stack)
             && let Some(data) = Arc::get_mut(variant_arc)
         {
@@ -452,6 +454,10 @@ unsafe fn push_to_variant(stack: Stack, mut variant_arc: Arc<VariantData>, value
 ///
 /// # Safety
 /// Stack must have a Value on top and a Variant (list) below.
+#[deprecated(
+    since = "4.2.1",
+    note = "use list.push instead — it now has the same fast path"
+)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn patch_seq_list_push_in_place(stack: Stack) -> Stack {
     unsafe { patch_seq_list_push(stack) }
