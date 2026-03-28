@@ -38,9 +38,9 @@ the same type — less benefit and more complex to optimize.
 For each candidate, the pattern is identical to what `list.push` does:
 
 ```rust
-// Fast path: mutate in place if sole-owned
-if let Some(Value::Map(map)) = peek_heap_mut_third(stack)  // or appropriate depth
-{
+// Pseudocode — fast path: mutate in place if sole-owned
+// (use heap_value_mut at the appropriate stack depth)
+if let Some(Value::Map(map)) = heap_value_mut(stack.sub(3)) {
     // pop only the non-map args, mutate map in place
     return stack;
 }

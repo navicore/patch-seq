@@ -404,7 +404,10 @@ pub unsafe extern "C" fn patch_seq_list_push(stack: Stack) -> Stack {
         if let Some(Value::Variant(variant_arc)) = peek_heap_mut_second(stack)
             && let Some(data) = Arc::get_mut(variant_arc)
         {
-            // Sole owner all the way down — mutate in place
+            // Sole owner all the way down — mutate in place.
+            // Safety: `data` points into the Value at sp-2. `pop` only
+            // touches sp-1 (decrements sp, reads that slot), so sp-2's
+            // memory is not accessed or invalidated by the pop.
             let (stack, value) = pop(stack);
             data.fields.push(value);
             return stack; // List is still at sp-1, untouched
