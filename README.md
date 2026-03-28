@@ -1,18 +1,17 @@
 [![CI - Linux](https://github.com/navicore/patch-seq/actions/workflows/ci-linux.yml/badge.svg)](https://github.com/navicore/patch-seq/actions/workflows/ci-linux.yml)
+[![Daily Benchmarks](https://github.com/navicore/patch-seq/actions/workflows/bench.yml/badge.svg)](https://github.com/navicore/patch-seq/actions/workflows/bench.yml)
 
 [![seq-compiler](https://img.shields.io/crates/v/seq-compiler.svg?label=seq-compiler)](https://crates.io/crates/seq-compiler)
 [![seq-repl](https://img.shields.io/crates/v/seq-repl.svg?label=seq-repl)](https://crates.io/crates/seq-repl)
 [![seq-lsp](https://img.shields.io/crates/v/seq-lsp.svg?label=seq-lsp)](https://crates.io/crates/seq-lsp)
-
-[![seq-compiler docs](https://img.shields.io/docsrs/seq-compiler?label=seq-compiler%20docs)](https://docs.rs/seq-compiler)
-[![seq-runtime docs](https://img.shields.io/docsrs/seq-runtime?label=seq-runtime%20docs)](https://docs.rs/seq-runtime)
-[![vim-line docs](https://img.shields.io/docsrs/vim-line?label=vim-line%20docs)](https://docs.rs/vim-line)
 
 # Seq - Concatenative Language
 
 A concatenative, stack-based programming language that compiles to native executables. Seq combines the elegance of stack-based programming with a sophisticated type system, guaranteed tail call optimization, and CSP-style concurrency.
 
 **Resources:** [Documentation](https://navicore.github.io/patch-seq/) | [GitHub Repository](https://github.com/navicore/patch-seq)
+
+> **Naming guide:** The GitHub repository is `patch-seq`. On [crates.io](https://crates.io), the packages are published as `seq-compiler`, `seq-repl`, and `seq-lsp`. Once installed, the binaries are `seqc`, `seqr`, and `seq-lsp`.
 
 ```seq
 : factorial ( Int -- Int )
@@ -70,7 +69,13 @@ cargo install seq-repl
 cargo install seq-lsp
 ```
 
-This installs `seqc` (compiler), `seqr` (REPL), and `seq-lsp` (language server).
+This installs the following binaries:
+
+| Crate | Binary | Description |
+|-------|--------|-------------|
+| `seq-compiler` | `seqc` | Compiler (`.seq` to native executable) |
+| `seq-repl` | `seqr` | Interactive REPL |
+| `seq-lsp` | `seq-lsp` | Language server for editor integration |
 
 *Build from source:*
 

@@ -34,9 +34,4 @@
 
 # Design Documents
 
-- [ADT Design](design/ADT_DESIGN.md)
-- [FFI Design](design/ffi.md)
-- [FFI Callbacks](design/ffi-callbacks.md)
-- [Lint Design](design/LINT_DESIGN.md)
-- [SON Design](design/SON_DESIGN.md)
-- [Tagged Stack Codegen](design/tagged-stack-codegen.md)
+- [Loop Lowering](design/LOOP_LOWERING.md)

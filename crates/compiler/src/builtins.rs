@@ -1428,7 +1428,7 @@ static BUILTIN_DOCS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::n
     );
     docs.insert(
         "list.push!",
-        "Push a value onto a list in-place. Same as list.push but optimized for sole-owned lists.",
+        "Push a value onto a list in place. Faster than list.push in loops.",
     );
     docs.insert("list.get", "Get value at index. Returns (value, success).");
     docs.insert("list.set", "Set value at index. Returns (list, success).");

@@ -21,7 +21,7 @@
 
 use crate::error::set_runtime_error;
 use crate::stack::{
-    Stack, drop_stack_value, get_stack_base, peek_heap_mut, pop, pop_sv, push, stack_value_size,
+    Stack, drop_stack_value, get_stack_base, pop, pop_sv, push, stack_value_size,
 };
 use crate::value::{Value, VariantData};
 use std::sync::Arc;
@@ -399,77 +399,95 @@ pub unsafe extern "C" fn patch_seq_list_make(stack: Stack) -> Stack {
 pub unsafe extern "C" fn patch_seq_list_push(stack: Stack) -> Stack {
     unsafe {
         let (stack, value) = pop(stack);
-
-        // Try in-place mutation via peek_heap_mut to avoid Box alloc/dealloc cycle
-        if let Some(list_val) = peek_heap_mut(stack, 0)
-            && let Value::Variant(variant_arc) = list_val
-            && let Some(data) = Arc::get_mut(variant_arc)
-        {
-            // Sole owner — mutate in place (amortized O(1), no allocation)
-            data.fields.push(value);
-            return stack;
-        }
-
-        // Shared or non-heap — fall back to clone
         let (stack, list_val) = pop(stack);
-        let variant_data = match list_val {
+        let variant_arc = match list_val {
             Value::Variant(v) => v,
             _ => panic!("list.push: expected Variant (list), got {:?}", list_val),
         };
-
-        let mut new_fields = Vec::with_capacity(variant_data.fields.len() + 1);
-        new_fields.extend(variant_data.fields.iter().cloned());
-        new_fields.push(value);
-
-        let new_list = Value::Variant(Arc::new(VariantData::new(
-            variant_data.tag.clone(),
-            new_fields,
-        )));
-
-        push(stack, new_list)
+        push_to_variant(stack, variant_arc, value)
     }
 }
 
-/// Append an element to a list, always in-place
+/// COW push: append value to variant, mutating in place when sole owner.
+unsafe fn push_to_variant(stack: Stack, mut variant_arc: Arc<VariantData>, value: Value) -> Stack {
+    unsafe {
+        if let Some(data) = Arc::get_mut(&mut variant_arc) {
+            // Sole owner — mutate in place (amortized O(1))
+            data.fields.push(value);
+            push(stack, Value::Variant(variant_arc))
+        } else {
+            // Shared — clone and append (O(n))
+            let mut new_fields = Vec::with_capacity(variant_arc.fields.len() + 1);
+            new_fields.extend(variant_arc.fields.iter().cloned());
+            new_fields.push(value);
+            let new_list = Value::Variant(Arc::new(VariantData::new(
+                variant_arc.tag.clone(),
+                new_fields,
+            )));
+            push(stack, new_list)
+        }
+    }
+}
+
+/// In-place list push: append a value to the list on the stack.
 ///
-/// Stack effect: ( Variant Value -- Variant )
+/// Stack effect: ( List T -- List )
 ///
-/// Like list.push but panics if the list is shared (Arc refcount > 1).
-/// Use when you know the list is sole-owned (e.g., in a build loop).
+/// Unlike `list.push`, this operates directly on the stack's tagged pointer
+/// to avoid the Arc<Value> alloc/dealloc overhead of pop/push. When the list
+/// is sole-owned (the common case in loops), this is amortized O(1).
+///
+/// Falls back to `list.push` behavior when the list is shared.
 ///
 /// # Safety
-/// Stack must have a Value on top and a Variant (list) below.
-/// The list must be sole-owned (not shared via Arc).
+/// - Stack must have a Value on top and a Variant (list) below.
+/// - Each strand's stack is single-threaded (no concurrent access to the
+///   same StackValue slot), so the outer Arc refcount check followed by
+///   mutation is safe. The inner `Arc::get_mut` is the true atomic guard
+///   against shared VariantData — the outer check is an early exit
+///   optimization, not the sole safety mechanism.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn patch_seq_list_push_in_place(stack: Stack) -> Stack {
+    use crate::tagged_stack::{TAG_FALSE, TAG_TRUE, is_tagged_int};
+
     unsafe {
+        // Pop the value to append (goes through normal pop)
         let (stack, value) = pop(stack);
 
-        if let Some(list_val) = peek_heap_mut(stack, 0)
-            && let Value::Variant(variant_arc) = list_val
+        // Read the list's raw StackValue from the stack WITHOUT popping.
+        // This avoids the Arc<Value> alloc/dealloc cycle.
+        let list_sv_ptr = stack.sub(1);
+        let list_sv = *list_sv_ptr;
+
+        // Must be a heap pointer (not Int or Bool)
+        if is_tagged_int(list_sv) || list_sv == TAG_FALSE || list_sv == TAG_TRUE {
+            panic!("list.push!: expected list on stack, got inline value");
+        }
+
+        // The StackValue is an Arc<Value> raw pointer.
+        // Use Arc::get_mut on the outer Arc to safely verify sole ownership
+        // (checks both strong and weak refcounts). Then Arc::get_mut on the
+        // inner Arc<VariantData> for the actual mutation guard.
+        // Strand stacks are single-threaded, so no concurrent access.
+        let mut outer_arc = Arc::from_raw(list_sv as *const Value);
+        if let Some(inner_val) = Arc::get_mut(&mut outer_arc)
+            && let Value::Variant(variant_arc) = inner_val
             && let Some(data) = Arc::get_mut(variant_arc)
         {
             data.fields.push(value);
-            return stack;
+            std::mem::forget(outer_arc); // Don't drop — Arc stays on the stack
+            return stack; // Stack unchanged — list is still at sp-1
         }
+        // Couldn't mutate in place — put the Arc back before falling through
+        std::mem::forget(outer_arc);
 
-        // Fall back to regular push if in-place mutation isn't possible
+        // Fallback: couldn't mutate in place — pop and use shared COW helper
         let (stack, list_val) = pop(stack);
-        let variant_data = match list_val {
+        let variant_arc = match list_val {
             Value::Variant(v) => v,
-            _ => panic!("list.push!: expected Variant (list), got {:?}", list_val),
+            _ => panic!("list.push!: expected list on stack"),
         };
-
-        let mut new_fields = Vec::with_capacity(variant_data.fields.len() + 1);
-        new_fields.extend(variant_data.fields.iter().cloned());
-        new_fields.push(value);
-
-        let new_list = Value::Variant(Arc::new(VariantData::new(
-            variant_data.tag.clone(),
-            new_fields,
-        )));
-
-        push(stack, new_list)
+        push_to_variant(stack, variant_arc, value)
     }
 }
 
@@ -573,34 +591,37 @@ pub unsafe extern "C" fn patch_seq_list_set(stack: Stack) -> Stack {
             }
         };
 
-        let variant_data = match &list_val {
+        let mut arc = match list_val {
             Value::Variant(v) => v,
-            _ => {
+            other => {
                 set_runtime_error(format!(
                     "list.set: expected Variant (list), got {:?}",
-                    list_val
+                    other
                 ));
-                let stack = push(stack, list_val);
+                let stack = push(stack, other);
                 return push(stack, Value::Bool(false));
             }
         };
 
-        if index < 0 || index as usize >= variant_data.fields.len() {
+        if index < 0 || index as usize >= arc.fields.len() {
             // Out of bounds - return original list and false
-            let stack = push(stack, list_val);
+            let stack = push(stack, Value::Variant(arc));
             push(stack, Value::Bool(false))
         } else {
-            // Create new list with element replaced
-            let mut new_fields: Vec<Value> = variant_data.fields.to_vec();
-            new_fields[index as usize] = value;
-
-            let new_list = Value::Variant(Arc::new(VariantData::new(
-                variant_data.tag.clone(),
-                new_fields,
-            )));
-
-            let stack = push(stack, new_list);
-            push(stack, Value::Bool(true))
+            // COW: if we're the sole owner, mutate in place
+            if let Some(data) = Arc::get_mut(&mut arc) {
+                data.fields[index as usize] = value;
+                let stack = push(stack, Value::Variant(arc));
+                push(stack, Value::Bool(true))
+            } else {
+                // Shared — clone and replace
+                let mut new_fields: Vec<Value> = arc.fields.to_vec();
+                new_fields[index as usize] = value;
+                let new_list =
+                    Value::Variant(Arc::new(VariantData::new(arc.tag.clone(), new_fields)));
+                let stack = push(stack, new_list);
+                push(stack, Value::Bool(true))
+            }
         }
     }
 }

@@ -1,1 +1,1 @@
-BENCH:pingpong:roundtrip-100k:100000:349
+BENCH:pingpong:roundtrip-100k:100000:376

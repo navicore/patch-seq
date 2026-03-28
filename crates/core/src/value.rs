@@ -239,9 +239,9 @@ pub struct VariantData {
     /// Stored as SeqString for dynamic variant construction via `wrap-N`
     pub tag: SeqString,
 
-    /// Fields stored as a growable vector of values
-    /// Vec (instead of Box<[Value]>) enables amortized O(1) in-place push
-    /// when the Arc is sole-owned (COW optimization for list operations)
+    /// Fields stored as a Vec for COW (copy-on-write) optimization.
+    /// When Arc refcount == 1, list.push can append in place (amortized O(1)).
+    /// When shared, a clone is made before mutation.
     pub fields: Vec<Value>,
 }
 
@@ -312,20 +312,12 @@ mod tests {
             size_of::<Value>()
         );
 
-        // StackValue size depends on feature flag
+        // StackValue is 8 bytes (tagged pointer / u64)
         use crate::tagged_stack::StackValue;
-        #[cfg(not(feature = "tagged-ptr"))]
-        assert_eq!(
-            size_of::<StackValue>(),
-            40,
-            "StackValue must be 40 bytes (default), got {}",
-            size_of::<StackValue>()
-        );
-        #[cfg(feature = "tagged-ptr")]
         assert_eq!(
             size_of::<StackValue>(),
             8,
-            "StackValue must be 8 bytes (tagged-ptr), got {}",
+            "StackValue must be 8 bytes, got {}",
             size_of::<StackValue>()
         );
 

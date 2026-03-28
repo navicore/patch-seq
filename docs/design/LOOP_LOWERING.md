@@ -128,8 +128,8 @@ loop:
 - **Mutual recursion** — `ping`/`pong` patterns stay as `musttail`.
 - **Collection iteration overhead** — `list.map` calls a quotation per
   element; that's a different optimization (inline expansion).
-- **40-byte value cost** — Stack operations still move 40 bytes per value
-  through memory when the virtual stack spills.
+- **Spill cost** — Stack operations move 8-byte tagged pointers through
+  memory when the virtual stack spills.
 
 ## Checkpoints
 

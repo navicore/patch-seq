@@ -46,26 +46,16 @@ impl CodeGen {
                     self.emit_store_bool(&current_sp, ssa_var)?;
                 }
                 VirtualValue::Float { ssa_var } => {
-                    if self.tagged_ptr {
-                        // In tagged-ptr mode, floats are heap-boxed via runtime call.
-                        // push_float handles both the store and SP advance.
-                        let next = self.fresh_temp();
-                        writeln!(
-                            &mut self.output,
-                            "  %{} = call ptr @patch_seq_push_float(ptr %{}, double %{})",
-                            next, current_sp, ssa_var
-                        )?;
-                        current_sp = next;
-                        continue;
-                    }
-                    // 40-byte mode: convert double to bits and store inline
-                    let bits = self.fresh_temp();
+                    // Floats are heap-boxed via runtime call.
+                    // push_float handles both the store and SP advance.
+                    let next = self.fresh_temp();
                     writeln!(
                         &mut self.output,
-                        "  %{} = bitcast double %{} to i64",
-                        bits, ssa_var
+                        "  %{} = call ptr @patch_seq_push_float(ptr %{}, double %{})",
+                        next, current_sp, ssa_var
                     )?;
-                    self.emit_store_float_bits(&current_sp, &bits)?;
+                    current_sp = next;
+                    continue;
                 }
             }
 

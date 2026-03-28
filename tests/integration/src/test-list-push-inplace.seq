@@ -1,0 +1,43 @@
+# Tests for list.push! (in-place list push)
+
+include std:list
+
+# Basic: single push
+: test-push-inplace-single ( -- )
+  list.make 42 list.push!
+  list.length 1 test.assert-eq
+;
+
+# Multiple sequential pushes (primary use case)
+: test-push-inplace-multiple ( -- )
+  list.make 1 list.push! 2 list.push! 3 list.push!
+  dup list.length 3 test.assert-eq
+  dup 0 list.get test.assert 1 test.assert-eq
+  dup 1 list.get test.assert 2 test.assert-eq
+  2 list.get test.assert 3 test.assert-eq
+;
+
+# Mixed: list.push and list.push! on the same list
+: test-push-mixed ( -- )
+  list.make 1 list.push 2 list.push! 3 list.push
+  dup list.length 3 test.assert-eq
+  dup 0 list.get test.assert 1 test.assert-eq
+  dup 1 list.get test.assert 2 test.assert-eq
+  2 list.get test.assert 3 test.assert-eq
+;
+
+# Shared reference: dup before push! forces fallback clone path
+: test-push-inplace-shared ( -- )
+  list.make 1 list.push! 2 list.push!
+  dup                   # ( list[1,2] list[1,2] ) refcount > 1
+  3 list.push!          # fallback: ( list[1,2] list[1,2,3] )
+  list.length 3 test.assert-eq   # new list has 3
+  list.length 2 test.assert-eq   # original still has 2
+;
+
+# Empty list push
+: test-push-inplace-empty ( -- )
+  list.make list.empty? test.assert
+  list.make 1 list.push!
+  list.empty? not test.assert
+;

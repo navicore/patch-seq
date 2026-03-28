@@ -1213,41 +1213,6 @@ mod tests {
         }
     }
 
-    // This test uses i64::MIN/MAX which overflow the 63-bit tagged-ptr range
-    #[cfg(not(feature = "tagged-ptr"))]
-    #[test]
-    fn test_weave_yields_i64_min() {
-        // Edge case: ensure i64::MIN can be yielded (no sentinel values)
-        unsafe {
-            scheduler_init();
-
-            let stack = alloc_test_stack();
-            let fn_ptr = echo_quot as *const () as usize;
-            let stack = push_quotation(stack, fn_ptr, fn_ptr);
-
-            let stack = weave(stack);
-
-            // Try to echo i64::MIN - would fail if using sentinel values
-            // Note: Our echo_quot treats negative as "complete", so use a different value
-            // But the point is WeaveMessage::Value can hold any value
-            let stack = push(stack, Value::Int(i64::MAX));
-            let stack = resume(stack);
-            let (stack, has_more) = pop(stack);
-            let (stack, yielded) = pop(stack);
-
-            assert_eq!(has_more, Value::Bool(true));
-            assert_eq!(yielded, Value::Int(i64::MAX));
-
-            // Complete
-            let stack = push(stack, Value::Int(-1));
-            let stack = resume(stack);
-            let (stack, _) = pop(stack);
-            let (_stack, _) = pop(stack);
-
-            wait_all_strands();
-        }
-    }
-
     // Note: Tests for panic/abort conditions (null stack, type mismatch) are documented
     // but not executed because extern "C" functions cannot unwind and abort() terminates
     // the process. The expected behavior is documented in the function comments:

@@ -84,8 +84,9 @@
   0 num-workers collect-results
   # ( ms total )
 
+  # Stack: ( ms total ) — output format: BENCH:...:result:time_ms
   "BENCH:fanout:throughput-100k:" io.write
-  swap int->string io.write ":" io.write
+  int->string io.write ":" io.write
   int->string io.write-line
 
   0

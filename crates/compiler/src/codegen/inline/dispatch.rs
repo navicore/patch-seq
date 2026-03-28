@@ -3,8 +3,8 @@
 //! This module contains the main `try_codegen_inline_op` function that dispatches
 //! to appropriate inline implementations for stack, arithmetic, and other operations.
 //!
-//! Layout-dependent operations use helpers from `layout.rs` to support
-//! both 40-byte StackValue and 8-byte tagged pointer representations.
+//! Layout-dependent operations use helpers from `layout.rs` for
+//! 8-byte tagged pointer stack value generation.
 
 use super::super::{CodeGen, CodeGenError};
 use std::fmt::Write as _;
