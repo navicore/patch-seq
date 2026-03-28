@@ -33,7 +33,7 @@
 //! - Key/value iteration order is not guaranteed (HashMap iteration order)
 
 use crate::seqstring::global_string;
-use crate::stack::{Stack, pop, push};
+use crate::stack::{Stack, heap_value_mut, pop, push};
 use crate::value::{MapKey, Value, VariantData};
 use std::sync::Arc;
 
@@ -91,22 +91,40 @@ pub unsafe extern "C" fn patch_seq_map_get(stack: Stack) -> Stack {
     }
 }
 
-/// Set a key-value pair in the map (functional style)
+/// Set a key-value pair in the map with COW optimization.
 ///
 /// Stack effect: ( Map key value -- Map )
 ///
-/// Returns a new map with the key-value pair added/updated.
-/// Panics if the key type is not hashable.
+/// Fast path: if the map (at sp-3) is sole-owned, pops key and value,
+/// inserts directly into the map in place — no Box alloc/dealloc cycle.
+/// Slow path: pops all three, clones the map, inserts, pushes new map.
 ///
 /// # Safety
 /// Stack must have value on top, key below, and Map at third position
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn patch_seq_map_set(stack: Stack) -> Stack {
     unsafe {
-        // Pop value
-        let (stack, value) = pop(stack);
+        // Fast path: peek at the map at sp-3 without popping.
+        // SAFETY: map.set requires three values on the stack (enforced by
+        // the type checker), so stack.sub(3) is valid.
+        if let Some(Value::Map(map)) = heap_value_mut(stack.sub(3)) {
+            // Sole owner — pop key and value, mutate map in place.
+            let (stack, value) = pop(stack);
+            let (stack, key_val) = pop(stack);
+            let key = MapKey::from_value(&key_val).unwrap_or_else(|| {
+                panic!(
+                    "map-set: key must be Int, String, or Bool, got {:?}",
+                    key_val
+                )
+            });
+            // Safety: `pop` only touches sp-1 per call; the map at
+            // the original sp-3 (now sp-1) is not invalidated.
+            map.insert(key, value);
+            return stack; // Map is still at sp-1, mutated in place
+        }
 
-        // Pop key
+        // Slow path: pop all three, clone map, insert, push
+        let (stack, value) = pop(stack);
         let (stack, key_val) = pop(stack);
         let key = MapKey::from_value(&key_val).unwrap_or_else(|| {
             panic!(
@@ -114,17 +132,12 @@ pub unsafe extern "C" fn patch_seq_map_set(stack: Stack) -> Stack {
                 key_val
             )
         });
-
-        // Pop map
         let (stack, map_val) = pop(stack);
         let mut map = match map_val {
             Value::Map(m) => *m,
             _ => panic!("map-set: expected Map, got {:?}", map_val),
         };
-
-        // Insert key-value pair
         map.insert(key, value);
-
         push(stack, Value::Map(Box::new(map)))
     }
 }
@@ -162,20 +175,37 @@ pub unsafe extern "C" fn patch_seq_map_has(stack: Stack) -> Stack {
     }
 }
 
-/// Remove a key from the map (functional style)
+/// Remove a key from the map with COW optimization.
 ///
 /// Stack effect: ( Map key -- Map )
 ///
-/// Returns a new map without the specified key.
-/// If the key doesn't exist, returns the map unchanged.
-/// Panics if the key type is not hashable.
+/// Fast path: if the map (at sp-2) is sole-owned, pops key and
+/// removes directly from the map in place.
+/// Slow path: pops both, clones, removes, pushes new map.
 ///
 /// # Safety
 /// Stack must have a hashable key on top and a Map below
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn patch_seq_map_remove(stack: Stack) -> Stack {
     unsafe {
-        // Pop key
+        // Fast path: peek at the map at sp-2 without popping.
+        // SAFETY: map.remove requires two values on the stack (enforced by
+        // the type checker), so stack.sub(2) is valid.
+        if let Some(Value::Map(map)) = heap_value_mut(stack.sub(2)) {
+            let (stack, key_val) = pop(stack);
+            let key = MapKey::from_value(&key_val).unwrap_or_else(|| {
+                panic!(
+                    "map-remove: key must be Int, String, or Bool, got {:?}",
+                    key_val
+                )
+            });
+            // Safety: pop only touches sp-1; the map at the original
+            // sp-2 (now sp-1) is not invalidated.
+            map.remove(&key);
+            return stack; // Map is still at sp-1, mutated in place
+        }
+
+        // Slow path: pop both, clone map, remove, push
         let (stack, key_val) = pop(stack);
         let key = MapKey::from_value(&key_val).unwrap_or_else(|| {
             panic!(
@@ -183,17 +213,12 @@ pub unsafe extern "C" fn patch_seq_map_remove(stack: Stack) -> Stack {
                 key_val
             )
         });
-
-        // Pop map
         let (stack, map_val) = pop(stack);
         let mut map = match map_val {
             Value::Map(m) => *m,
             _ => panic!("map-remove: expected Map, got {:?}", map_val),
         };
-
-        // Remove key (if present)
         map.remove(&key);
-
         push(stack, Value::Map(Box::new(map)))
     }
 }
