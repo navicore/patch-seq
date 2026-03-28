@@ -20,9 +20,7 @@
 //! ```
 
 use crate::error::set_runtime_error;
-use crate::stack::{
-    Stack, drop_stack_value, get_stack_base, pop, pop_sv, push, stack_value_size,
-};
+use crate::stack::{Stack, drop_stack_value, get_stack_base, pop, pop_sv, push, stack_value_size};
 use crate::value::{Value, VariantData};
 use std::sync::Arc;
 
