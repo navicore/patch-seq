@@ -385,6 +385,7 @@ impl Program {
             // List operations
             "list.make",
             "list.push",
+            "list.push!",
             "list.get",
             "list.set",
             "list.map",

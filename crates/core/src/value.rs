@@ -239,18 +239,16 @@ pub struct VariantData {
     /// Stored as SeqString for dynamic variant construction via `wrap-N`
     pub tag: SeqString,
 
-    /// Fields stored as an owned array of values
-    /// This is independent of any stack structure
-    pub fields: Box<[Value]>,
+    /// Fields stored as a growable vector of values
+    /// Vec (instead of Box<[Value]>) enables amortized O(1) in-place push
+    /// when the Arc is sole-owned (COW optimization for list operations)
+    pub fields: Vec<Value>,
 }
 
 impl VariantData {
     /// Create a new variant with the given tag and fields
     pub fn new(tag: SeqString, fields: Vec<Value>) -> Self {
-        Self {
-            tag,
-            fields: fields.into_boxed_slice(),
-        }
+        Self { tag, fields }
     }
 }
 

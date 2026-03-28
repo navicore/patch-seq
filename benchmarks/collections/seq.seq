@@ -5,20 +5,20 @@ include std:list
 
 : num-elements ( -- Int ) 100000 ;
 
-# Build list iteratively to avoid stack complexity
+# Build list iteratively using COW-friendly stack arrangement
+# Key: use `roll` (moves, no clone) not `pick` (clones) for the list
 : build-list-loop ( Variant Int Int -- Variant )
   # ( list current limit )
   2dup i.>= if
     drop drop  # return list
   else
-    # Push current onto list
-    over 3 pick swap list.push
-    # ( list current limit new-list )
-    # Need: ( new-list current+1 limit )
-    3 roll drop     # ( current limit new-list )
-    rot             # ( limit new-list current )
-    1 i.+           # ( limit new-list current+1 )
-    rot             # ( new-list current+1 limit )
+    over        # ( list current limit current ) — copies current (Int, inline)
+    3 roll      # ( current limit current list ) — moves list, no clone
+    swap        # ( current limit list current )
+    list.push   # ( current limit list' ) — COW: sole owner, in-place!
+    rot         # ( limit list' current )
+    1 i.+       # ( limit list' current+1 )
+    rot         # ( list' current+1 limit )
     build-list-loop
   then
 ;

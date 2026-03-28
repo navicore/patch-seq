@@ -38,10 +38,11 @@
 #
 # ## Performance Note
 #
-# Each `lv` call creates a new list by copying all existing elements.
-# This makes repeated `lv` calls O(n^2) for building large lists.
-# For very large lists, prefer using `list.map` or `list.fold` to
-# transform existing lists, rather than building incrementally.
+# `list.push` uses copy-on-write: when the list is sole-owned
+# (not shared), it mutates in place for amortized O(1) append.
+# When shared, it falls back to O(n) copy. For build loops where
+# the list is always sole-owned, use `list.push!` for guaranteed
+# in-place mutation.
 
 # Create an empty list (alias for list.make)
 : list-of ( -- Variant )

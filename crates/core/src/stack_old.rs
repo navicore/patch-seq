@@ -599,6 +599,19 @@ pub unsafe fn peek_sv(stack: Stack) -> StackValue {
     unsafe { *stack.sub(1) }
 }
 
+/// Get a mutable reference to a heap Value on the stack without popping.
+///
+/// In the 40-byte stack path, values are stored inline (no Box indirection),
+/// so this always returns None. The COW optimization is only available
+/// in the tagged-ptr path where values are behind Box<Value>.
+///
+/// # Safety
+/// Stack must have at least `depth + 1` values.
+#[inline]
+pub unsafe fn peek_heap_mut(_stack: Stack, _depth: usize) -> Option<&'static mut Value> {
+    None
+}
+
 // ============================================================================
 // FFI Stack Operations
 // ============================================================================

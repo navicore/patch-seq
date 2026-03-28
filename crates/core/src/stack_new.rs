@@ -127,6 +127,34 @@ pub unsafe fn drop_stack_value(sv: StackValue) {
 }
 
 // ============================================================================
+// In-Place Heap Access (avoids Box alloc/dealloc cycle)
+// ============================================================================
+
+/// Get a mutable reference to a heap Value on the stack without popping.
+///
+/// This avoids the Box dealloc (pop) + Box alloc (push) cycle for operations
+/// that read-modify-write a heap value. The caller can mutate the Value in
+/// place and leave it on the stack with zero allocation overhead.
+///
+/// Returns `None` if the value at the given depth is an inline type (Int/Bool).
+///
+/// # Safety
+/// - Stack must have at least `depth + 1` values.
+/// - The returned reference is valid only while the stack slot is not popped.
+/// - Caller must not pop or push while the reference is live.
+#[inline]
+pub unsafe fn peek_heap_mut(stack: Stack, depth: usize) -> Option<&'static mut Value> {
+    unsafe {
+        let sv = *stack.sub(depth + 1);
+        if is_tagged_int(sv) || sv == TAG_FALSE || sv == TAG_TRUE {
+            None
+        } else {
+            Some(&mut *(sv as *mut Value))
+        }
+    }
+}
+
+// ============================================================================
 // Core Stack Operations
 // ============================================================================
 

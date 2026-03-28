@@ -606,7 +606,7 @@ impl ProgramResourceAnalyzer {
             }
 
             // List operations that store values safely
-            "list.push" | "list.prepend" => {
+            "list.push" | "list.push!" | "list.prepend" => {
                 // ( list value -- list' ) - value is stored in list
                 let value = state.pop();
                 state.pop(); // list
