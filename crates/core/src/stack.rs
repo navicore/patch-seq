@@ -236,6 +236,66 @@ pub unsafe fn peek_sv(stack: Stack) -> StackValue {
     unsafe { *stack.sub(1) }
 }
 
+/// Get a mutable reference to a heap Value at the given stack position
+/// without popping (no Arc alloc/dealloc cycle).
+///
+/// Returns `Some(&mut Value)` if the slot is a sole-owned heap value.
+/// Returns `None` if the slot is inline (Int/Bool) or shared (refcount > 1).
+///
+/// Sole ownership is verified via `Arc::get_mut`, which atomically checks
+/// both strong and weak refcounts — the same guard used throughout the
+/// codebase for COW mutations.
+///
+/// The caller MUST NOT move or replace the Value behind the reference —
+/// it is still owned by the Arc on the stack. Mutating fields in place
+/// (e.g., Vec::push on VariantData.fields) is the intended use.
+///
+/// # Safety
+/// - `slot` must point to a valid StackValue within the stack.
+/// - The stack must not be concurrently accessed (true for strand-local stacks).
+/// - The returned reference is bounded by lifetime `'a`; the caller must
+///   ensure it does not outlive the stack slot.
+///
+/// # Tagged-value encoding
+/// The inline-value guard covers all non-heap encodings exhaustively:
+/// Int (odd bits), Bool false (0x0), Bool true (0x2). Every other value
+/// (even > 2) is a valid `Arc<Value>` heap pointer.
+#[inline]
+pub unsafe fn heap_value_mut<'a>(slot: *mut StackValue) -> Option<&'a mut Value> {
+    unsafe {
+        let sv = *slot;
+        // All non-heap encodings: Int (odd), Bool false (0x0), Bool true (0x2)
+        if is_tagged_int(sv) || sv == TAG_FALSE || sv == TAG_TRUE {
+            return None;
+        }
+        // Reconstruct Arc, check sole ownership via Arc::get_mut (atomic check
+        // of both strong and weak refcounts), then forget to leave it on the stack.
+        let mut arc = Arc::from_raw(sv as *const Value);
+        let val_ref = Arc::get_mut(&mut arc).map(|v| &mut *(v as *mut Value));
+        std::mem::forget(arc); // Don't decrement — Arc stays on the stack
+        val_ref
+    }
+}
+
+/// Convenience: get a mutable reference to the heap Value at stack top (sp - 1).
+///
+/// # Safety
+/// Stack must have at least one value. See `heap_value_mut` for lifetime rules.
+#[inline]
+pub unsafe fn peek_heap_mut<'a>(stack: Stack) -> Option<&'a mut Value> {
+    unsafe { heap_value_mut(stack.sub(1)) }
+}
+
+/// Convenience: get a mutable reference to the heap Value at sp - 2
+/// (second from top).
+///
+/// # Safety
+/// Stack must have at least two values. See `heap_value_mut` for lifetime rules.
+#[inline]
+pub unsafe fn peek_heap_mut_second<'a>(stack: Stack) -> Option<&'a mut Value> {
+    unsafe { heap_value_mut(stack.sub(2)) }
+}
+
 // ============================================================================
 // FFI Stack Operations
 // ============================================================================
