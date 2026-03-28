@@ -236,6 +236,54 @@ pub unsafe fn peek_sv(stack: Stack) -> StackValue {
     unsafe { *stack.sub(1) }
 }
 
+/// Get a mutable reference to a heap Value at the given stack position
+/// without popping (no Arc alloc/dealloc cycle).
+///
+/// Returns `Some(&mut Value)` if the slot is a sole-owned heap value.
+/// Returns `None` if the slot is inline (Int/Bool) or shared (refcount > 1).
+///
+/// The caller MUST NOT move or replace the Value behind the reference —
+/// it is still owned by the Arc on the stack. Mutating fields in place
+/// (e.g., Vec::push on VariantData.fields) is the intended use.
+///
+/// # Safety
+/// - `slot` must point to a valid StackValue within the stack.
+/// - The stack must not be concurrently accessed (true for strand-local stacks).
+#[inline]
+pub unsafe fn heap_value_mut(slot: *mut StackValue) -> Option<&'static mut Value> {
+    unsafe {
+        let sv = *slot;
+        if is_tagged_int(sv) || sv == TAG_FALSE || sv == TAG_TRUE {
+            return None;
+        }
+        // Reconstruct the Arc without taking ownership, check sole ownership
+        let ptr = sv as *mut Value;
+        let arc = Arc::from_raw(ptr as *const Value);
+        let is_sole = Arc::strong_count(&arc) == 1;
+        std::mem::forget(arc); // Don't decrement — Arc stays on the stack
+        if is_sole { Some(&mut *ptr) } else { None }
+    }
+}
+
+/// Convenience: get a mutable reference to the heap Value at stack top (sp - 1).
+///
+/// # Safety
+/// Stack must have at least one value.
+#[inline]
+pub unsafe fn peek_heap_mut(stack: Stack) -> Option<&'static mut Value> {
+    unsafe { heap_value_mut(stack.sub(1)) }
+}
+
+/// Convenience: get a mutable reference to the heap Value at sp - 2
+/// (second from top).
+///
+/// # Safety
+/// Stack must have at least two values.
+#[inline]
+pub unsafe fn peek_heap_mut_second(stack: Stack) -> Option<&'static mut Value> {
+    unsafe { heap_value_mut(stack.sub(2)) }
+}
+
 // ============================================================================
 // FFI Stack Operations
 // ============================================================================

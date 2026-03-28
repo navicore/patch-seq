@@ -20,7 +20,10 @@
 //! ```
 
 use crate::error::set_runtime_error;
-use crate::stack::{Stack, drop_stack_value, get_stack_base, pop, pop_sv, push, stack_value_size};
+use crate::stack::{
+    Stack, drop_stack_value, get_stack_base, peek_heap_mut_second, pop, pop_sv, push,
+    stack_value_size,
+};
 use crate::value::{Value, VariantData};
 use std::sync::Arc;
 
@@ -384,18 +387,30 @@ pub unsafe extern "C" fn patch_seq_list_make(stack: Stack) -> Stack {
     }
 }
 
-/// Append an element to a list (functional - returns new list)
+/// Append an element to a list with COW optimization.
 ///
 /// Stack effect: ( Variant Value -- Variant )
 ///
-/// Returns a new list with the value appended at the end.
-/// The original list is not modified.
+/// Fast path: if the list (at sp-2) is a sole-owned heap value, mutates
+/// in place via `peek_heap_mut_second` — no Arc alloc/dealloc cycle.
+/// Slow path: pops, clones, and pushes a new list.
 ///
 /// # Safety
 /// Stack must have a Value on top and a Variant (list) below
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn patch_seq_list_push(stack: Stack) -> Stack {
     unsafe {
+        // Try the fast path: peek at the list without popping
+        if let Some(Value::Variant(variant_arc)) = peek_heap_mut_second(stack)
+            && let Some(data) = Arc::get_mut(variant_arc)
+        {
+            // Sole owner all the way down — mutate in place
+            let (stack, value) = pop(stack);
+            data.fields.push(value);
+            return stack; // List is still at sp-1, untouched
+        }
+
+        // Slow path: pop both, clone if shared, push result
         let (stack, value) = pop(stack);
         let (stack, list_val) = pop(stack);
         let variant_arc = match list_val {
@@ -406,7 +421,7 @@ pub unsafe extern "C" fn patch_seq_list_push(stack: Stack) -> Stack {
     }
 }
 
-/// COW push: append value to variant, mutating in place when sole owner.
+/// COW push helper: append value to variant, mutating in place when sole owner.
 unsafe fn push_to_variant(stack: Stack, mut variant_arc: Arc<VariantData>, value: Value) -> Stack {
     unsafe {
         if let Some(data) = Arc::get_mut(&mut variant_arc) {
@@ -427,66 +442,16 @@ unsafe fn push_to_variant(stack: Stack, mut variant_arc: Arc<VariantData>, value
     }
 }
 
-/// In-place list push: append a value to the list on the stack.
+/// In-place list push (deprecated alias for list.push).
 ///
-/// Stack effect: ( List T -- List )
-///
-/// Unlike `list.push`, this operates directly on the stack's tagged pointer
-/// to avoid the Arc<Value> alloc/dealloc overhead of pop/push. When the list
-/// is sole-owned (the common case in loops), this is amortized O(1).
-///
-/// Falls back to `list.push` behavior when the list is shared.
+/// list.push now has the same fast path internally. This entry point
+/// is kept for v4.x compatibility and will be removed in v5.0.
 ///
 /// # Safety
-/// - Stack must have a Value on top and a Variant (list) below.
-/// - Each strand's stack is single-threaded (no concurrent access to the
-///   same StackValue slot), so the outer Arc refcount check followed by
-///   mutation is safe. The inner `Arc::get_mut` is the true atomic guard
-///   against shared VariantData — the outer check is an early exit
-///   optimization, not the sole safety mechanism.
+/// Stack must have a Value on top and a Variant (list) below.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn patch_seq_list_push_in_place(stack: Stack) -> Stack {
-    use crate::tagged_stack::{TAG_FALSE, TAG_TRUE, is_tagged_int};
-
-    unsafe {
-        // Pop the value to append (goes through normal pop)
-        let (stack, value) = pop(stack);
-
-        // Read the list's raw StackValue from the stack WITHOUT popping.
-        // This avoids the Arc<Value> alloc/dealloc cycle.
-        let list_sv_ptr = stack.sub(1);
-        let list_sv = *list_sv_ptr;
-
-        // Must be a heap pointer (not Int or Bool)
-        if is_tagged_int(list_sv) || list_sv == TAG_FALSE || list_sv == TAG_TRUE {
-            panic!("list.push!: expected list on stack, got inline value");
-        }
-
-        // The StackValue is an Arc<Value> raw pointer.
-        // Use Arc::get_mut on the outer Arc to safely verify sole ownership
-        // (checks both strong and weak refcounts). Then Arc::get_mut on the
-        // inner Arc<VariantData> for the actual mutation guard.
-        // Strand stacks are single-threaded, so no concurrent access.
-        let mut outer_arc = Arc::from_raw(list_sv as *const Value);
-        if let Some(inner_val) = Arc::get_mut(&mut outer_arc)
-            && let Value::Variant(variant_arc) = inner_val
-            && let Some(data) = Arc::get_mut(variant_arc)
-        {
-            data.fields.push(value);
-            std::mem::forget(outer_arc); // Don't drop — Arc stays on the stack
-            return stack; // Stack unchanged — list is still at sp-1
-        }
-        // Couldn't mutate in place — put the Arc back before falling through
-        std::mem::forget(outer_arc);
-
-        // Fallback: couldn't mutate in place — pop and use shared COW helper
-        let (stack, list_val) = pop(stack);
-        let variant_arc = match list_val {
-            Value::Variant(v) => v,
-            _ => panic!("list.push!: expected list on stack"),
-        };
-        push_to_variant(stack, variant_arc, value)
-    }
+    unsafe { patch_seq_list_push(stack) }
 }
 
 /// Get an element from a list by index
