@@ -1424,7 +1424,7 @@ static BUILTIN_DOCS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::n
     docs.insert("list.make", "Create an empty list.");
     docs.insert(
         "list.push",
-        "Push a value onto a list. Returns new list with COW optimization.",
+        "Push a value onto a list. Returns the updated list (may mutate in place when unshared).",
     );
     docs.insert(
         "list.push!",
