@@ -85,8 +85,14 @@ severity = "hint"
 # =============================================================================
 # Unchecked Error Returns
 # =============================================================================
-# Operations that return success flags should have their flags checked.
-# Dropping the flag without checking can hide errors.
+# Operations that return (value Bool) or just Bool as a success flag
+# should have their flags checked. Dropping the flag hides errors.
+#
+# Severity guide:
+#   warning = data loss or silent corruption likely (I/O, channels, crypto)
+#   hint    = may be intentional but worth reviewing (parsing, lookups)
+
+# --- Channels ---
 
 [[lint]]
 id = "unchecked-chan-send"
@@ -102,6 +108,100 @@ replacement = ""
 message = "`chan.receive` returns (value Bool) - check the Bool before using the value"
 severity = "warning"
 
+# --- File I/O ---
+
+[[lint]]
+id = "unchecked-file-slurp"
+pattern = "file.slurp drop"
+replacement = ""
+message = "`file.slurp` returns (content Bool) - check the Bool before using the content"
+severity = "warning"
+
+[[lint]]
+id = "unchecked-file-spit"
+pattern = "file.spit drop"
+replacement = ""
+message = "`file.spit` returns Bool success flag - dropping it hides write failures"
+severity = "warning"
+
+[[lint]]
+id = "unchecked-file-append"
+pattern = "file.append drop"
+replacement = ""
+message = "`file.append` returns Bool success flag - dropping it hides write failures"
+severity = "warning"
+
+[[lint]]
+id = "unchecked-file-size"
+pattern = "file.size drop"
+replacement = ""
+message = "`file.size` returns (Int Bool) - check the Bool before using the size"
+severity = "hint"
+
+[[lint]]
+id = "unchecked-dir-list"
+pattern = "dir.list drop"
+replacement = ""
+message = "`dir.list` returns (List Bool) - check the Bool before using the list"
+severity = "hint"
+
+# --- I/O ---
+
+[[lint]]
+id = "unchecked-read-line"
+pattern = "io.read-line drop"
+replacement = ""
+message = "`io.read-line` returns (String Bool) - check the Bool before using the String"
+severity = "hint"
+
+# --- Integer Division ---
+
+[[lint]]
+id = "unchecked-div"
+pattern = "i./ drop"
+replacement = ""
+message = "`i./` returns (Int Bool) - dropping the Bool hides division-by-zero"
+severity = "warning"
+
+[[lint]]
+id = "unchecked-divide"
+pattern = "i.divide drop"
+replacement = ""
+message = "`i.divide` returns (Int Bool) - dropping the Bool hides division-by-zero"
+severity = "warning"
+
+[[lint]]
+id = "unchecked-mod"
+pattern = "i.% drop"
+replacement = ""
+message = "`i.%` returns (Int Bool) - dropping the Bool hides division-by-zero"
+severity = "warning"
+
+[[lint]]
+id = "unchecked-modulo"
+pattern = "i.modulo drop"
+replacement = ""
+message = "`i.modulo` returns (Int Bool) - dropping the Bool hides division-by-zero"
+severity = "warning"
+
+# --- String Parsing ---
+
+[[lint]]
+id = "unchecked-string-to-int"
+pattern = "string->int drop"
+replacement = ""
+message = "`string->int` returns (Int Bool) - check the Bool to detect parse failures"
+severity = "hint"
+
+[[lint]]
+id = "unchecked-string-to-float"
+pattern = "string->float drop"
+replacement = ""
+message = "`string->float` returns (Float Bool) - check the Bool to detect parse failures"
+severity = "hint"
+
+# --- Map/List Lookups ---
+
 [[lint]]
 id = "unchecked-map-get"
 pattern = "map.get drop"
@@ -110,17 +210,141 @@ message = "`map.get` returns (value Bool) - check the Bool before using the valu
 severity = "hint"
 
 [[lint]]
-id = "unchecked-file-slurp"
-pattern = "file.slurp drop"
+id = "unchecked-list-get"
+pattern = "list.get drop"
 replacement = ""
-message = "`file.slurp` returns (content Bool) - check the Bool before using the content"
+message = "`list.get` returns (value Bool) - check the Bool for out-of-bounds access"
 severity = "hint"
 
 [[lint]]
-id = "unchecked-read-line"
-pattern = "io.read-line drop"
+id = "unchecked-list-set"
+pattern = "list.set drop"
 replacement = ""
-message = "`io.read-line` returns (String Bool) - check the Bool before using the String"
+message = "`list.set` returns (List Bool) - check the Bool for out-of-bounds access"
+severity = "hint"
+
+# --- TCP Networking ---
+
+[[lint]]
+id = "unchecked-tcp-listen"
+pattern = "tcp.listen drop"
+replacement = ""
+message = "`tcp.listen` returns (fd Bool) - check the Bool before using the file descriptor"
+severity = "warning"
+
+[[lint]]
+id = "unchecked-tcp-accept"
+pattern = "tcp.accept drop"
+replacement = ""
+message = "`tcp.accept` returns (fd Bool) - check the Bool before using the connection"
+severity = "warning"
+
+[[lint]]
+id = "unchecked-tcp-read"
+pattern = "tcp.read drop"
+replacement = ""
+message = "`tcp.read` returns (String Bool) - check the Bool before using the data"
+severity = "warning"
+
+[[lint]]
+id = "unchecked-tcp-write"
+pattern = "tcp.write drop"
+replacement = ""
+message = "`tcp.write` returns Bool success flag - dropping it hides write failures"
+severity = "warning"
+
+# --- OS Operations ---
+
+[[lint]]
+id = "unchecked-getenv"
+pattern = "os.getenv drop"
+replacement = ""
+message = "`os.getenv` returns (String Bool) - check the Bool for missing env vars"
+severity = "hint"
+
+[[lint]]
+id = "unchecked-path-parent"
+pattern = "os.path-parent drop"
+replacement = ""
+message = "`os.path-parent` returns (String Bool) - check the Bool (root has no parent)"
+severity = "hint"
+
+# --- Regex ---
+
+[[lint]]
+id = "unchecked-regex-find"
+pattern = "regex.find drop"
+replacement = ""
+message = "`regex.find` returns (String Bool) - check the Bool for no match or invalid regex"
+severity = "hint"
+
+[[lint]]
+id = "unchecked-regex-replace"
+pattern = "regex.replace drop"
+replacement = ""
+message = "`regex.replace` returns (String Bool) - check the Bool for invalid regex"
+severity = "hint"
+
+[[lint]]
+id = "unchecked-regex-replace-all"
+pattern = "regex.replace-all drop"
+replacement = ""
+message = "`regex.replace-all` returns (String Bool) - check the Bool for invalid regex"
+severity = "hint"
+
+# --- Encoding ---
+
+[[lint]]
+id = "unchecked-base64-decode"
+pattern = "encoding.base64-decode drop"
+replacement = ""
+message = "`encoding.base64-decode` returns (String Bool) - check the Bool for invalid input"
+severity = "hint"
+
+[[lint]]
+id = "unchecked-hex-decode"
+pattern = "encoding.hex-decode drop"
+replacement = ""
+message = "`encoding.hex-decode` returns (String Bool) - check the Bool for invalid input"
+severity = "hint"
+
+# --- Crypto ---
+
+[[lint]]
+id = "unchecked-aes-encrypt"
+pattern = "crypto.aes-gcm-encrypt drop"
+replacement = ""
+message = "`crypto.aes-gcm-encrypt` returns (String Bool) - check the Bool for encryption failures"
+severity = "warning"
+
+[[lint]]
+id = "unchecked-aes-decrypt"
+pattern = "crypto.aes-gcm-decrypt drop"
+replacement = ""
+message = "`crypto.aes-gcm-decrypt` returns (String Bool) - check the Bool for decryption failures (wrong key, tampered data)"
+severity = "warning"
+
+[[lint]]
+id = "unchecked-ed25519-sign"
+pattern = "crypto.ed25519-sign drop"
+replacement = ""
+message = "`crypto.ed25519-sign` returns (String Bool) - check the Bool for signing failures"
+severity = "warning"
+
+# --- Compression ---
+
+[[lint]]
+id = "unchecked-gunzip"
+pattern = "compress.gunzip drop"
+replacement = ""
+message = "`compress.gunzip` returns (String Bool) - check the Bool for decompression failures"
+severity = "hint"
+
+[[lint]]
+id = "unchecked-unzstd"
+pattern = "compress.unzstd drop"
+replacement = ""
+message = "`compress.unzstd` returns (String Bool) - check the Bool for decompression failures"
 severity = "hint"
 
 # =============================================================================
