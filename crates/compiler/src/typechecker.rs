@@ -1462,8 +1462,10 @@ impl TypeChecker {
         let (result_stack, subst) =
             self.apply_effect(&fresh_effect, rest_stack, "dip (quotation)", span)?;
 
-        // Push the preserved value back on top
-        let result_stack = result_stack.push(preserved_type);
+        // Push the preserved value back on top, applying substitution in case
+        // preserved_type contains type variables resolved during unification
+        let resolved_preserved = subst.apply_type(&preserved_type);
+        let result_stack = result_stack.push(resolved_preserved);
 
         let propagated_effects = fresh_effect.effects.clone();
         Ok((result_stack, subst, propagated_effects))
@@ -1529,8 +1531,10 @@ impl TypeChecker {
         let (result_stack, subst) =
             self.apply_effect(&fresh_effect, stack_after_quot, "keep (quotation)", span)?;
 
-        // Push the preserved value back on top
-        let result_stack = result_stack.push(preserved_type);
+        // Push the preserved value back on top, applying substitution in case
+        // preserved_type contains type variables resolved during unification
+        let resolved_preserved = subst.apply_type(&preserved_type);
+        let result_stack = result_stack.push(resolved_preserved);
 
         let propagated_effects = fresh_effect.effects.clone();
         Ok((result_stack, subst, propagated_effects))
@@ -1624,8 +1628,10 @@ impl TypeChecker {
         let (after_quot1, subst1) =
             self.apply_effect(&fresh_effect1, stack2, "bi (first quotation)", span)?;
 
-        // Push x again for quot2
-        let with_x = after_quot1.push(preserved_type);
+        // Push x again for quot2, applying subst1 in case preserved_type
+        // contains type variables that were resolved during quot1's unification
+        let resolved_preserved = subst1.apply_type(&preserved_type);
+        let with_x = after_quot1.push(resolved_preserved);
 
         // Apply quot2
         let fresh_effect2 = self.freshen_effect(&quot2_effect);
@@ -5321,6 +5327,171 @@ mod tests {
                     },
                     Statement::WordCall {
                         name: "bi".to_string(),
+                        span: None,
+                    },
+                ],
+                source: None,
+                allowed_lints: vec![],
+            }],
+        };
+
+        let mut checker = TypeChecker::new();
+        assert!(checker.check_program(&program).is_ok());
+    }
+
+    #[test]
+    fn test_keep_type_mismatch() {
+        // : test ( String -- ?? )  [ 1 i.+ ] keep ;
+        // Should fail: quotation expects Int but gets String
+        let program = Program {
+            includes: vec![],
+            unions: vec![],
+            words: vec![WordDef {
+                name: "test".to_string(),
+                effect: Some(Effect::new(
+                    StackType::singleton(Type::String),
+                    StackType::Empty.push(Type::Int).push(Type::String),
+                )),
+                body: vec![
+                    Statement::Quotation {
+                        id: 0,
+                        body: vec![
+                            Statement::IntLiteral(1),
+                            Statement::WordCall {
+                                name: "i.+".to_string(),
+                                span: None,
+                            },
+                        ],
+                        span: None,
+                    },
+                    Statement::WordCall {
+                        name: "keep".to_string(),
+                        span: None,
+                    },
+                ],
+                source: None,
+                allowed_lints: vec![],
+            }],
+        };
+
+        let mut checker = TypeChecker::new();
+        assert!(checker.check_program(&program).is_err());
+    }
+
+    #[test]
+    fn test_bi_type_mismatch() {
+        // : test ( String -- ?? )  [ string.length ] [ 1 i.+ ] bi ;
+        // Should fail: second quotation expects Int but value is String
+        let program = Program {
+            includes: vec![],
+            unions: vec![],
+            words: vec![WordDef {
+                name: "test".to_string(),
+                effect: Some(Effect::new(
+                    StackType::singleton(Type::String),
+                    StackType::Empty.push(Type::Int).push(Type::Int),
+                )),
+                body: vec![
+                    Statement::Quotation {
+                        id: 0,
+                        body: vec![Statement::WordCall {
+                            name: "string.length".to_string(),
+                            span: None,
+                        }],
+                        span: None,
+                    },
+                    Statement::Quotation {
+                        id: 1,
+                        body: vec![
+                            Statement::IntLiteral(1),
+                            Statement::WordCall {
+                                name: "i.+".to_string(),
+                                span: None,
+                            },
+                        ],
+                        span: None,
+                    },
+                    Statement::WordCall {
+                        name: "bi".to_string(),
+                        span: None,
+                    },
+                ],
+                source: None,
+                allowed_lints: vec![],
+            }],
+        };
+
+        let mut checker = TypeChecker::new();
+        assert!(checker.check_program(&program).is_err());
+    }
+
+    #[test]
+    fn test_dip_underflow() {
+        // : test ( -- ?? )  [ 1 ] dip ;
+        // Should fail: dip needs a value below the quotation
+        let program = Program {
+            includes: vec![],
+            unions: vec![],
+            words: vec![WordDef {
+                name: "test".to_string(),
+                effect: Some(Effect::new(
+                    StackType::Empty,
+                    StackType::singleton(Type::Int),
+                )),
+                body: vec![
+                    Statement::Quotation {
+                        id: 0,
+                        body: vec![Statement::IntLiteral(1)],
+                        span: None,
+                    },
+                    Statement::WordCall {
+                        name: "dip".to_string(),
+                        span: None,
+                    },
+                ],
+                source: None,
+                allowed_lints: vec![],
+            }],
+        };
+
+        let mut checker = TypeChecker::new();
+        let result = checker.check_program(&program);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("stack underflow"),
+            "Expected underflow error, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_dip_preserves_type() {
+        // : test ( Int String -- Int String )  [ 1 i.+ ] dip ;
+        // The String on top is preserved, Int below is incremented
+        let program = Program {
+            includes: vec![],
+            unions: vec![],
+            words: vec![WordDef {
+                name: "test".to_string(),
+                effect: Some(Effect::new(
+                    StackType::Empty.push(Type::Int).push(Type::String),
+                    StackType::Empty.push(Type::Int).push(Type::String),
+                )),
+                body: vec![
+                    Statement::Quotation {
+                        id: 0,
+                        body: vec![
+                            Statement::IntLiteral(1),
+                            Statement::WordCall {
+                                name: "i.+".to_string(),
+                                span: None,
+                            },
+                        ],
+                        span: None,
+                    },
+                    Statement::WordCall {
+                        name: "dip".to_string(),
                         span: None,
                     },
                 ],

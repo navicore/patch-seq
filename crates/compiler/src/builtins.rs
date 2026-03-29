@@ -433,7 +433,8 @@ pub fn builtin_signatures() -> HashMap<String, Effect> {
 
     // dip: ( ..a x Quotation[..a -- ..b] -- ..b x )
     // Hide top value, run quotation on rest, restore value.
-    // Type-checked specially in typechecker (like `call`).
+    // Type-checked specially in typechecker (like `call`); this is a placeholder.
+    // Same placeholder shape as keep — both take (value, quotation) and preserve value.
     sigs.insert(
         "dip".to_string(),
         Effect::new(
@@ -446,7 +447,8 @@ pub fn builtin_signatures() -> HashMap<String, Effect> {
 
     // keep: ( ..a x Quotation[..a x -- ..b] -- ..b x )
     // Run quotation on value, but preserve the original.
-    // Type-checked specially in typechecker (like `call`).
+    // Type-checked specially in typechecker (like `call`); this is a placeholder.
+    // Same placeholder shape as dip — both take (value, quotation) and preserve value.
     sigs.insert(
         "keep".to_string(),
         Effect::new(
@@ -459,14 +461,15 @@ pub fn builtin_signatures() -> HashMap<String, Effect> {
 
     // bi: ( ..a x Quotation[..a x -- ..b] Quotation[..b x -- ..c] -- ..c )
     // Apply two quotations to the same value.
-    // Type-checked specially in typechecker (like `call`).
+    // Type-checked specially in typechecker (like `call`); this is a placeholder.
+    // Q1/Q2 are distinct type vars — the two quotations may have different types.
     sigs.insert(
         "bi".to_string(),
         Effect::new(
             StackType::RowVar("a".to_string())
                 .push(Type::Var("T".to_string()))
-                .push(Type::Var("Q".to_string()))
-                .push(Type::Var("Q".to_string())),
+                .push(Type::Var("Q1".to_string()))
+                .push(Type::Var("Q2".to_string())),
             StackType::RowVar("b".to_string()),
         ),
     );
