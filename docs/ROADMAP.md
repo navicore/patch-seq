@@ -8,7 +8,7 @@ Inspired by the Tokio ecosystem (tokio-console, tracing, metrics, tower), we asp
 
 ---
 
-## Current (v4.2)
+## Current (v5.0)
 
 ### Union Type Safety
 
