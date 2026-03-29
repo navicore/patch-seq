@@ -828,7 +828,7 @@ mod tests {
             unsafe extern "C" fn noop(stack: Stack) -> Stack {
                 stack
             }
-            let fn_ptr = noop as usize;
+            let fn_ptr = noop as *const () as usize;
             let stack = push_quotation(stack, fn_ptr, fn_ptr);
 
             let stack = patch_seq_map_fold(stack);
