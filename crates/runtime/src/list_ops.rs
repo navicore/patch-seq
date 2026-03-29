@@ -610,6 +610,36 @@ pub unsafe extern "C" fn patch_seq_list_set(stack: Stack) -> Stack {
     }
 }
 
+/// Reverse a list.
+///
+/// Stack effect: ( Variant -- Variant )
+///
+/// Returns a new list with elements in reverse order.
+///
+/// # Safety
+/// Stack must have a Variant (list) on top
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn patch_seq_list_reverse(stack: Stack) -> Stack {
+    unsafe {
+        let (stack, list_val) = pop(stack);
+
+        let variant_data = match list_val {
+            Value::Variant(v) => v,
+            _ => panic!("list.reverse: expected Variant (list), got {:?}", list_val),
+        };
+
+        let mut reversed: Vec<Value> = variant_data.fields.to_vec();
+        reversed.reverse();
+
+        let new_variant = Value::Variant(Arc::new(VariantData::new(
+            variant_data.tag.clone(),
+            reversed,
+        )));
+
+        push(stack, new_variant)
+    }
+}
+
 // Public re-exports
 pub use patch_seq_list_each as list_each;
 pub use patch_seq_list_empty as list_empty;
@@ -620,6 +650,7 @@ pub use patch_seq_list_length as list_length;
 pub use patch_seq_list_make as list_make;
 pub use patch_seq_list_map as list_map;
 pub use patch_seq_list_push as list_push;
+pub use patch_seq_list_reverse as list_reverse;
 pub use patch_seq_list_set as list_set;
 
 #[cfg(test)]

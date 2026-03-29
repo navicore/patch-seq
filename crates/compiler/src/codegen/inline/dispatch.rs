@@ -209,6 +209,20 @@ impl CodeGen {
             "shl" => self.codegen_inline_shift(stack_var, true),
             "shr" => self.codegen_inline_shift(stack_var, false),
 
+            // i.neg / negate: ( a -- -a )
+            "i.neg" | "negate" => {
+                let stack_var = self.spill_virtual_stack(stack_var)?;
+                let stack_var = stack_var.as_str();
+
+                let (top_ptr, val) = self.emit_load_top_int(stack_var)?;
+
+                let neg_result = self.fresh_temp();
+                writeln!(&mut self.output, "  %{} = sub i64 0, %{}", neg_result, val)?;
+
+                self.emit_store_int_result_in_place(&top_ptr, &neg_result)?;
+                Ok(Some(stack_var.to_string()))
+            }
+
             // bnot: ( a -- ~a )
             "bnot" => {
                 let stack_var = self.spill_virtual_stack(stack_var)?;

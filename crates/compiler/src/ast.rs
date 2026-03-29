@@ -353,6 +353,7 @@ impl Program {
             "string.to-upper",
             "string.to-lower",
             "string.equal?",
+            "string.join",
             "string.json-escape",
             "string->int",
             // Symbol operations
@@ -393,6 +394,7 @@ impl Program {
             "list.each",
             "list.length",
             "list.empty?",
+            "list.reverse",
             // Map operations
             "map.make",
             "map.get",
@@ -403,6 +405,8 @@ impl Program {
             "map.values",
             "map.size",
             "map.empty?",
+            "map.each",
+            "map.fold",
             // Variant operations
             "variant.field-count",
             "variant.tag",
@@ -471,6 +475,8 @@ impl Program {
             "bor",
             "bxor",
             "bnot",
+            "i.neg",
+            "negate",
             "shl",
             "shr",
             "popcount",

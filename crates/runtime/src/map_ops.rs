@@ -318,9 +318,136 @@ pub unsafe extern "C" fn patch_seq_map_empty(stack: Stack) -> Stack {
     }
 }
 
+/// Iterate over all key-value pairs in a map, calling a quotation for each.
+///
+/// Stack effect: ( Map Quotation -- )
+///   where Quotation : ( key value -- )
+///
+/// The quotation receives each key and value on a fresh stack.
+/// Iteration order is not guaranteed.
+///
+/// # Safety
+/// Stack must have a Quotation/Closure on top and a Map below
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn patch_seq_map_each(stack: Stack) -> Stack {
+    unsafe {
+        // Pop quotation
+        let (stack, callable) = pop(stack);
+        match &callable {
+            Value::Quotation { .. } | Value::Closure { .. } => {}
+            _ => panic!(
+                "map.each: expected Quotation or Closure, got {:?}",
+                callable
+            ),
+        }
+
+        // Pop map
+        let (stack, map_val) = pop(stack);
+        let map = match &map_val {
+            Value::Map(m) => m,
+            _ => panic!("map.each: expected Map, got {:?}", map_val),
+        };
+
+        // Call quotation for each key-value pair
+        for (key, value) in map.iter() {
+            let temp_base = crate::stack::alloc_stack();
+            let temp_stack = push(temp_base, key.to_value());
+            let temp_stack = push(temp_stack, value.clone());
+            let temp_stack = call_callable(temp_stack, &callable);
+            // Drain any leftover values
+            drain_to_base(temp_stack, temp_base);
+        }
+
+        stack
+    }
+}
+
+/// Fold over all key-value pairs in a map with an accumulator.
+///
+/// Stack effect: ( Map init Quotation -- result )
+///   where Quotation : ( acc key value -- acc' )
+///
+/// The quotation receives the accumulator, key, and value, and must
+/// return the new accumulator. Iteration order is not guaranteed.
+///
+/// # Safety
+/// Stack must have Quotation on top, init below, and Map below that
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn patch_seq_map_fold(stack: Stack) -> Stack {
+    unsafe {
+        // Pop quotation
+        let (stack, callable) = pop(stack);
+        match &callable {
+            Value::Quotation { .. } | Value::Closure { .. } => {}
+            _ => panic!(
+                "map.fold: expected Quotation or Closure, got {:?}",
+                callable
+            ),
+        }
+
+        // Pop initial accumulator
+        let (stack, mut acc) = pop(stack);
+
+        // Pop map
+        let (stack, map_val) = pop(stack);
+        let map = match &map_val {
+            Value::Map(m) => m,
+            _ => panic!("map.fold: expected Map, got {:?}", map_val),
+        };
+
+        // Fold over each key-value pair
+        for (key, value) in map.iter() {
+            let temp_base = crate::stack::alloc_stack();
+            let temp_stack = push(temp_base, acc);
+            let temp_stack = push(temp_stack, key.to_value());
+            let temp_stack = push(temp_stack, value.clone());
+            let temp_stack = call_callable(temp_stack, &callable);
+            // Pop new accumulator
+            if temp_stack <= temp_base {
+                panic!("map.fold: quotation consumed accumulator without producing result");
+            }
+            let (_remaining, new_acc) = pop(temp_stack);
+            acc = new_acc;
+        }
+
+        push(stack, acc)
+    }
+}
+
+/// Helper to call a quotation or closure with the current stack.
+#[inline]
+unsafe fn call_callable(stack: Stack, callable: &Value) -> Stack {
+    unsafe {
+        match callable {
+            Value::Quotation { wrapper, .. } => {
+                let fn_ref: unsafe extern "C" fn(Stack) -> Stack = std::mem::transmute(*wrapper);
+                fn_ref(stack)
+            }
+            Value::Closure { fn_ptr, env } => {
+                let fn_ref: unsafe extern "C" fn(Stack, *const Value, usize) -> Stack =
+                    std::mem::transmute(*fn_ptr);
+                fn_ref(stack, env.as_ptr(), env.len())
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
+/// Drain stack values back to base (cleanup helper).
+unsafe fn drain_to_base(mut stack: Stack, base: Stack) {
+    unsafe {
+        while stack > base {
+            let (rest, _val) = pop(stack);
+            stack = rest;
+        }
+    }
+}
+
 // Public re-exports
 pub use patch_seq_make_map as make_map;
+pub use patch_seq_map_each as map_each;
 pub use patch_seq_map_empty as map_empty;
+pub use patch_seq_map_fold as map_fold;
 pub use patch_seq_map_get as map_get;
 pub use patch_seq_map_has as map_has;
 pub use patch_seq_map_keys as map_keys;

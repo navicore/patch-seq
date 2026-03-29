@@ -580,6 +580,56 @@ pub unsafe extern "C" fn patch_seq_string_chomp(stack: Stack) -> Stack {
     }
 }
 
+/// Join a list of strings with a separator.
+///
+/// Stack effect: ( Variant String -- String )
+///
+/// Each element in the list is converted to its string representation
+/// and joined with the separator between them.
+///
+/// ```seq
+/// list-of "a" lv "b" lv "c" lv ", " string.join
+/// # Result: "a, b, c"
+/// ```
+///
+/// # Safety
+/// Stack must have a String (separator) on top and a Variant (list) below
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn patch_seq_string_join(stack: Stack) -> Stack {
+    unsafe {
+        // Pop separator
+        let (stack, sep_val) = pop(stack);
+        let sep = match &sep_val {
+            Value::String(s) => s.as_str().to_owned(),
+            _ => panic!("string.join: expected String separator, got {:?}", sep_val),
+        };
+
+        // Pop list (variant)
+        let (stack, list_val) = pop(stack);
+        let variant_data = match &list_val {
+            Value::Variant(v) => v,
+            _ => panic!("string.join: expected Variant (list), got {:?}", list_val),
+        };
+
+        // Convert each element to string and join
+        let parts: Vec<String> = variant_data
+            .fields
+            .iter()
+            .map(|v| match v {
+                Value::String(s) => s.as_str().to_owned(),
+                Value::Int(n) => n.to_string(),
+                Value::Float(f) => f.to_string(),
+                Value::Bool(b) => if *b { "true" } else { "false" }.to_string(),
+                Value::Symbol(s) => format!(":{}", s.as_str()),
+                _ => format!("{:?}", v),
+            })
+            .collect();
+
+        let result = parts.join(&sep);
+        push(stack, Value::String(global_string(result)))
+    }
+}
+
 // Public re-exports with short names for internal use
 pub use patch_seq_char_to_string as char_to_string;
 pub use patch_seq_json_escape as json_escape;

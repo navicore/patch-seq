@@ -145,10 +145,11 @@ pub use io::patch_seq_int_to_string as int_to_string;
 pub use string_ops::{
     patch_seq_json_escape as json_escape, patch_seq_string_chomp as string_chomp,
     patch_seq_string_concat as string_concat, patch_seq_string_contains as string_contains,
-    patch_seq_string_empty as string_empty, patch_seq_string_length as string_length,
-    patch_seq_string_split as string_split, patch_seq_string_starts_with as string_starts_with,
-    patch_seq_string_to_int as string_to_int, patch_seq_string_to_lower as string_to_lower,
-    patch_seq_string_to_upper as string_to_upper, patch_seq_string_trim as string_trim,
+    patch_seq_string_empty as string_empty, patch_seq_string_join as string_join,
+    patch_seq_string_length as string_length, patch_seq_string_split as string_split,
+    patch_seq_string_starts_with as string_starts_with, patch_seq_string_to_int as string_to_int,
+    patch_seq_string_to_lower as string_to_lower, patch_seq_string_to_upper as string_to_upper,
+    patch_seq_string_trim as string_trim,
 };
 
 // Encoding operations (exported for LLVM linking)
@@ -283,12 +284,14 @@ pub use list_ops::{
     patch_seq_list_filter as list_filter, patch_seq_list_fold as list_fold,
     patch_seq_list_get as list_get, patch_seq_list_length as list_length,
     patch_seq_list_make as list_make, patch_seq_list_map as list_map,
-    patch_seq_list_push as list_push, patch_seq_list_set as list_set,
+    patch_seq_list_push as list_push, patch_seq_list_reverse as list_reverse,
+    patch_seq_list_set as list_set,
 };
 
 // Map operations (exported for LLVM linking)
 pub use map_ops::{
-    patch_seq_make_map as make_map, patch_seq_map_empty as map_empty, patch_seq_map_get as map_get,
+    patch_seq_make_map as make_map, patch_seq_map_each as map_each,
+    patch_seq_map_empty as map_empty, patch_seq_map_fold as map_fold, patch_seq_map_get as map_get,
     patch_seq_map_has as map_has, patch_seq_map_keys as map_keys,
     patch_seq_map_remove as map_remove, patch_seq_map_set as map_set,
     patch_seq_map_size as map_size, patch_seq_map_values as map_values,
