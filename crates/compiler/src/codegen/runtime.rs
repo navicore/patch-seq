@@ -439,10 +439,6 @@ pub static RUNTIME_DECLARATIONS: LazyLock<Vec<RuntimeDecl>> = LazyLock::new(|| {
             category: None,
         },
         RuntimeDecl {
-            decl: "declare ptr @patch_seq_list_push_in_place(ptr)",
-            category: None,
-        },
-        RuntimeDecl {
             decl: "declare ptr @patch_seq_list_get(ptr)",
             category: None,
         },
@@ -1371,7 +1367,6 @@ pub static BUILTIN_SYMBOLS: LazyLock<HashMap<&'static str, &'static str>> = Lazy
         // List operations
         ("list.make", "patch_seq_list_make"),
         ("list.push", "patch_seq_list_push"),
-        ("list.push!", "patch_seq_list_push_in_place"),
         ("list.get", "patch_seq_list_get"),
         ("list.set", "patch_seq_list_set"),
         ("list.map", "patch_seq_list_map"),

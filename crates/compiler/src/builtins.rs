@@ -708,7 +708,6 @@ pub fn builtin_signatures() -> HashMap<String, Effect> {
     // List construction and access
     builtin!(sigs, "list.make", (a -- a V));
     builtin!(sigs, "list.push", (a V T -- a V));
-    builtin!(sigs, "list.push!", (a V T -- a V));
     builtin!(sigs, "list.get", (a V Int -- a T Bool));
     builtin!(sigs, "list.set", (a V Int T -- a V Bool));
 
@@ -1423,10 +1422,6 @@ static BUILTIN_DOCS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::n
     // List Operations
     docs.insert("list.make", "Create an empty list.");
     docs.insert("list.push", "Push a value onto a list. Returns new list.");
-    docs.insert(
-        "list.push!",
-        "Push a value onto a list in place. Faster than list.push in loops.",
-    );
     docs.insert("list.get", "Get value at index. Returns (value, success).");
     docs.insert("list.set", "Set value at index. Returns (list, success).");
     docs.insert("list.length", "Get the number of elements in a list.");
