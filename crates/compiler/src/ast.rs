@@ -485,6 +485,10 @@ impl Program {
             "chan.yield",
             // Quotation operations
             "call",
+            // Dataflow combinators
+            "dip",
+            "keep",
+            "bi",
             "strand.spawn",
             "strand.weave",
             "strand.resume",

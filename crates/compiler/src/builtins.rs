@@ -427,6 +427,50 @@ pub fn builtin_signatures() -> HashMap<String, Effect> {
         ),
     );
 
+    // =========================================================================
+    // Dataflow Combinators
+    // =========================================================================
+
+    // dip: ( ..a x Quotation[..a -- ..b] -- ..b x )
+    // Hide top value, run quotation on rest, restore value.
+    // Type-checked specially in typechecker (like `call`).
+    sigs.insert(
+        "dip".to_string(),
+        Effect::new(
+            StackType::RowVar("a".to_string())
+                .push(Type::Var("T".to_string()))
+                .push(Type::Var("Q".to_string())),
+            StackType::RowVar("b".to_string()).push(Type::Var("T".to_string())),
+        ),
+    );
+
+    // keep: ( ..a x Quotation[..a x -- ..b] -- ..b x )
+    // Run quotation on value, but preserve the original.
+    // Type-checked specially in typechecker (like `call`).
+    sigs.insert(
+        "keep".to_string(),
+        Effect::new(
+            StackType::RowVar("a".to_string())
+                .push(Type::Var("T".to_string()))
+                .push(Type::Var("Q".to_string())),
+            StackType::RowVar("b".to_string()).push(Type::Var("T".to_string())),
+        ),
+    );
+
+    // bi: ( ..a x Quotation[..a x -- ..b] Quotation[..b x -- ..c] -- ..c )
+    // Apply two quotations to the same value.
+    // Type-checked specially in typechecker (like `call`).
+    sigs.insert(
+        "bi".to_string(),
+        Effect::new(
+            StackType::RowVar("a".to_string())
+                .push(Type::Var("T".to_string()))
+                .push(Type::Var("Q".to_string()))
+                .push(Type::Var("Q".to_string())),
+            StackType::RowVar("b".to_string()),
+        ),
+    );
+
     // cond: Multi-way conditional (variable arity)
     sigs.insert(
         "cond".to_string(),
@@ -1052,6 +1096,20 @@ static BUILTIN_DOCS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::n
     docs.insert(
         "cond",
         "Multi-way conditional: test clauses until one succeeds.",
+    );
+
+    // Dataflow Combinators
+    docs.insert(
+        "dip",
+        "Hide top value, run quotation on rest of stack, restore value. ( ..a x [..a -- ..b] -- ..b x )",
+    );
+    docs.insert(
+        "keep",
+        "Run quotation on top value, but preserve the original. ( ..a x [..a x -- ..b] -- ..b x )",
+    );
+    docs.insert(
+        "bi",
+        "Apply two quotations to the same value. ( ..a x [q1] [q2] -- ..c )",
     );
 
     // Concurrency
