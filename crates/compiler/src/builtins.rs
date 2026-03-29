@@ -762,7 +762,7 @@ pub fn builtin_signatures() -> HashMap<String, Effect> {
 
     builtin!(sigs, "list.length", (a V -- a Int));
     builtin!(sigs, "list.empty?", (a V -- a Bool));
-    builtin!(sigs, "list.reverse", (a V -- a V2));
+    builtin!(sigs, "list.reverse", (a V -- a V));
 
     // list.map: ( a Variant Quotation -- a Variant )
     // Quotation: ( b T -- b U )
@@ -1089,8 +1089,14 @@ static BUILTIN_DOCS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::n
     docs.insert("bnot", "Bitwise NOT (complement) of an integer.");
     docs.insert("shl", "Shift left by N bits.");
     docs.insert("shr", "Shift right by N bits (arithmetic).");
-    docs.insert("i.neg", "Negate an integer (0 - n).");
-    docs.insert("negate", "Negate an integer (0 - n). Alias for i.neg.");
+    docs.insert(
+        "i.neg",
+        "Negate an integer (0 - n). Canonical name; `negate` is an alias.",
+    );
+    docs.insert(
+        "negate",
+        "Negate an integer (0 - n). Ergonomic alias for `i.neg`.",
+    );
     docs.insert("popcount", "Count the number of set bits.");
     docs.insert("clz", "Count leading zeros.");
     docs.insert("ctz", "Count trailing zeros.");

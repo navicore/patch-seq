@@ -1094,4 +1094,78 @@ mod tests {
             assert_eq!(returned, Value::Int(42)); // Original value returned
         }
     }
+
+    // =========================================================================
+    // list.reverse tests
+    // =========================================================================
+
+    #[test]
+    fn test_list_reverse_empty() {
+        unsafe {
+            let stack = crate::stack::alloc_test_stack();
+            // Push empty list
+            let empty_list = Value::Variant(Arc::new(VariantData::new(
+                crate::seqstring::global_string("List".to_string()),
+                vec![],
+            )));
+            let stack = push(stack, empty_list);
+            let stack = list_reverse(stack);
+
+            let (_stack, result) = pop(stack);
+            match result {
+                Value::Variant(v) => {
+                    assert_eq!(v.fields.len(), 0);
+                    assert_eq!(v.tag.as_str(), "List");
+                }
+                _ => panic!("Expected Variant"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_list_reverse_single() {
+        unsafe {
+            let stack = crate::stack::alloc_test_stack();
+            let list = Value::Variant(Arc::new(VariantData::new(
+                crate::seqstring::global_string("List".to_string()),
+                vec![Value::Int(42)],
+            )));
+            let stack = push(stack, list);
+            let stack = list_reverse(stack);
+
+            let (_stack, result) = pop(stack);
+            match result {
+                Value::Variant(v) => {
+                    assert_eq!(v.fields.len(), 1);
+                    assert_eq!(v.fields[0], Value::Int(42));
+                }
+                _ => panic!("Expected Variant"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_list_reverse_multiple() {
+        unsafe {
+            let stack = crate::stack::alloc_test_stack();
+            let list = Value::Variant(Arc::new(VariantData::new(
+                crate::seqstring::global_string("List".to_string()),
+                vec![Value::Int(1), Value::Int(2), Value::Int(3)],
+            )));
+            let stack = push(stack, list);
+            let stack = list_reverse(stack);
+
+            let (_stack, result) = pop(stack);
+            match result {
+                Value::Variant(v) => {
+                    assert_eq!(v.fields.len(), 3);
+                    assert_eq!(v.fields[0], Value::Int(3));
+                    assert_eq!(v.fields[1], Value::Int(2));
+                    assert_eq!(v.fields[2], Value::Int(1));
+                    assert_eq!(v.tag.as_str(), "List"); // tag preserved
+                }
+                _ => panic!("Expected Variant"),
+            }
+        }
+    }
 }

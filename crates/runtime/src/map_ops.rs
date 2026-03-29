@@ -33,7 +33,7 @@
 //! - Key/value iteration order is not guaranteed (HashMap iteration order)
 
 use crate::seqstring::global_string;
-use crate::stack::{Stack, heap_value_mut, pop, push};
+use crate::stack::{Stack, drop_stack_value, heap_value_mut, pop, pop_sv, push};
 use crate::value::{MapKey, Value, VariantData};
 use std::sync::Arc;
 
@@ -406,8 +406,12 @@ pub unsafe extern "C" fn patch_seq_map_fold(stack: Stack) -> Stack {
             if temp_stack <= temp_base {
                 panic!("map.fold: quotation consumed accumulator without producing result");
             }
-            let (_remaining, new_acc) = pop(temp_stack);
+            let (remaining, new_acc) = pop(temp_stack);
             acc = new_acc;
+            // Drain any extra values left by the quotation
+            if remaining > temp_base {
+                drain_to_base(remaining, temp_base);
+            }
         }
 
         push(stack, acc)
@@ -433,11 +437,12 @@ unsafe fn call_callable(stack: Stack, callable: &Value) -> Stack {
     }
 }
 
-/// Drain stack values back to base (cleanup helper).
+/// Drain stack values back to base, properly freeing heap-allocated values.
 unsafe fn drain_to_base(mut stack: Stack, base: Stack) {
     unsafe {
         while stack > base {
-            let (rest, _val) = pop(stack);
+            let (rest, sv) = pop_sv(stack);
+            drop_stack_value(sv);
             stack = rest;
         }
     }
@@ -815,6 +820,38 @@ mod tests {
                 Value::String(s) => assert_eq!(s.as_str(), "yes"),
                 _ => panic!("Expected String for bool key"),
             }
+        }
+    }
+
+    // =========================================================================
+    // map.fold tests
+    // =========================================================================
+
+    #[test]
+    fn test_map_fold_empty() {
+        // Folding an empty map should return the initial accumulator
+        unsafe {
+            use crate::quotations::push_quotation;
+
+            let stack = crate::stack::alloc_test_stack();
+
+            // Push empty map
+            let stack = make_map(stack);
+
+            // Push initial accumulator
+            let stack = push(stack, Value::Int(99));
+
+            // Push a dummy quotation (won't be called for empty map)
+            unsafe extern "C" fn noop(stack: Stack) -> Stack {
+                stack
+            }
+            let fn_ptr = noop as usize;
+            let stack = push_quotation(stack, fn_ptr, fn_ptr);
+
+            let stack = patch_seq_map_fold(stack);
+
+            let (_stack, result) = pop(stack);
+            assert_eq!(result, Value::Int(99));
         }
     }
 }
