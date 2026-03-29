@@ -353,7 +353,7 @@ pub unsafe extern "C" fn patch_seq_map_each(stack: Stack) -> Stack {
             let temp_base = crate::stack::alloc_stack();
             let temp_stack = push(temp_base, key.to_value());
             let temp_stack = push(temp_stack, value.clone());
-            let temp_stack = call_callable(temp_stack, &callable);
+            let temp_stack = invoke_callable(temp_stack, &callable);
             // Drain any leftover values
             drain_to_base(temp_stack, temp_base);
         }
@@ -401,7 +401,7 @@ pub unsafe extern "C" fn patch_seq_map_fold(stack: Stack) -> Stack {
             let temp_stack = push(temp_base, acc);
             let temp_stack = push(temp_stack, key.to_value());
             let temp_stack = push(temp_stack, value.clone());
-            let temp_stack = call_callable(temp_stack, &callable);
+            let temp_stack = invoke_callable(temp_stack, &callable);
             // Pop new accumulator
             if temp_stack <= temp_base {
                 panic!("map.fold: quotation consumed accumulator without producing result");
@@ -418,24 +418,7 @@ pub unsafe extern "C" fn patch_seq_map_fold(stack: Stack) -> Stack {
     }
 }
 
-/// Helper to call a quotation or closure with the current stack.
-#[inline]
-unsafe fn call_callable(stack: Stack, callable: &Value) -> Stack {
-    unsafe {
-        match callable {
-            Value::Quotation { wrapper, .. } => {
-                let fn_ref: unsafe extern "C" fn(Stack) -> Stack = std::mem::transmute(*wrapper);
-                fn_ref(stack)
-            }
-            Value::Closure { fn_ptr, env } => {
-                let fn_ref: unsafe extern "C" fn(Stack, *const Value, usize) -> Stack =
-                    std::mem::transmute(*fn_ptr);
-                fn_ref(stack, env.as_ptr(), env.len())
-            }
-            _ => unreachable!(),
-        }
-    }
-}
+use crate::quotations::invoke_callable;
 
 /// Drain stack values back to base, properly freeing heap-allocated values.
 unsafe fn drain_to_base(mut stack: Stack, base: Stack) {

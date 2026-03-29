@@ -374,6 +374,39 @@ pub unsafe extern "C" fn patch_seq_spawn(stack: Stack) -> Stack {
     }
 }
 
+/// Invoke a quotation or closure with the given stack.
+///
+/// Shared helper used by combinators, list ops, and map ops.
+/// Handles both calling conventions (bare function pointer for Quotations,
+/// function pointer + environment for Closures).
+///
+/// # Safety
+/// - Stack must be valid
+/// - The callable must be a Quotation or Closure value
+#[inline]
+pub unsafe fn invoke_callable(stack: Stack, callable: &Value) -> Stack {
+    // SAFETY: Function pointers were created by the compiler's codegen.
+    // Quotation wrappers use C calling convention: fn(Stack) -> Stack.
+    // Closure functions use: fn(Stack, *const Value, usize) -> Stack.
+    unsafe {
+        match callable {
+            Value::Quotation { wrapper, .. } => {
+                let fn_ref: unsafe extern "C" fn(Stack) -> Stack = std::mem::transmute(*wrapper);
+                fn_ref(stack)
+            }
+            Value::Closure { fn_ptr, env } => {
+                let fn_ref: unsafe extern "C" fn(Stack, *const Value, usize) -> Stack =
+                    std::mem::transmute(*fn_ptr);
+                fn_ref(stack, env.as_ptr(), env.len())
+            }
+            _ => panic!(
+                "invoke_callable: expected Quotation or Closure, got {:?}",
+                callable
+            ),
+        }
+    }
+}
+
 // Public re-exports with short names for internal use
 pub use patch_seq_call as call;
 pub use patch_seq_push_quotation as push_quotation;

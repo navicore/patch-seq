@@ -54,26 +54,14 @@ unsafe fn drain_stack_to_base(mut stack: Stack, base: Stack) {
     }
 }
 
-/// Helper to call a quotation or closure with a value on the stack
+/// Helper to call a quotation or closure with a value on the stack.
 ///
-/// Pushes `value` onto a fresh stack, calls the callable, and returns (result_stack, base).
-/// The caller can compare result_stack to base to check if there are extra values.
+/// Pushes `value` onto the base stack, then invokes the callable.
+/// Uses the shared `invoke_callable` from quotations.rs.
 unsafe fn call_with_value(base: Stack, value: Value, callable: &Value) -> Stack {
     unsafe {
         let stack = push(base, value);
-
-        match callable {
-            Value::Quotation { wrapper, .. } => {
-                let fn_ref: unsafe extern "C" fn(Stack) -> Stack = std::mem::transmute(*wrapper);
-                fn_ref(stack)
-            }
-            Value::Closure { fn_ptr, env } => {
-                let fn_ref: unsafe extern "C" fn(Stack, *const Value, usize) -> Stack =
-                    std::mem::transmute(*fn_ptr);
-                fn_ref(stack, env.as_ptr(), env.len())
-            }
-            _ => panic!("list operation: expected Quotation or Closure"),
-        }
+        crate::quotations::invoke_callable(stack, callable)
     }
 }
 
