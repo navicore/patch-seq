@@ -21,8 +21,8 @@
 
 use crate::error::set_runtime_error;
 use crate::stack::{
-    Stack, drop_stack_value, get_stack_base, peek_heap_mut_second, pop, pop_sv, push,
-    stack_value_size,
+    Stack, drop_stack_value, get_stack_base, heap_value_mut, peek_heap_mut_second, pop, pop_sv,
+    push, stack_value_size,
 };
 use crate::value::{Value, VariantData};
 use std::sync::Arc;
@@ -524,11 +524,16 @@ pub unsafe extern "C" fn patch_seq_list_get(stack: Stack) -> Stack {
     }
 }
 
-/// Set an element in a list by index (functional - returns new list)
+/// Set an element in a list by index with COW optimization.
 ///
 /// Stack effect: ( Variant Int Value -- Variant Bool )
 ///
-/// Returns a new list with the value at the given index replaced, and true.
+/// Fast path: if the list (at sp-3) is sole-owned and the index (at sp-2)
+/// is a valid tagged int, peeks at both without popping, then pops value
+/// and index and mutates the list in place.
+/// Slow path: pops all three, clones if shared, pushes new list.
+///
+/// Returns the list with the value at the given index replaced, and true.
 /// If index is out of bounds, returns the original list and false.
 ///
 /// # Error Handling
@@ -546,6 +551,36 @@ pub unsafe extern "C" fn patch_seq_list_set(stack: Stack) -> Stack {
             set_runtime_error("list.set: stack underflow (need 3 values)");
             return stack;
         }
+
+        // Fast path: peek at the list at sp-3 without popping.
+        // SAFETY: stack depth >= 3 verified above, so stack.sub(3) is valid.
+        // The index at sp-2 must be an Int for the fast path; read it inline
+        // to avoid popping/pushing back on type mismatch.
+        if let Some(Value::Variant(variant_arc)) = heap_value_mut(stack.sub(3))
+            && let Some(data) = Arc::get_mut(variant_arc)
+        {
+            // Peek at the index at sp-2 without popping — it's an Int (inline),
+            // so we can read it directly from the tagged value.
+            let index_sv = *stack.sub(2);
+            if crate::tagged_stack::is_tagged_int(index_sv) {
+                let index = crate::tagged_stack::untag_int(index_sv);
+                if index >= 0 && (index as usize) < data.fields.len() {
+                    // Sole owner, valid index — pop value and index, mutate in place.
+                    // Safety: two pops move sp by 2; the list at the
+                    // original sp-3 (now sp-1) is not invalidated.
+                    let (stack, value) = pop(stack);
+                    let (stack, _index) = pop(stack);
+                    data.fields[index as usize] = value;
+                    return push(stack, Value::Bool(true));
+                }
+                // Out of bounds — pop value and index, leave list at sp-1
+                let (stack, _value) = pop(stack);
+                let (stack, _index) = pop(stack);
+                return push(stack, Value::Bool(false));
+            }
+        }
+
+        // Slow path: pop all three, clone if shared, push result
         let (stack, value) = pop(stack);
         let (stack, index_val) = pop(stack);
         let (stack, list_val) = pop(stack);
@@ -557,7 +592,6 @@ pub unsafe extern "C" fn patch_seq_list_set(stack: Stack) -> Stack {
                     "list.set: expected Int (index), got {:?}",
                     index_val
                 ));
-                // Return the list and false
                 let stack = push(stack, list_val);
                 return push(stack, Value::Bool(false));
             }
@@ -576,24 +610,18 @@ pub unsafe extern "C" fn patch_seq_list_set(stack: Stack) -> Stack {
         };
 
         if index < 0 || index as usize >= arc.fields.len() {
-            // Out of bounds - return original list and false
             let stack = push(stack, Value::Variant(arc));
             push(stack, Value::Bool(false))
+        } else if let Some(data) = Arc::get_mut(&mut arc) {
+            data.fields[index as usize] = value;
+            let stack = push(stack, Value::Variant(arc));
+            push(stack, Value::Bool(true))
         } else {
-            // COW: if we're the sole owner, mutate in place
-            if let Some(data) = Arc::get_mut(&mut arc) {
-                data.fields[index as usize] = value;
-                let stack = push(stack, Value::Variant(arc));
-                push(stack, Value::Bool(true))
-            } else {
-                // Shared — clone and replace
-                let mut new_fields: Vec<Value> = arc.fields.to_vec();
-                new_fields[index as usize] = value;
-                let new_list =
-                    Value::Variant(Arc::new(VariantData::new(arc.tag.clone(), new_fields)));
-                let stack = push(stack, new_list);
-                push(stack, Value::Bool(true))
-            }
+            let mut new_fields: Vec<Value> = arc.fields.to_vec();
+            new_fields[index as usize] = value;
+            let new_list = Value::Variant(Arc::new(VariantData::new(arc.tag.clone(), new_fields)));
+            let stack = push(stack, new_list);
+            push(stack, Value::Bool(true))
         }
     }
 }

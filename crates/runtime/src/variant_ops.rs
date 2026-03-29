@@ -3,7 +3,7 @@
 //! Provides runtime functions for accessing variant fields, tags, and metadata.
 //! These are used to work with composite data created by operations like string-split.
 
-use crate::stack::{Stack, pop, push};
+use crate::stack::{Stack, peek_heap_mut_second, pop, push};
 use crate::value::Value;
 use std::sync::Arc;
 
@@ -572,20 +572,31 @@ pub unsafe extern "C" fn patch_seq_variant_append(stack: Stack) -> Stack {
     use crate::value::VariantData;
 
     unsafe {
-        // Pop the value to append
-        let (stack, value) = pop(stack);
+        // Fast path: peek at the variant at sp-2 without popping.
+        // SAFETY: variant.append requires two values on the stack (enforced by
+        // the type checker), so stack.sub(2) is valid.
+        if let Some(Value::Variant(variant_arc)) = peek_heap_mut_second(stack)
+            && let Some(data) = Arc::get_mut(variant_arc)
+        {
+            // Sole owner all the way down — mutate in place.
+            // Safety: `data` points into the Value at sp-2. `pop` only
+            // touches sp-1 (decrements sp, reads that slot), so sp-2's
+            // memory is not accessed or invalidated by the pop.
+            let (stack, value) = pop(stack);
+            data.fields.push(value);
+            return stack; // Variant is still at sp-1, mutated in place
+        }
 
-        // Pop the variant
+        // Slow path: pop both, clone if shared, push result
+        let (stack, value) = pop(stack);
         let (stack, variant_val) = pop(stack);
 
         match variant_val {
             Value::Variant(mut arc) => {
-                // COW: if we're the sole owner, mutate in place
                 if let Some(data) = Arc::get_mut(&mut arc) {
                     data.fields.push(value);
                     push(stack, Value::Variant(arc))
                 } else {
-                    // Shared — clone and append
                     let mut new_fields = Vec::with_capacity(arc.fields.len() + 1);
                     new_fields.extend(arc.fields.iter().cloned());
                     new_fields.push(value);
