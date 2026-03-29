@@ -5,12 +5,12 @@ include std:list
 
 : num-elements ( -- Int ) 100000 ;
 
-# Build list using list.push! for in-place mutation (amortized O(1) per push).
-# Stack layout: ( limit List current ) keeps list accessible for list.push!
+# Build list using list.push with COW optimization (amortized O(1) per push).
+# Stack layout: ( limit List current ) keeps list accessible for list.push
 # without pick/over (which would clone the Arc and defeat COW).
 : build-list-loop ( Int Variant Int -- Variant )
   # Stack: ( limit List current )
-  # list.push! mutates in place when List is sole-owner (Arc refcount == 1).
+  # list.push mutates in place when List is sole-owner (Arc refcount == 1).
   # rot/swap move raw pointers without cloning, so refcount stays 1.
   # 3 pick (below) clones limit for the comparison, but limit is an Int
   # (inline tagged value, no Arc), so the clone is just a register copy.
@@ -21,7 +21,7 @@ include std:list
     dup         # ( limit List current current )
     rot         # ( limit current current List )
     swap        # ( limit current List current )
-    list.push!  # ( limit current List' )
+    list.push   # ( limit current List' )
     swap        # ( limit List' current )
     1 i.+       # ( limit List' current+1 )
     build-list-loop

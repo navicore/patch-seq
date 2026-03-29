@@ -447,22 +447,6 @@ unsafe fn push_to_variant(stack: Stack, mut variant_arc: Arc<VariantData>, value
     }
 }
 
-/// In-place list push (deprecated alias for list.push).
-///
-/// list.push now has the same fast path internally. This entry point
-/// is kept for v4.x compatibility and will be removed in v5.0.
-///
-/// # Safety
-/// Stack must have a Value on top and a Variant (list) below.
-#[deprecated(
-    since = "4.2.1",
-    note = "use list.push instead — it now has the same fast path"
-)]
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn patch_seq_list_push_in_place(stack: Stack) -> Stack {
-    unsafe { patch_seq_list_push(stack) }
-}
-
 /// Get an element from a list by index
 ///
 /// Stack effect: ( Variant Int -- Value Bool )

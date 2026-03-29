@@ -34,5 +34,4 @@
 
 # Design Documents
 
-- [Heap Value Pop/Push](design/HEAP_VALUE_POP_PUSH.md)
 - [Loop Lowering](design/LOOP_LOWERING.md)
