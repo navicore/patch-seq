@@ -21,7 +21,12 @@ use crate::value::Value;
 /// # Safety
 /// - Stack must be valid
 /// - The callable must be a Quotation or Closure value
+#[inline]
 unsafe fn invoke(stack: Stack, callable: &Value) -> Stack {
+    // SAFETY: Function pointers were created by the compiler's codegen.
+    // Quotation wrappers use C calling convention: fn(Stack) -> Stack.
+    // Closure functions use: fn(Stack, *const Value, usize) -> Stack.
+    // We validate non-null before transmute.
     unsafe {
         match callable {
             Value::Quotation { wrapper, .. } => {
@@ -59,6 +64,8 @@ unsafe fn invoke(stack: Stack, callable: &Value) -> Stack {
 /// - Top of stack must be a Quotation or Closure
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn patch_seq_dip(stack: Stack) -> Stack {
+    // SAFETY: Caller guarantees stack has quotation on top and a value below.
+    // invoke's safety is documented above.
     unsafe {
         let (stack, quot) = pop(stack); // pop quotation
         let (stack, x) = pop(stack); // pop preserved value
@@ -80,6 +87,8 @@ pub unsafe extern "C" fn patch_seq_dip(stack: Stack) -> Stack {
 /// - Top of stack must be a Quotation or Closure
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn patch_seq_keep(stack: Stack) -> Stack {
+    // SAFETY: Caller guarantees stack has quotation on top and a value below.
+    // x is cloned so both the quotation and the restore get valid values.
     unsafe {
         let (stack, quot) = pop(stack); // pop quotation
         let (stack, x) = pop(stack); // pop value to preserve
@@ -102,6 +111,8 @@ pub unsafe extern "C" fn patch_seq_keep(stack: Stack) -> Stack {
 /// - Top two stack values must be Quotations or Closures
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn patch_seq_bi(stack: Stack) -> Stack {
+    // SAFETY: Caller guarantees stack layout. x is cloned so both
+    // quotations receive a valid copy.
     unsafe {
         let (stack, quot2) = pop(stack); // pop second quotation
         let (stack, quot1) = pop(stack); // pop first quotation

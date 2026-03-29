@@ -5503,4 +5503,133 @@ mod tests {
         let mut checker = TypeChecker::new();
         assert!(checker.check_program(&program).is_ok());
     }
+
+    #[test]
+    fn test_keep_underflow() {
+        // : test ( -- ?? )  [ drop ] keep ;
+        // Should fail: keep needs a value below the quotation
+        let program = Program {
+            includes: vec![],
+            unions: vec![],
+            words: vec![WordDef {
+                name: "test".to_string(),
+                effect: Some(Effect::new(StackType::Empty, StackType::Empty)),
+                body: vec![
+                    Statement::Quotation {
+                        id: 0,
+                        body: vec![Statement::WordCall {
+                            name: "drop".to_string(),
+                            span: None,
+                        }],
+                        span: None,
+                    },
+                    Statement::WordCall {
+                        name: "keep".to_string(),
+                        span: None,
+                    },
+                ],
+                source: None,
+                allowed_lints: vec![],
+            }],
+        };
+
+        let mut checker = TypeChecker::new();
+        let result = checker.check_program(&program);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("stack underflow") || err.contains("underflow"),
+            "Expected underflow error, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_bi_underflow() {
+        // : test ( -- ?? )  [ 1 ] [ 2 ] bi ;
+        // Should fail: bi needs a value below the two quotations
+        let program = Program {
+            includes: vec![],
+            unions: vec![],
+            words: vec![WordDef {
+                name: "test".to_string(),
+                effect: Some(Effect::new(StackType::Empty, StackType::Empty)),
+                body: vec![
+                    Statement::Quotation {
+                        id: 0,
+                        body: vec![Statement::IntLiteral(1)],
+                        span: None,
+                    },
+                    Statement::Quotation {
+                        id: 1,
+                        body: vec![Statement::IntLiteral(2)],
+                        span: None,
+                    },
+                    Statement::WordCall {
+                        name: "bi".to_string(),
+                        span: None,
+                    },
+                ],
+                source: None,
+                allowed_lints: vec![],
+            }],
+        };
+
+        let mut checker = TypeChecker::new();
+        let result = checker.check_program(&program);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("stack underflow") || err.contains("underflow"),
+            "Expected underflow error, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_bi_polymorphic_quotations() {
+        // : test ( Int -- Int String )  [ 2 i.* ] [ int->string ] bi ;
+        // Two quotations with different output types — verifies independent typing
+        let program = Program {
+            includes: vec![],
+            unions: vec![],
+            words: vec![WordDef {
+                name: "test".to_string(),
+                effect: Some(Effect::new(
+                    StackType::singleton(Type::Int),
+                    StackType::Empty.push(Type::Int).push(Type::String),
+                )),
+                body: vec![
+                    Statement::Quotation {
+                        id: 0,
+                        body: vec![
+                            Statement::IntLiteral(2),
+                            Statement::WordCall {
+                                name: "i.*".to_string(),
+                                span: None,
+                            },
+                        ],
+                        span: None,
+                    },
+                    Statement::Quotation {
+                        id: 1,
+                        body: vec![Statement::WordCall {
+                            name: "int->string".to_string(),
+                            span: None,
+                        }],
+                        span: None,
+                    },
+                    Statement::WordCall {
+                        name: "bi".to_string(),
+                        span: None,
+                    },
+                ],
+                source: None,
+                allowed_lints: vec![],
+            }],
+        };
+
+        let mut checker = TypeChecker::new();
+        assert!(checker.check_program(&program).is_ok());
+    }
 }
