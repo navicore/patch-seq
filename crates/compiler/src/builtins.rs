@@ -371,6 +371,7 @@ pub fn builtin_signatures() -> HashMap<String, Effect> {
 
     builtins_int_int_to_int!(sigs, "band", "bor", "bxor", "shl", "shr");
     builtins_int_to_int!(sigs, "bnot", "popcount", "clz", "ctz");
+    builtins_int_to_int!(sigs, "i.neg", "negate"); // Integer negation (inline)
     builtin!(sigs, "int-bits", (a -- a Int));
 
     // =========================================================================
@@ -627,6 +628,7 @@ pub fn builtin_signatures() -> HashMap<String, Effect> {
     builtin!(sigs, "string.starts-with", (a String String -- a Bool));
     builtin!(sigs, "string.empty?", (a String -- a Bool));
     builtin!(sigs, "string.equal?", (a String String -- a Bool));
+    builtin!(sigs, "string.join", (a V String -- a String)); // ( list separator -- joined )
 
     // Symbol operations
     builtin!(sigs, "symbol.=", (a Symbol Symbol -- a Bool));
@@ -760,6 +762,7 @@ pub fn builtin_signatures() -> HashMap<String, Effect> {
 
     builtin!(sigs, "list.length", (a V -- a Int));
     builtin!(sigs, "list.empty?", (a V -- a Bool));
+    builtin!(sigs, "list.reverse", (a V -- a V));
 
     // list.map: ( a Variant Quotation -- a Variant )
     // Quotation: ( b T -- b U )
@@ -837,6 +840,42 @@ pub fn builtin_signatures() -> HashMap<String, Effect> {
     builtin!(sigs, "map.values", (a M -- a V));
     builtin!(sigs, "map.size", (a M -- a Int));
     builtin!(sigs, "map.empty?", (a M -- a Bool));
+
+    // map.each: ( a Map Quotation -- a )
+    // Quotation: ( b K V -- b )
+    sigs.insert(
+        "map.each".to_string(),
+        Effect::new(
+            StackType::RowVar("a".to_string())
+                .push(Type::Var("M".to_string()))
+                .push(Type::Quotation(Box::new(Effect::new(
+                    StackType::RowVar("b".to_string())
+                        .push(Type::Var("K".to_string()))
+                        .push(Type::Var("V".to_string())),
+                    StackType::RowVar("b".to_string()),
+                )))),
+            StackType::RowVar("a".to_string()),
+        ),
+    );
+
+    // map.fold: ( a Map Acc Quotation -- a Acc )
+    // Quotation: ( b Acc K V -- b Acc )
+    sigs.insert(
+        "map.fold".to_string(),
+        Effect::new(
+            StackType::RowVar("a".to_string())
+                .push(Type::Var("M".to_string()))
+                .push(Type::Var("Acc".to_string()))
+                .push(Type::Quotation(Box::new(Effect::new(
+                    StackType::RowVar("b".to_string())
+                        .push(Type::Var("Acc".to_string()))
+                        .push(Type::Var("K".to_string()))
+                        .push(Type::Var("V".to_string())),
+                    StackType::RowVar("b".to_string()).push(Type::Var("Acc".to_string())),
+                )))),
+            StackType::RowVar("a".to_string()).push(Type::Var("Acc".to_string())),
+        ),
+    );
 
     // =========================================================================
     // Float Arithmetic ( a Float Float -- a Float )
@@ -1050,6 +1089,14 @@ static BUILTIN_DOCS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::n
     docs.insert("bnot", "Bitwise NOT (complement) of an integer.");
     docs.insert("shl", "Shift left by N bits.");
     docs.insert("shr", "Shift right by N bits (arithmetic).");
+    docs.insert(
+        "i.neg",
+        "Negate an integer (0 - n). Canonical name; `negate` is an alias.",
+    );
+    docs.insert(
+        "negate",
+        "Negate an integer (0 - n). Ergonomic alias for `i.neg`.",
+    );
     docs.insert("popcount", "Count the number of set bits.");
     docs.insert("clz", "Count leading zeros.");
     docs.insert("ctz", "Count trailing zeros.");
@@ -1279,6 +1326,10 @@ static BUILTIN_DOCS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::n
     );
     docs.insert("string.empty?", "Check if string is empty.");
     docs.insert("string.equal?", "Check if two strings are equal.");
+    docs.insert(
+        "string.join",
+        "Join a list of values with a separator string. ( list sep -- string )",
+    );
     docs.insert("string.trim", "Remove leading and trailing whitespace.");
     docs.insert("string.chomp", "Remove trailing newline.");
     docs.insert("string.to-upper", "Convert to uppercase.");
@@ -1487,6 +1538,7 @@ static BUILTIN_DOCS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::n
     docs.insert("list.set", "Set value at index. Returns (list, success).");
     docs.insert("list.length", "Get the number of elements in a list.");
     docs.insert("list.empty?", "Check if a list is empty.");
+    docs.insert("list.reverse", "Reverse the elements of a list.");
     docs.insert(
         "list.map",
         "Apply quotation to each element. Returns new list.",
@@ -1508,6 +1560,14 @@ static BUILTIN_DOCS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::n
     docs.insert("map.values", "Get all values as a list.");
     docs.insert("map.size", "Get the number of key-value pairs.");
     docs.insert("map.empty?", "Check if map is empty.");
+    docs.insert(
+        "map.each",
+        "Iterate key-value pairs. Quotation: ( key value -- ).",
+    );
+    docs.insert(
+        "map.fold",
+        "Fold over key-value pairs with accumulator. Quotation: ( acc key value -- acc' ).",
+    );
 
     // Float Arithmetic
     docs.insert("f.add", "Add two floats.");

@@ -580,6 +580,56 @@ pub unsafe extern "C" fn patch_seq_string_chomp(stack: Stack) -> Stack {
     }
 }
 
+/// Join a list of strings with a separator.
+///
+/// Stack effect: ( Variant String -- String )
+///
+/// Each element in the list is converted to its string representation
+/// and joined with the separator between them.
+///
+/// ```seq
+/// list-of "a" lv "b" lv "c" lv ", " string.join
+/// # Result: "a, b, c"
+/// ```
+///
+/// # Safety
+/// Stack must have a String (separator) on top and a Variant (list) below
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn patch_seq_string_join(stack: Stack) -> Stack {
+    unsafe {
+        // Pop separator
+        let (stack, sep_val) = pop(stack);
+        let sep = match &sep_val {
+            Value::String(s) => s.as_str().to_owned(),
+            _ => panic!("string.join: expected String separator, got {:?}", sep_val),
+        };
+
+        // Pop list (variant)
+        let (stack, list_val) = pop(stack);
+        let variant_data = match &list_val {
+            Value::Variant(v) => v,
+            _ => panic!("string.join: expected Variant (list), got {:?}", list_val),
+        };
+
+        // Convert each element to string and join
+        let parts: Vec<String> = variant_data
+            .fields
+            .iter()
+            .map(|v| match v {
+                Value::String(s) => s.as_str().to_owned(),
+                Value::Int(n) => n.to_string(),
+                Value::Float(f) => f.to_string(),
+                Value::Bool(b) => if *b { "true" } else { "false" }.to_string(),
+                Value::Symbol(s) => format!(":{}", s.as_str()),
+                _ => format!("{:?}", v),
+            })
+            .collect();
+
+        let result = parts.join(&sep);
+        push(stack, Value::String(global_string(result)))
+    }
+}
+
 // Public re-exports with short names for internal use
 pub use patch_seq_char_to_string as char_to_string;
 pub use patch_seq_json_escape as json_escape;
@@ -1627,6 +1677,110 @@ mod tests {
             assert_eq!(success, Value::Bool(false));
             let (_stack, value) = pop(stack);
             assert_eq!(value, Value::Int(0));
+        }
+    }
+
+    // =========================================================================
+    // string.join tests
+    // =========================================================================
+
+    #[test]
+    fn test_string_join_strings() {
+        unsafe {
+            use crate::value::VariantData;
+            use std::sync::Arc;
+
+            let stack = crate::stack::alloc_test_stack();
+            let list = Value::Variant(Arc::new(VariantData::new(
+                global_string("List".to_string()),
+                vec![
+                    Value::String(global_string("a".to_string())),
+                    Value::String(global_string("b".to_string())),
+                    Value::String(global_string("c".to_string())),
+                ],
+            )));
+            let stack = push(stack, list);
+            let stack = push(stack, Value::String(global_string(", ".to_string())));
+            let stack = patch_seq_string_join(stack);
+
+            let (_stack, result) = pop(stack);
+            match result {
+                Value::String(s) => assert_eq!(s.as_str(), "a, b, c"),
+                _ => panic!("Expected String, got {:?}", result),
+            }
+        }
+    }
+
+    #[test]
+    fn test_string_join_empty_list() {
+        unsafe {
+            use crate::value::VariantData;
+            use std::sync::Arc;
+
+            let stack = crate::stack::alloc_test_stack();
+            let list = Value::Variant(Arc::new(VariantData::new(
+                global_string("List".to_string()),
+                vec![],
+            )));
+            let stack = push(stack, list);
+            let stack = push(stack, Value::String(global_string(", ".to_string())));
+            let stack = patch_seq_string_join(stack);
+
+            let (_stack, result) = pop(stack);
+            match result {
+                Value::String(s) => assert_eq!(s.as_str(), ""),
+                _ => panic!("Expected String"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_string_join_single_element() {
+        unsafe {
+            use crate::value::VariantData;
+            use std::sync::Arc;
+
+            let stack = crate::stack::alloc_test_stack();
+            let list = Value::Variant(Arc::new(VariantData::new(
+                global_string("List".to_string()),
+                vec![Value::String(global_string("only".to_string()))],
+            )));
+            let stack = push(stack, list);
+            let stack = push(stack, Value::String(global_string(", ".to_string())));
+            let stack = patch_seq_string_join(stack);
+
+            let (_stack, result) = pop(stack);
+            match result {
+                Value::String(s) => assert_eq!(s.as_str(), "only"),
+                _ => panic!("Expected String"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_string_join_mixed_types() {
+        unsafe {
+            use crate::value::VariantData;
+            use std::sync::Arc;
+
+            let stack = crate::stack::alloc_test_stack();
+            let list = Value::Variant(Arc::new(VariantData::new(
+                global_string("List".to_string()),
+                vec![
+                    Value::Int(1),
+                    Value::Bool(true),
+                    Value::String(global_string("x".to_string())),
+                ],
+            )));
+            let stack = push(stack, list);
+            let stack = push(stack, Value::String(global_string(" ".to_string())));
+            let stack = patch_seq_string_join(stack);
+
+            let (_stack, result) = pop(stack);
+            match result {
+                Value::String(s) => assert_eq!(s.as_str(), "1 true x"),
+                _ => panic!("Expected String"),
+            }
         }
     }
 }

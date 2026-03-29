@@ -33,7 +33,7 @@
 //! - Key/value iteration order is not guaranteed (HashMap iteration order)
 
 use crate::seqstring::global_string;
-use crate::stack::{Stack, heap_value_mut, pop, push};
+use crate::stack::{Stack, drop_stack_value, heap_value_mut, pop, pop_sv, push};
 use crate::value::{MapKey, Value, VariantData};
 use std::sync::Arc;
 
@@ -318,9 +318,124 @@ pub unsafe extern "C" fn patch_seq_map_empty(stack: Stack) -> Stack {
     }
 }
 
+/// Iterate over all key-value pairs in a map, calling a quotation for each.
+///
+/// Stack effect: ( Map Quotation -- )
+///   where Quotation : ( key value -- )
+///
+/// The quotation receives each key and value on a fresh stack.
+/// Iteration order is not guaranteed.
+///
+/// # Safety
+/// Stack must have a Quotation/Closure on top and a Map below
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn patch_seq_map_each(stack: Stack) -> Stack {
+    unsafe {
+        // Pop quotation
+        let (stack, callable) = pop(stack);
+        match &callable {
+            Value::Quotation { .. } | Value::Closure { .. } => {}
+            _ => panic!(
+                "map.each: expected Quotation or Closure, got {:?}",
+                callable
+            ),
+        }
+
+        // Pop map
+        let (stack, map_val) = pop(stack);
+        let map = match &map_val {
+            Value::Map(m) => m,
+            _ => panic!("map.each: expected Map, got {:?}", map_val),
+        };
+
+        // Call quotation for each key-value pair
+        for (key, value) in map.iter() {
+            let temp_base = crate::stack::alloc_stack();
+            let temp_stack = push(temp_base, key.to_value());
+            let temp_stack = push(temp_stack, value.clone());
+            let temp_stack = invoke_callable(temp_stack, &callable);
+            // Drain any leftover values
+            drain_to_base(temp_stack, temp_base);
+        }
+
+        stack
+    }
+}
+
+/// Fold over all key-value pairs in a map with an accumulator.
+///
+/// Stack effect: ( Map init Quotation -- result )
+///   where Quotation : ( acc key value -- acc' )
+///
+/// The quotation receives the accumulator, key, and value, and must
+/// return the new accumulator. Iteration order is not guaranteed.
+///
+/// # Safety
+/// Stack must have Quotation on top, init below, and Map below that
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn patch_seq_map_fold(stack: Stack) -> Stack {
+    unsafe {
+        // Pop quotation
+        let (stack, callable) = pop(stack);
+        match &callable {
+            Value::Quotation { .. } | Value::Closure { .. } => {}
+            _ => panic!(
+                "map.fold: expected Quotation or Closure, got {:?}",
+                callable
+            ),
+        }
+
+        // Pop initial accumulator
+        let (stack, mut acc) = pop(stack);
+
+        // Pop map
+        let (stack, map_val) = pop(stack);
+        let map = match &map_val {
+            Value::Map(m) => m,
+            _ => panic!("map.fold: expected Map, got {:?}", map_val),
+        };
+
+        // Fold over each key-value pair
+        for (key, value) in map.iter() {
+            let temp_base = crate::stack::alloc_stack();
+            let temp_stack = push(temp_base, acc);
+            let temp_stack = push(temp_stack, key.to_value());
+            let temp_stack = push(temp_stack, value.clone());
+            let temp_stack = invoke_callable(temp_stack, &callable);
+            // Pop new accumulator
+            if temp_stack <= temp_base {
+                panic!("map.fold: quotation consumed accumulator without producing result");
+            }
+            let (remaining, new_acc) = pop(temp_stack);
+            acc = new_acc;
+            // Drain any extra values left by the quotation
+            if remaining > temp_base {
+                drain_to_base(remaining, temp_base);
+            }
+        }
+
+        push(stack, acc)
+    }
+}
+
+use crate::quotations::invoke_callable;
+
+/// Drain stack values back to base, properly freeing heap-allocated values.
+unsafe fn drain_to_base(mut stack: Stack, base: Stack) {
+    unsafe {
+        while stack > base {
+            let (rest, sv) = pop_sv(stack);
+            drop_stack_value(sv);
+            stack = rest;
+        }
+    }
+}
+
 // Public re-exports
 pub use patch_seq_make_map as make_map;
+pub use patch_seq_map_each as map_each;
 pub use patch_seq_map_empty as map_empty;
+pub use patch_seq_map_fold as map_fold;
 pub use patch_seq_map_get as map_get;
 pub use patch_seq_map_has as map_has;
 pub use patch_seq_map_keys as map_keys;
@@ -688,6 +803,38 @@ mod tests {
                 Value::String(s) => assert_eq!(s.as_str(), "yes"),
                 _ => panic!("Expected String for bool key"),
             }
+        }
+    }
+
+    // =========================================================================
+    // map.fold tests
+    // =========================================================================
+
+    #[test]
+    fn test_map_fold_empty() {
+        // Folding an empty map should return the initial accumulator
+        unsafe {
+            use crate::quotations::push_quotation;
+
+            let stack = crate::stack::alloc_test_stack();
+
+            // Push empty map
+            let stack = make_map(stack);
+
+            // Push initial accumulator
+            let stack = push(stack, Value::Int(99));
+
+            // Push a dummy quotation (won't be called for empty map)
+            unsafe extern "C" fn noop(stack: Stack) -> Stack {
+                stack
+            }
+            let fn_ptr = noop as usize;
+            let stack = push_quotation(stack, fn_ptr, fn_ptr);
+
+            let stack = patch_seq_map_fold(stack);
+
+            let (_stack, result) = pop(stack);
+            assert_eq!(result, Value::Int(99));
         }
     }
 }

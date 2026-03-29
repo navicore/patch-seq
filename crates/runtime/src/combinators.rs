@@ -9,48 +9,8 @@
 //! - `keep` — run quotation on top value, but preserve the original
 //! - `bi`   — apply two quotations to the same value
 
+use crate::quotations::invoke_callable;
 use crate::stack::{Stack, pop, push};
-use crate::value::Value;
-
-/// Call a quotation or closure with the given stack.
-///
-/// This is the shared calling convention used by all combinators.
-/// Handles both Quotation (bare function pointer) and Closure
-/// (function pointer + captured environment).
-///
-/// # Safety
-/// - Stack must be valid
-/// - The callable must be a Quotation or Closure value
-#[inline]
-unsafe fn invoke(stack: Stack, callable: &Value) -> Stack {
-    // SAFETY: Function pointers were created by the compiler's codegen.
-    // Quotation wrappers use C calling convention: fn(Stack) -> Stack.
-    // Closure functions use: fn(Stack, *const Value, usize) -> Stack.
-    // We validate non-null before transmute.
-    unsafe {
-        match callable {
-            Value::Quotation { wrapper, .. } => {
-                if *wrapper == 0 {
-                    panic!("combinator: quotation function pointer is null");
-                }
-                let fn_ref: unsafe extern "C" fn(Stack) -> Stack = std::mem::transmute(*wrapper);
-                fn_ref(stack)
-            }
-            Value::Closure { fn_ptr, env } => {
-                if *fn_ptr == 0 {
-                    panic!("combinator: closure function pointer is null");
-                }
-                let fn_ref: unsafe extern "C" fn(Stack, *const Value, usize) -> Stack =
-                    std::mem::transmute(*fn_ptr);
-                fn_ref(stack, env.as_ptr(), env.len())
-            }
-            _ => panic!(
-                "combinator: expected Quotation or Closure, got {:?}",
-                callable
-            ),
-        }
-    }
-}
 
 /// `dip`: Hide top value, run quotation on the rest, restore value.
 ///
@@ -65,11 +25,11 @@ unsafe fn invoke(stack: Stack, callable: &Value) -> Stack {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn patch_seq_dip(stack: Stack) -> Stack {
     // SAFETY: Caller guarantees stack has quotation on top and a value below.
-    // invoke's safety is documented above.
+    // invoke_callable's safety is documented in quotations.rs.
     unsafe {
         let (stack, quot) = pop(stack); // pop quotation
         let (stack, x) = pop(stack); // pop preserved value
-        let stack = invoke(stack, &quot); // run quotation on remaining stack
+        let stack = invoke_callable(stack, &quot); // run quotation on remaining stack
         push(stack, x) // restore preserved value
     }
 }
@@ -93,7 +53,7 @@ pub unsafe extern "C" fn patch_seq_keep(stack: Stack) -> Stack {
         let (stack, quot) = pop(stack); // pop quotation
         let (stack, x) = pop(stack); // pop value to preserve
         let stack = push(stack, x.clone()); // push copy for quotation to consume
-        let stack = invoke(stack, &quot); // run quotation (consumes the copy)
+        let stack = invoke_callable(stack, &quot); // run quotation (consumes the copy)
         push(stack, x) // restore original value
     }
 }
@@ -118,9 +78,9 @@ pub unsafe extern "C" fn patch_seq_bi(stack: Stack) -> Stack {
         let (stack, quot1) = pop(stack); // pop first quotation
         let (stack, x) = pop(stack); // pop value
         let stack = push(stack, x.clone()); // push copy for quot1
-        let stack = invoke(stack, &quot1); // run first quotation
+        let stack = invoke_callable(stack, &quot1); // run first quotation
         let stack = push(stack, x); // push original for quot2
-        invoke(stack, &quot2) // run second quotation
+        invoke_callable(stack, &quot2) // run second quotation
     }
 }
 

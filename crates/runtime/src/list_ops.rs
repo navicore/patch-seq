@@ -54,26 +54,14 @@ unsafe fn drain_stack_to_base(mut stack: Stack, base: Stack) {
     }
 }
 
-/// Helper to call a quotation or closure with a value on the stack
+/// Helper to call a quotation or closure with a value on the stack.
 ///
-/// Pushes `value` onto a fresh stack, calls the callable, and returns (result_stack, base).
-/// The caller can compare result_stack to base to check if there are extra values.
+/// Pushes `value` onto the base stack, then invokes the callable.
+/// Uses the shared `invoke_callable` from quotations.rs.
 unsafe fn call_with_value(base: Stack, value: Value, callable: &Value) -> Stack {
     unsafe {
         let stack = push(base, value);
-
-        match callable {
-            Value::Quotation { wrapper, .. } => {
-                let fn_ref: unsafe extern "C" fn(Stack) -> Stack = std::mem::transmute(*wrapper);
-                fn_ref(stack)
-            }
-            Value::Closure { fn_ptr, env } => {
-                let fn_ref: unsafe extern "C" fn(Stack, *const Value, usize) -> Stack =
-                    std::mem::transmute(*fn_ptr);
-                fn_ref(stack, env.as_ptr(), env.len())
-            }
-            _ => panic!("list operation: expected Quotation or Closure"),
-        }
+        crate::quotations::invoke_callable(stack, callable)
     }
 }
 
@@ -610,6 +598,36 @@ pub unsafe extern "C" fn patch_seq_list_set(stack: Stack) -> Stack {
     }
 }
 
+/// Reverse a list.
+///
+/// Stack effect: ( Variant -- Variant )
+///
+/// Returns a new list with elements in reverse order.
+///
+/// # Safety
+/// Stack must have a Variant (list) on top
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn patch_seq_list_reverse(stack: Stack) -> Stack {
+    unsafe {
+        let (stack, list_val) = pop(stack);
+
+        let variant_data = match list_val {
+            Value::Variant(v) => v,
+            _ => panic!("list.reverse: expected Variant (list), got {:?}", list_val),
+        };
+
+        let mut reversed: Vec<Value> = variant_data.fields.to_vec();
+        reversed.reverse();
+
+        let new_variant = Value::Variant(Arc::new(VariantData::new(
+            variant_data.tag.clone(),
+            reversed,
+        )));
+
+        push(stack, new_variant)
+    }
+}
+
 // Public re-exports
 pub use patch_seq_list_each as list_each;
 pub use patch_seq_list_empty as list_empty;
@@ -620,6 +638,7 @@ pub use patch_seq_list_length as list_length;
 pub use patch_seq_list_make as list_make;
 pub use patch_seq_list_map as list_map;
 pub use patch_seq_list_push as list_push;
+pub use patch_seq_list_reverse as list_reverse;
 pub use patch_seq_list_set as list_set;
 
 #[cfg(test)]
@@ -1061,6 +1080,80 @@ mod tests {
             assert_eq!(success, Value::Bool(false));
             let (_stack, returned) = pop(stack);
             assert_eq!(returned, Value::Int(42)); // Original value returned
+        }
+    }
+
+    // =========================================================================
+    // list.reverse tests
+    // =========================================================================
+
+    #[test]
+    fn test_list_reverse_empty() {
+        unsafe {
+            let stack = crate::stack::alloc_test_stack();
+            // Push empty list
+            let empty_list = Value::Variant(Arc::new(VariantData::new(
+                crate::seqstring::global_string("List".to_string()),
+                vec![],
+            )));
+            let stack = push(stack, empty_list);
+            let stack = list_reverse(stack);
+
+            let (_stack, result) = pop(stack);
+            match result {
+                Value::Variant(v) => {
+                    assert_eq!(v.fields.len(), 0);
+                    assert_eq!(v.tag.as_str(), "List");
+                }
+                _ => panic!("Expected Variant"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_list_reverse_single() {
+        unsafe {
+            let stack = crate::stack::alloc_test_stack();
+            let list = Value::Variant(Arc::new(VariantData::new(
+                crate::seqstring::global_string("List".to_string()),
+                vec![Value::Int(42)],
+            )));
+            let stack = push(stack, list);
+            let stack = list_reverse(stack);
+
+            let (_stack, result) = pop(stack);
+            match result {
+                Value::Variant(v) => {
+                    assert_eq!(v.fields.len(), 1);
+                    assert_eq!(v.fields[0], Value::Int(42));
+                }
+                _ => panic!("Expected Variant"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_list_reverse_multiple() {
+        unsafe {
+            let stack = crate::stack::alloc_test_stack();
+            let list = Value::Variant(Arc::new(VariantData::new(
+                crate::seqstring::global_string("List".to_string()),
+                vec![Value::Int(1), Value::Int(2), Value::Int(3)],
+            )));
+            let stack = push(stack, list);
+            let stack = list_reverse(stack);
+
+            let (_stack, result) = pop(stack);
+            match result {
+                Value::Variant(v) => {
+                    assert_eq!(v.fields.len(), 3);
+                    assert_eq!(v.fields[0], Value::Int(3));
+                    assert_eq!(v.fields[1], Value::Int(2));
+                    assert_eq!(v.fields[2], Value::Int(1));
+                    assert_eq!(v.tag.as_str(), "List"); // tag preserved
+                }
+                _ => panic!("Expected Variant"),
+            }
         }
     }
 }

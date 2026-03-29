@@ -482,6 +482,10 @@ pub static RUNTIME_DECLARATIONS: LazyLock<Vec<RuntimeDecl>> = LazyLock::new(|| {
             decl: "declare ptr @patch_seq_list_empty(ptr)",
             category: None,
         },
+        RuntimeDecl {
+            decl: "declare ptr @patch_seq_list_reverse(ptr)",
+            category: None,
+        },
         // Map operations
         RuntimeDecl {
             decl: "declare ptr @patch_seq_make_map(ptr)",
@@ -517,6 +521,14 @@ pub static RUNTIME_DECLARATIONS: LazyLock<Vec<RuntimeDecl>> = LazyLock::new(|| {
         },
         RuntimeDecl {
             decl: "declare ptr @patch_seq_map_empty(ptr)",
+            category: None,
+        },
+        RuntimeDecl {
+            decl: "declare ptr @patch_seq_map_each(ptr)",
+            category: None,
+        },
+        RuntimeDecl {
+            decl: "declare ptr @patch_seq_map_fold(ptr)",
             category: None,
         },
         // TCP operations
@@ -738,6 +750,10 @@ pub static RUNTIME_DECLARATIONS: LazyLock<Vec<RuntimeDecl>> = LazyLock::new(|| {
         },
         RuntimeDecl {
             decl: "declare ptr @patch_seq_string_equal(ptr)",
+            category: None,
+        },
+        RuntimeDecl {
+            decl: "declare ptr @patch_seq_string_join(ptr)",
             category: None,
         },
         RuntimeDecl {
@@ -1322,6 +1338,7 @@ pub static BUILTIN_SYMBOLS: LazyLock<HashMap<&'static str, &'static str>> = Lazy
         ("string.to-upper", "patch_seq_string_to_upper"),
         ("string.to-lower", "patch_seq_string_to_lower"),
         ("string.equal?", "patch_seq_string_equal"),
+        ("string.join", "patch_seq_string_join"),
         ("string.json-escape", "patch_seq_json_escape"),
         ("string->int", "patch_seq_string_to_int"),
         // Encoding operations
@@ -1391,6 +1408,7 @@ pub static BUILTIN_SYMBOLS: LazyLock<HashMap<&'static str, &'static str>> = Lazy
         ("list.each", "patch_seq_list_each"),
         ("list.length", "patch_seq_list_length"),
         ("list.empty?", "patch_seq_list_empty"),
+        ("list.reverse", "patch_seq_list_reverse"),
         // Map operations
         ("map.make", "patch_seq_make_map"),
         ("map.get", "patch_seq_map_get"),
@@ -1401,6 +1419,8 @@ pub static BUILTIN_SYMBOLS: LazyLock<HashMap<&'static str, &'static str>> = Lazy
         ("map.values", "patch_seq_map_values"),
         ("map.size", "patch_seq_map_size"),
         ("map.empty?", "patch_seq_map_empty"),
+        ("map.each", "patch_seq_map_each"),
+        ("map.fold", "patch_seq_map_fold"),
         // Variant operations
         ("variant.field-count", "patch_seq_variant_field_count"),
         ("variant.tag", "patch_seq_variant_tag"),

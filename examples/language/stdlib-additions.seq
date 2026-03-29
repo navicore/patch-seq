@@ -1,0 +1,84 @@
+# Standard Library Additions
+#
+# Demonstrates: i.neg, negate, string.join, list.reverse,
+#               map.each, map.fold
+
+include std:list
+include std:map
+
+# ============================================================================
+#                            i.neg / negate
+# ============================================================================
+
+: demo-negate ( -- )
+  "--- i.neg / negate ---" io.write-line
+  5 i.neg int->string "5 i.neg = " swap string.concat io.write-line
+  -3 negate int->string "-3 negate = " swap string.concat io.write-line
+  0 i.neg int->string "0 i.neg = " swap string.concat io.write-line
+;
+
+# ============================================================================
+#                            string.join
+# ============================================================================
+
+: demo-string-join ( -- )
+  "" io.write-line
+  "--- string.join ---" io.write-line
+  list-of "apple" lv "banana" lv "cherry" lv
+  ", " string.join io.write-line
+
+  list-of 1 lv 2 lv 3 lv
+  " + " string.join io.write-line
+;
+
+# ============================================================================
+#                           list.reverse
+# ============================================================================
+
+: demo-list-reverse ( -- )
+  "" io.write-line
+  "--- list.reverse ---" io.write-line
+  list-of 1 lv 2 lv 3 lv 4 lv 5 lv
+  list.reverse
+  [ int->string io.write " " io.write ] list.each
+  "" io.write-line
+;
+
+# ============================================================================
+#                         map.each / map.fold
+# ============================================================================
+
+: show-entry ( String String -- )
+  swap "  " swap string.concat ": " string.concat
+  swap string.concat io.write-line
+;
+
+: demo-map-each ( -- )
+  "" io.write-line
+  "--- map.each ---" io.write-line
+  map-of "name" "Alice" kv "role" "engineer" kv "team" "core" kv
+  [ show-entry ] map.each
+;
+
+: demo-map-fold ( -- )
+  "" io.write-line
+  "--- map.fold ---" io.write-line
+  # Count entries by folding with an accumulator
+  map-of "a" "x" kv "b" "y" kv "c" "z" kv
+  0 [ drop drop 1 i.+ ] map.fold
+  int->string "Entry count: " swap string.concat io.write-line
+;
+
+# ============================================================================
+#                              main
+# ============================================================================
+
+: main ( -- Int )
+  "=== Standard Library Additions ===" io.write-line
+  demo-negate
+  demo-string-join
+  demo-list-reverse
+  demo-map-each
+  demo-map-fold
+  0
+;
