@@ -524,11 +524,16 @@ pub unsafe extern "C" fn patch_seq_list_get(stack: Stack) -> Stack {
     }
 }
 
-/// Set an element in a list by index (functional - returns new list)
+/// Set an element in a list by index with COW optimization.
 ///
 /// Stack effect: ( Variant Int Value -- Variant Bool )
 ///
-/// Returns a new list with the value at the given index replaced, and true.
+/// Fast path: if the list (at sp-3) is sole-owned and the index (at sp-2)
+/// is a valid tagged int, peeks at both without popping, then pops value
+/// and index and mutates the list in place.
+/// Slow path: pops all three, clones if shared, pushes new list.
+///
+/// Returns the list with the value at the given index replaced, and true.
 /// If index is out of bounds, returns the original list and false.
 ///
 /// # Error Handling
