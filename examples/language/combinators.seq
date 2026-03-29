@@ -1,0 +1,95 @@
+# Dataflow Combinators
+#
+# dip, keep, and bi reduce stack juggling by naming common
+# data-flow patterns instead of naming data.
+#
+# - dip:  hide top value, run quotation on rest, restore value
+# - keep: run quotation on value, preserve original
+# - bi:   apply two quotations to the same value
+
+# ============================================================================
+#                          dip — hide and restore
+# ============================================================================
+
+# Format a coordinate pair as "Point(x, y)"
+# Without dip, you need >aux to stash y while building the string.
+: format-point ( Int Int -- String )
+  [ int->string "Point(" swap string.concat ", " string.concat ] dip
+  int->string string.concat ")" string.concat
+;
+
+# Increment the value below the top of stack
+: inc-under ( Int Int -- Int Int )
+  [ 1 i.+ ] dip
+;
+
+# ============================================================================
+#                       keep — use it but don't lose it
+# ============================================================================
+
+# Square a number but keep the original
+: square-keep ( Int -- Int Int )
+  [ dup i.* ] keep
+;
+
+# ============================================================================
+#                      bi — two views of one value
+# ============================================================================
+
+# Get both the double and triple of a number
+: double-and-triple ( Int -- Int Int )
+  [ 2 i.* ] [ 3 i.* ] bi
+;
+
+# Describe a number: show it doubled and tripled
+: describe-number ( Int -- String )
+  [ 2 i.* int->string " doubled" string.concat ]
+  [ 3 i.* int->string " tripled" string.concat ]
+  bi swap ", " string.concat swap string.concat
+;
+
+# ============================================================================
+#                              demo
+# ============================================================================
+
+: main ( -- Int )
+  "=== Dataflow Combinators ===" io.write-line
+  "" io.write-line
+
+  "--- dip ---" io.write-line
+  3 7 format-point io.write-line
+
+  10 5 inc-under
+  "inc-under 10 5 -> " io.write
+  swap int->string io.write " " io.write
+  int->string io.write-line
+  "" io.write-line
+
+  "--- keep ---" io.write-line
+  5 square-keep
+  "square-keep 5 -> " io.write
+  swap int->string io.write " " io.write
+  int->string io.write-line
+  "" io.write-line
+
+  "--- bi ---" io.write-line
+  4 double-and-triple
+  "double-and-triple 4 -> " io.write
+  swap int->string io.write " " io.write
+  int->string io.write-line
+
+  7 describe-number
+  "describe-number 7 -> " io.write
+  io.write-line
+
+  "" io.write-line
+  "--- closures with combinators ---" io.write-line
+
+  # dip with a quotation - adds 3+5 while preserving 10
+  3 5 10 [ i.+ ] dip
+  "3 5 10 [i.+] dip -> " io.write
+  swap int->string io.write " " io.write
+  int->string io.write-line
+
+  0
+;

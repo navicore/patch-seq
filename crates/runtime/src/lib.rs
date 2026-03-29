@@ -20,6 +20,7 @@ pub mod args;
 pub mod arithmetic;
 pub mod channel;
 pub mod closures;
+pub mod combinators;
 pub mod cond;
 pub mod diagnostics;
 pub mod encoding;
@@ -228,6 +229,9 @@ pub use closures::{
     patch_seq_env_get_int as env_get_int, patch_seq_env_set as env_set,
     patch_seq_make_closure as make_closure, patch_seq_push_closure as push_closure,
 };
+
+// Dataflow combinators (exported for LLVM linking)
+pub use combinators::{bi, dip, keep};
 
 // Conditional combinator (exported for LLVM linking)
 pub use cond::patch_seq_cond as cond;
