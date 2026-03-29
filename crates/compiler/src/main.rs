@@ -323,7 +323,11 @@ fn run_lint(
             .iter()
             .any(|d| d.severity == lint::Severity::Error);
 
-        if has_errors || (deny_warnings && !all_diagnostics.is_empty()) {
+        let has_warnings = all_diagnostics
+            .iter()
+            .any(|d| d.severity == lint::Severity::Warning);
+
+        if has_errors || (deny_warnings && has_warnings) {
             process::exit(1);
         }
     }

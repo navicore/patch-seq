@@ -346,6 +346,7 @@
 #
 # Stack effect: ( socket -- )
 #
+# seq:allow(unchecked-tcp-write)
 : handle-connection ( Int -- )
   # Stack: ( socket )
 

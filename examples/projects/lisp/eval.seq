@@ -286,6 +286,7 @@ include "parser"
   then
 ;
 
+# seq:allow(unchecked-divide)
 : eval-fold-div-with-env ( List Acc Env -- Int )
   # Stack: List Acc Env
   2 pick snil? if

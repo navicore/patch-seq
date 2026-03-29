@@ -94,6 +94,7 @@ union IntResult {
 # =============================================================================
 
 # A function that returns our Result type
+# seq:allow(unchecked-div)
 : safe-divide ( Int Int -- IntResult )
   dup 0 i.= if
     drop drop "Division by zero" Make-IntErr

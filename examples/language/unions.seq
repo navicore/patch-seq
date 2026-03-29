@@ -65,6 +65,7 @@ union Result {
 }
 
 # Safe division that returns a Result
+# seq:allow(unchecked-div)
 : safe-divide ( Int Int -- Result )
   dup 0 i.= if
     drop drop

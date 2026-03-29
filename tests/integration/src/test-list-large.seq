@@ -37,6 +37,7 @@ include std:list
 ;
 
 # Filter a 100-element list — keep even numbers
+# seq:allow(unchecked-mod)
 : test-filter-100 ( -- )
   list-of 100 push-n
   [ 2 i.% drop 0 i.= ] list.filter
