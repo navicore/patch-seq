@@ -29,6 +29,7 @@ pub mod call_graph;
 pub mod capture_analysis;
 pub mod codegen;
 pub mod config;
+pub mod error_flag_lint;
 pub mod ffi;
 pub mod lint;
 pub mod parser;
@@ -44,6 +45,7 @@ pub mod unification;
 pub use ast::Program;
 pub use codegen::CodeGen;
 pub use config::{CompilerConfig, ExternalBuiltin, OptimizationLevel};
+pub use error_flag_lint::ErrorFlagAnalyzer;
 pub use lint::{LintConfig, LintDiagnostic, Linter, Severity};
 pub use parser::Parser;
 pub use resolver::{

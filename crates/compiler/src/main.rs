@@ -335,7 +335,8 @@ fn run_lint(
 
 fn lint_file(path: &PathBuf, linter: &seqc::Linter, diagnostics: &mut Vec<seqc::LintDiagnostic>) {
     use seqc::{
-        Parser, ProgramResourceAnalyzer, TypeChecker, call_graph, lint, resolver::Resolver,
+        ErrorFlagAnalyzer, Parser, ProgramResourceAnalyzer, TypeChecker, call_graph, lint,
+        resolver::Resolver,
     };
     use std::fs;
 
@@ -366,10 +367,15 @@ fn lint_file(path: &PathBuf, linter: &seqc::Linter, diagnostics: &mut Vec<seqc::
     let file_diagnostics = linter.lint_program(&program, path);
     diagnostics.extend(file_diagnostics);
 
-    // Phase 2: Resource leak detection with cross-word analysis
+    // Phase 2a: Resource leak detection with cross-word analysis
     let mut resource_analyzer = ProgramResourceAnalyzer::new(path);
     let resource_diagnostics = resource_analyzer.analyze_program(&program);
     diagnostics.extend(resource_diagnostics);
+
+    // Phase 2b: Error flag tracking (unchecked Bool from fallible operations)
+    let mut flag_analyzer = ErrorFlagAnalyzer::new(path);
+    let flag_diagnostics = flag_analyzer.analyze_program(&program);
+    diagnostics.extend(flag_diagnostics);
 
     // Phase 3: Type checking (catches stack underflows, effect mismatches, etc.)
     // Resolve includes to get external words, then type check the merged program
