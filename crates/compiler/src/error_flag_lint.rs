@@ -5,9 +5,8 @@
 //! checked via `if` or `cond`.
 //!
 //! This catches patterns that the TOML-based pattern linter misses:
-//! - `file.slurp swap drop` (non-adjacent Bool drop)
-//! - `i./ >aux ... aux> drop` (aux stack round-trip)
-//! - `string->int nip` (nip drops the value below, leaving unchecked Bool... wait, nip drops below top)
+//! - `file.slurp swap nip` (Bool moved by swap, then dropped by nip)
+//! - `i./ >aux ... aux> drop` (Bool stashed on aux stack, dropped later)
 //!
 //! # Architecture
 //!
@@ -32,13 +31,12 @@ use std::path::{Path, PathBuf};
 /// A tracked error flag with its origin
 #[derive(Debug, Clone)]
 struct ErrorFlag {
-    /// Unique ID for this flag instance (used for deduplication)
-    #[allow(dead_code)]
-    id: usize,
     /// Line where the fallible operation was called (0-indexed)
     created_line: usize,
     /// The operation that produced this flag
     operation: String,
+    /// Human-readable description of what failure the Bool indicates
+    description: String,
 }
 
 /// A value on the abstract stack
@@ -55,7 +53,6 @@ enum StackVal {
 struct FlagStack {
     stack: Vec<StackVal>,
     aux: Vec<StackVal>,
-    next_id: usize,
 }
 
 impl FlagStack {
@@ -63,7 +60,6 @@ impl FlagStack {
         FlagStack {
             stack: Vec::new(),
             aux: Vec::new(),
-            next_id: 0,
         }
     }
 
@@ -71,13 +67,12 @@ impl FlagStack {
         self.stack.push(StackVal::Other);
     }
 
-    fn push_flag(&mut self, line: usize, operation: &str) {
+    fn push_flag(&mut self, line: usize, operation: &str, description: &str) {
         let flag = ErrorFlag {
-            id: self.next_id,
             created_line: line,
             operation: operation.to_string(),
+            description: description.to_string(),
         };
-        self.next_id += 1;
         self.stack.push(StackVal::Flag(flag));
     }
 
@@ -124,90 +119,98 @@ impl FlagStack {
         FlagStack {
             stack: joined,
             aux: joined_aux,
-            next_id: self.next_id.max(other.next_id),
         }
     }
 }
 
-/// Known fallible operations that return `(value Bool)` or `(value value Bool)`.
-/// The number indicates how many values are pushed BEFORE the Bool.
-/// E.g., `file.slurp` pushes (String, Bool) so it's 1 value before Bool.
-fn fallible_op_info(name: &str) -> Option<(usize, &'static str)> {
-    // Returns (values_before_bool, description)
-    match name {
-        // Division — (Int Bool)
-        "i./" | "i.divide" => Some((1, "division by zero")),
-        "i.%" | "i.modulo" => Some((1, "modulo by zero")),
+/// Information about a fallible operation.
+struct FallibleOpInfo {
+    /// Number of values the operation consumes from the stack
+    inputs: usize,
+    /// Number of values pushed BEFORE the Bool (e.g., 1 for `( -- String Bool )`)
+    values_before_bool: usize,
+    /// Human-readable description of what failure the Bool indicates
+    description: &'static str,
+}
 
-        // File I/O — (content/size Bool)
-        "file.slurp" => Some((1, "file read failure")),
-        "file.spit" => Some((0, "file write failure")),
-        "file.append" => Some((0, "file append failure")),
-        "file.delete" => Some((0, "file delete failure")),
-        "file.size" => Some((1, "file size failure")),
-        "dir.make" => Some((0, "directory creation failure")),
-        "dir.delete" => Some((0, "directory delete failure")),
-        "dir.list" => Some((1, "directory list failure")),
+/// Single source of truth for all fallible operations.
+/// Maps operation name → (inputs consumed, values before Bool, description).
+fn fallible_op_info(name: &str) -> Option<FallibleOpInfo> {
+    let (inputs, values_before_bool, description) = match name {
+        // Division — ( Int Int -- Int Bool )
+        "i./" | "i.divide"         => (2, 1, "division by zero"),
+        "i.%" | "i.modulo"         => (2, 1, "modulo by zero"),
 
-        // I/O
-        "io.read-line" => Some((1, "read failure")),
+        // File I/O
+        "file.slurp"               => (1, 1, "file read failure"),
+        "file.spit"                => (2, 0, "file write failure"),
+        "file.append"              => (2, 0, "file append failure"),
+        "file.delete"              => (1, 0, "file delete failure"),
+        "file.size"                => (1, 1, "file size failure"),
+        "dir.make"                 => (1, 0, "directory creation failure"),
+        "dir.delete"               => (1, 0, "directory delete failure"),
+        "dir.list"                 => (1, 1, "directory list failure"),
 
-        // Parsing — (value Bool)
-        "string->int" => Some((1, "parse failure")),
-        "string->float" => Some((1, "parse failure")),
+        // I/O — ( -- String Bool )
+        "io.read-line"             => (0, 1, "read failure"),
 
-        // Channels — (value Bool) or (Bool)
-        "chan.send" => Some((0, "send failure")),
-        "chan.receive" => Some((1, "receive failure")),
+        // Parsing — ( String -- value Bool )
+        "string->int"              => (1, 1, "parse failure"),
+        "string->float"            => (1, 1, "parse failure"),
 
-        // Map/List lookups — (value Bool)
-        "map.get" => Some((1, "key not found")),
-        "list.get" => Some((1, "index out of bounds")),
-        "list.set" => Some((1, "index out of bounds")),
+        // Channels
+        "chan.send"                 => (2, 0, "send failure"),
+        "chan.receive"              => (1, 1, "receive failure"),
 
-        // TCP — (fd/data Bool) or (Bool)
-        "tcp.listen" => Some((1, "listen failure")),
-        "tcp.accept" => Some((1, "accept failure")),
-        "tcp.read" => Some((1, "read failure")),
-        "tcp.write" => Some((0, "write failure")),
-        "tcp.close" => Some((0, "close failure")),
+        // Map/List lookups
+        "map.get"                  => (2, 1, "key not found"),
+        "list.get"                 => (2, 1, "index out of bounds"),
+        "list.set"                 => (3, 1, "index out of bounds"),
 
-        // OS — (value Bool)
-        "os.getenv" => Some((1, "env var not set")),
-        "os.home-dir" => Some((1, "home dir not available")),
-        "os.current-dir" => Some((1, "current dir not available")),
-        "os.path-parent" => Some((1, "no parent path")),
-        "os.path-filename" => Some((1, "no filename")),
+        // TCP
+        "tcp.listen"               => (1, 1, "listen failure"),
+        "tcp.accept"               => (1, 1, "accept failure"),
+        "tcp.read"                 => (1, 1, "read failure"),
+        "tcp.write"                => (2, 0, "write failure"),
+        "tcp.close"                => (1, 0, "close failure"),
 
-        // Regex — (value Bool)
-        "regex.find" => Some((1, "no match or invalid regex")),
-        "regex.find-all" => Some((1, "invalid regex")),
-        "regex.replace" => Some((1, "invalid regex")),
-        "regex.replace-all" => Some((1, "invalid regex")),
-        "regex.captures" => Some((1, "invalid regex")),
-        "regex.split" => Some((1, "invalid regex")),
+        // OS
+        "os.getenv"                => (1, 1, "env var not set"),
+        "os.home-dir"              => (0, 1, "home dir not available"),
+        "os.current-dir"           => (0, 1, "current dir not available"),
+        "os.path-parent"           => (1, 1, "no parent path"),
+        "os.path-filename"         => (1, 1, "no filename"),
 
-        // Encoding — (String Bool)
-        "encoding.base64-decode" => Some((1, "invalid base64")),
-        "encoding.base64url-decode" => Some((1, "invalid base64url")),
-        "encoding.hex-decode" => Some((1, "invalid hex")),
+        // Regex
+        "regex.find"               => (2, 1, "no match or invalid regex"),
+        "regex.find-all"           => (2, 1, "invalid regex"),
+        "regex.replace"            => (3, 1, "invalid regex"),
+        "regex.replace-all"        => (3, 1, "invalid regex"),
+        "regex.captures"           => (2, 1, "invalid regex"),
+        "regex.split"              => (2, 1, "invalid regex"),
 
-        // Crypto — (String Bool)
-        "crypto.aes-gcm-encrypt" => Some((1, "encryption failure")),
-        "crypto.aes-gcm-decrypt" => Some((1, "decryption failure")),
-        "crypto.pbkdf2-sha256" => Some((1, "key derivation failure")),
-        "crypto.ed25519-sign" => Some((1, "signing failure")),
+        // Encoding
+        "encoding.base64-decode"   => (1, 1, "invalid base64"),
+        "encoding.base64url-decode" => (1, 1, "invalid base64url"),
+        "encoding.hex-decode"      => (1, 1, "invalid hex"),
 
-        // Compression — (String Bool)
-        "compress.gzip" => Some((1, "compression failure")),
-        "compress.gzip-level" => Some((1, "compression failure")),
-        "compress.gunzip" => Some((1, "decompression failure")),
-        "compress.zstd" => Some((1, "compression failure")),
-        "compress.zstd-level" => Some((1, "compression failure")),
-        "compress.unzstd" => Some((1, "decompression failure")),
+        // Crypto
+        "crypto.aes-gcm-encrypt"   => (2, 1, "encryption failure"),
+        "crypto.aes-gcm-decrypt"   => (2, 1, "decryption failure"),
+        "crypto.pbkdf2-sha256"     => (3, 1, "key derivation failure"),
+        "crypto.ed25519-sign"      => (2, 1, "signing failure"),
 
-        _ => None,
-    }
+        // Compression
+        "compress.gzip"            => (1, 1, "compression failure"),
+        "compress.gzip-level"      => (2, 1, "compression failure"),
+        "compress.gunzip"          => (1, 1, "decompression failure"),
+        "compress.zstd"            => (1, 1, "compression failure"),
+        "compress.zstd-level"      => (2, 1, "compression failure"),
+        "compress.unzstd"          => (1, 1, "decompression failure"),
+
+        _ => return None,
+    };
+    Some(FallibleOpInfo { inputs, values_before_bool, description })
 }
 
 /// Words that consume a Bool as an error-checking mechanism
@@ -313,7 +316,8 @@ impl ErrorFlagAnalyzer {
                     // Match arm bindings push values onto stack
                     match &arm.pattern {
                         crate::ast::Pattern::Variant(_) => {
-                            // All fields pushed as positional values
+                            // Variant without named bindings — field count unknown
+                            // statically. Same limitation as resource_lint.
                         }
                         crate::ast::Pattern::VariantWithBindings { bindings, .. } => {
                             for _binding in bindings {
@@ -341,15 +345,16 @@ impl ErrorFlagAnalyzer {
         let line = span.map(|s| s.line).unwrap_or(0);
 
         // Check if this is a fallible operation
-        if let Some((values_before_bool, _desc)) = fallible_op_info(name) {
-            // Pop inputs consumed by the operation (we don't track exact
-            // input counts — conservative, just push outputs)
-            // The operation consumes its inputs and pushes (value..., Bool)
-            self.consume_inputs(name, state);
-            for _ in 0..values_before_bool {
+        if let Some(info) = fallible_op_info(name) {
+            // Pop inputs consumed by the operation
+            for _ in 0..info.inputs {
+                state.pop();
+            }
+            // Push output values, then the error flag Bool
+            for _ in 0..info.values_before_bool {
                 state.push_other();
             }
-            state.push_flag(line, name);
+            state.push_flag(line, name, info.description);
             return;
         }
 
@@ -538,80 +543,6 @@ impl ErrorFlagAnalyzer {
         }
     }
 
-    /// Estimate how many inputs a fallible operation consumes.
-    /// This is approximate — we just pop enough to avoid ghost flags.
-    fn consume_inputs(&self, name: &str, state: &mut FlagStack) {
-        let pops = match name {
-            // ( -- value Bool )
-            "io.read-line" | "chan.make" | "os.home-dir" | "os.current-dir" => 0,
-
-            // ( a -- value Bool )
-            "file.slurp"
-            | "file.delete"
-            | "file.size"
-            | "dir.make"
-            | "dir.delete"
-            | "dir.list"
-            | "string->int"
-            | "string->float"
-            | "os.getenv"
-            | "os.path-parent"
-            | "os.path-filename"
-            | "tcp.listen"
-            | "tcp.close"
-            | "encoding.base64-decode"
-            | "encoding.base64url-decode"
-            | "encoding.hex-decode"
-            | "compress.gzip"
-            | "compress.gunzip"
-            | "compress.zstd"
-            | "compress.unzstd"
-            | "regex.valid?"
-            | "crypto.sha256" => 1,
-
-            // ( a b -- value Bool )
-            "i./"
-            | "i.divide"
-            | "i.%"
-            | "i.modulo"
-            | "file.spit"
-            | "file.append"
-            | "tcp.write"
-            | "tcp.read"
-            | "tcp.accept"
-            | "map.get"
-            | "list.get"
-            | "chan.send"
-            | "regex.find"
-            | "regex.find-all"
-            | "regex.match?"
-            | "regex.captures"
-            | "regex.split"
-            | "crypto.aes-gcm-encrypt"
-            | "crypto.aes-gcm-decrypt"
-            | "crypto.hmac-sha256"
-            | "crypto.constant-time-eq"
-            | "crypto.ed25519-sign"
-            | "compress.gzip-level"
-            | "compress.zstd-level" => 2,
-
-            // ( a b c -- value Bool )
-            "list.set"
-            | "regex.replace"
-            | "regex.replace-all"
-            | "crypto.pbkdf2-sha256"
-            | "crypto.ed25519-verify" => 3,
-
-            // Channel receive: ( Channel -- value Bool )
-            "chan.receive" => 1,
-
-            _ => 0,
-        };
-        for _ in 0..pops {
-            state.pop();
-        }
-    }
-
     fn emit_warning(&mut self, flag: &ErrorFlag, drop_line: usize, word: &WordDef) {
         // Don't warn if the drop is adjacent to the operation (within 2 lines).
         // Adjacent drops like `tcp.write drop` are covered by the pattern-based
@@ -625,10 +556,7 @@ impl ErrorFlagAnalyzer {
             id: "unchecked-error-flag".to_string(),
             message: format!(
                 "`{}` returns a Bool error flag (indicates {}) — dropped without checking",
-                flag.operation,
-                fallible_op_info(&flag.operation)
-                    .map(|(_, desc)| desc)
-                    .unwrap_or("failure"),
+                flag.operation, flag.description,
             ),
             severity: Severity::Warning,
             replacement: String::new(),
