@@ -1,0 +1,820 @@
+//! Error Flag Detection (Phase 2b)
+//!
+//! Abstract stack simulation that tracks Bool values produced by fallible
+//! operations. Warns when these "error flags" are dropped without being
+//! checked via `if` or `cond`.
+//!
+//! This catches patterns that the TOML-based pattern linter misses:
+//! - `file.slurp swap drop` (non-adjacent Bool drop)
+//! - `i./ >aux ... aux> drop` (aux stack round-trip)
+//! - `string->int nip` (nip drops the value below, leaving unchecked Bool... wait, nip drops below top)
+//!
+//! # Architecture
+//!
+//! Modeled on `resource_lint.rs`:
+//! 1. Tag Bools from fallible ops with their origin
+//! 2. Simulate stack operations to track tag movement
+//! 3. When a tagged Bool is consumed by `if`/`cond`, mark checked
+//! 4. When consumed by `drop`/`nip`/other, emit warning
+//!
+//! # Conservative Design
+//!
+//! - Only tracks Bools from known fallible builtins (not all Bools)
+//! - If a tagged Bool flows into an unknown user word, assume checked
+//!   (avoids false positives from cross-word analysis)
+//! - Bools remaining on the stack at word end are assumed returned
+//!   (escape analysis, same as resource_lint)
+
+use crate::ast::{Program, Span, Statement, WordDef};
+use crate::lint::{LintDiagnostic, Severity};
+use std::path::{Path, PathBuf};
+
+/// A tracked error flag with its origin
+#[derive(Debug, Clone)]
+struct ErrorFlag {
+    /// Unique ID for this flag instance (used for deduplication)
+    #[allow(dead_code)]
+    id: usize,
+    /// Line where the fallible operation was called (0-indexed)
+    created_line: usize,
+    /// The operation that produced this flag
+    operation: String,
+}
+
+/// A value on the abstract stack
+#[derive(Debug, Clone)]
+enum StackVal {
+    /// A tracked error flag that hasn't been checked yet
+    Flag(ErrorFlag),
+    /// Any other value (not tracked)
+    Other,
+}
+
+/// Abstract stack state for error flag tracking
+#[derive(Debug, Clone)]
+struct FlagStack {
+    stack: Vec<StackVal>,
+    aux: Vec<StackVal>,
+    next_id: usize,
+}
+
+impl FlagStack {
+    fn new() -> Self {
+        FlagStack {
+            stack: Vec::new(),
+            aux: Vec::new(),
+            next_id: 0,
+        }
+    }
+
+    fn push_other(&mut self) {
+        self.stack.push(StackVal::Other);
+    }
+
+    fn push_flag(&mut self, line: usize, operation: &str) {
+        let flag = ErrorFlag {
+            id: self.next_id,
+            created_line: line,
+            operation: operation.to_string(),
+        };
+        self.next_id += 1;
+        self.stack.push(StackVal::Flag(flag));
+    }
+
+    fn pop(&mut self) -> Option<StackVal> {
+        self.stack.pop()
+    }
+
+    fn depth(&self) -> usize {
+        self.stack.len()
+    }
+
+    /// Join two states after branching (conservative: keep flags from either)
+    fn join(&self, other: &FlagStack) -> FlagStack {
+        // Use the longer stack, preserving flags from either branch
+        let len = self.stack.len().max(other.stack.len());
+        let mut joined = Vec::with_capacity(len);
+
+        for i in 0..len {
+            let a = self.stack.get(i);
+            let b = other.stack.get(i);
+            // If either branch has a flag at this position, keep it
+            let val = match (a, b) {
+                (Some(StackVal::Flag(f)), _) => StackVal::Flag(f.clone()),
+                (_, Some(StackVal::Flag(f))) => StackVal::Flag(f.clone()),
+                _ => StackVal::Other,
+            };
+            joined.push(val);
+        }
+
+        // Join aux stacks similarly
+        let aux_len = self.aux.len().max(other.aux.len());
+        let mut joined_aux = Vec::with_capacity(aux_len);
+        for i in 0..aux_len {
+            let a = self.aux.get(i);
+            let b = other.aux.get(i);
+            let val = match (a, b) {
+                (Some(StackVal::Flag(f)), _) => StackVal::Flag(f.clone()),
+                (_, Some(StackVal::Flag(f))) => StackVal::Flag(f.clone()),
+                _ => StackVal::Other,
+            };
+            joined_aux.push(val);
+        }
+
+        FlagStack {
+            stack: joined,
+            aux: joined_aux,
+            next_id: self.next_id.max(other.next_id),
+        }
+    }
+}
+
+/// Known fallible operations that return `(value Bool)` or `(value value Bool)`.
+/// The number indicates how many values are pushed BEFORE the Bool.
+/// E.g., `file.slurp` pushes (String, Bool) so it's 1 value before Bool.
+fn fallible_op_info(name: &str) -> Option<(usize, &'static str)> {
+    // Returns (values_before_bool, description)
+    match name {
+        // Division — (Int Bool)
+        "i./" | "i.divide" => Some((1, "division by zero")),
+        "i.%" | "i.modulo" => Some((1, "modulo by zero")),
+
+        // File I/O — (content/size Bool)
+        "file.slurp" => Some((1, "file read failure")),
+        "file.spit" => Some((0, "file write failure")),
+        "file.append" => Some((0, "file append failure")),
+        "file.delete" => Some((0, "file delete failure")),
+        "file.size" => Some((1, "file size failure")),
+        "dir.make" => Some((0, "directory creation failure")),
+        "dir.delete" => Some((0, "directory delete failure")),
+        "dir.list" => Some((1, "directory list failure")),
+
+        // I/O
+        "io.read-line" => Some((1, "read failure")),
+
+        // Parsing — (value Bool)
+        "string->int" => Some((1, "parse failure")),
+        "string->float" => Some((1, "parse failure")),
+
+        // Channels — (value Bool) or (Bool)
+        "chan.send" => Some((0, "send failure")),
+        "chan.receive" => Some((1, "receive failure")),
+
+        // Map/List lookups — (value Bool)
+        "map.get" => Some((1, "key not found")),
+        "list.get" => Some((1, "index out of bounds")),
+        "list.set" => Some((1, "index out of bounds")),
+
+        // TCP — (fd/data Bool) or (Bool)
+        "tcp.listen" => Some((1, "listen failure")),
+        "tcp.accept" => Some((1, "accept failure")),
+        "tcp.read" => Some((1, "read failure")),
+        "tcp.write" => Some((0, "write failure")),
+        "tcp.close" => Some((0, "close failure")),
+
+        // OS — (value Bool)
+        "os.getenv" => Some((1, "env var not set")),
+        "os.home-dir" => Some((1, "home dir not available")),
+        "os.current-dir" => Some((1, "current dir not available")),
+        "os.path-parent" => Some((1, "no parent path")),
+        "os.path-filename" => Some((1, "no filename")),
+
+        // Regex — (value Bool)
+        "regex.find" => Some((1, "no match or invalid regex")),
+        "regex.find-all" => Some((1, "invalid regex")),
+        "regex.replace" => Some((1, "invalid regex")),
+        "regex.replace-all" => Some((1, "invalid regex")),
+        "regex.captures" => Some((1, "invalid regex")),
+        "regex.split" => Some((1, "invalid regex")),
+
+        // Encoding — (String Bool)
+        "encoding.base64-decode" => Some((1, "invalid base64")),
+        "encoding.base64url-decode" => Some((1, "invalid base64url")),
+        "encoding.hex-decode" => Some((1, "invalid hex")),
+
+        // Crypto — (String Bool)
+        "crypto.aes-gcm-encrypt" => Some((1, "encryption failure")),
+        "crypto.aes-gcm-decrypt" => Some((1, "decryption failure")),
+        "crypto.pbkdf2-sha256" => Some((1, "key derivation failure")),
+        "crypto.ed25519-sign" => Some((1, "signing failure")),
+
+        // Compression — (String Bool)
+        "compress.gzip" => Some((1, "compression failure")),
+        "compress.gzip-level" => Some((1, "compression failure")),
+        "compress.gunzip" => Some((1, "decompression failure")),
+        "compress.zstd" => Some((1, "compression failure")),
+        "compress.zstd-level" => Some((1, "compression failure")),
+        "compress.unzstd" => Some((1, "decompression failure")),
+
+        _ => None,
+    }
+}
+
+/// Words that consume a Bool as an error-checking mechanism
+fn is_checking_consumer(name: &str) -> bool {
+    // `if` is handled structurally (it's a Statement::If, not a WordCall)
+    // `cond` consumes Bools as conditions
+    name == "cond"
+}
+
+/// Analyzer for unchecked error flags
+pub struct ErrorFlagAnalyzer {
+    file: PathBuf,
+    diagnostics: Vec<LintDiagnostic>,
+}
+
+impl ErrorFlagAnalyzer {
+    pub fn new(file: &Path) -> Self {
+        ErrorFlagAnalyzer {
+            file: file.to_path_buf(),
+            diagnostics: Vec::new(),
+        }
+    }
+
+    pub fn analyze_program(&mut self, program: &Program) -> Vec<LintDiagnostic> {
+        let mut all_diagnostics = Vec::new();
+        for word in &program.words {
+            // Skip words with seq:allow(unchecked-error-flag)
+            if word
+                .allowed_lints
+                .iter()
+                .any(|l| l == "unchecked-error-flag")
+            {
+                continue;
+            }
+            let diags = self.analyze_word(word);
+            all_diagnostics.extend(diags);
+        }
+        all_diagnostics
+    }
+
+    fn analyze_word(&mut self, word: &WordDef) -> Vec<LintDiagnostic> {
+        self.diagnostics.clear();
+        let mut state = FlagStack::new();
+        self.analyze_statements(&word.body, &mut state, word);
+        // Flags remaining on stack at word end = returned to caller (escape)
+        std::mem::take(&mut self.diagnostics)
+    }
+
+    fn analyze_statements(
+        &mut self,
+        statements: &[Statement],
+        state: &mut FlagStack,
+        word: &WordDef,
+    ) {
+        for stmt in statements {
+            self.analyze_statement(stmt, state, word);
+        }
+    }
+
+    fn analyze_statement(&mut self, stmt: &Statement, state: &mut FlagStack, word: &WordDef) {
+        match stmt {
+            Statement::IntLiteral(_)
+            | Statement::FloatLiteral(_)
+            | Statement::BoolLiteral(_)
+            | Statement::StringLiteral(_)
+            | Statement::Symbol(_) => {
+                state.push_other();
+            }
+
+            Statement::Quotation { .. } => {
+                state.push_other();
+            }
+
+            Statement::WordCall { name, span } => {
+                self.analyze_word_call(name, span.as_ref(), state, word);
+            }
+
+            Statement::If {
+                then_branch,
+                else_branch,
+                span: _,
+            } => {
+                // `if` consumes the Bool on top — this IS a check
+                let popped = state.pop();
+                // The Bool was checked by being used as an if-condition.
+                // (We don't need to do anything with `popped` — it's consumed correctly.)
+                let _ = popped;
+
+                let mut then_state = state.clone();
+                let mut else_state = state.clone();
+                self.analyze_statements(then_branch, &mut then_state, word);
+                if let Some(else_stmts) = else_branch {
+                    self.analyze_statements(else_stmts, &mut else_state, word);
+                }
+                *state = then_state.join(&else_state);
+            }
+
+            Statement::Match { arms, span: _ } => {
+                state.pop(); // match value consumed
+                let mut arm_states: Vec<FlagStack> = Vec::new();
+                for arm in arms {
+                    let mut arm_state = state.clone();
+                    // Match arm bindings push values onto stack
+                    match &arm.pattern {
+                        crate::ast::Pattern::Variant(_) => {
+                            // All fields pushed as positional values
+                        }
+                        crate::ast::Pattern::VariantWithBindings { bindings, .. } => {
+                            for _binding in bindings {
+                                arm_state.push_other();
+                            }
+                        }
+                    }
+                    self.analyze_statements(&arm.body, &mut arm_state, word);
+                    arm_states.push(arm_state);
+                }
+                if let Some(joined) = arm_states.into_iter().reduce(|acc, s| acc.join(&s)) {
+                    *state = joined;
+                }
+            }
+        }
+    }
+
+    fn analyze_word_call(
+        &mut self,
+        name: &str,
+        span: Option<&Span>,
+        state: &mut FlagStack,
+        word: &WordDef,
+    ) {
+        let line = span.map(|s| s.line).unwrap_or(0);
+
+        // Check if this is a fallible operation
+        if let Some((values_before_bool, _desc)) = fallible_op_info(name) {
+            // Pop inputs consumed by the operation (we don't track exact
+            // input counts — conservative, just push outputs)
+            // The operation consumes its inputs and pushes (value..., Bool)
+            self.consume_inputs(name, state);
+            for _ in 0..values_before_bool {
+                state.push_other();
+            }
+            state.push_flag(line, name);
+            return;
+        }
+
+        // Check if this is a checking consumer
+        if is_checking_consumer(name) {
+            // cond consumes the whole stack effectively — clear flags
+            state.stack.clear();
+            return;
+        }
+
+        // Stack operations — simulate movement
+        match name {
+            "drop" => {
+                if let Some(StackVal::Flag(flag)) = state.pop() {
+                    self.emit_warning(&flag, line, word);
+                }
+            }
+            "nip" => {
+                // ( a b -- b ) — drops a (second from top)
+                let top = state.pop();
+                if let Some(StackVal::Flag(flag)) = state.pop() {
+                    self.emit_warning(&flag, line, word);
+                }
+                if let Some(v) = top {
+                    state.stack.push(v);
+                }
+            }
+            "3drop" => {
+                for _ in 0..3 {
+                    if let Some(StackVal::Flag(flag)) = state.pop() {
+                        self.emit_warning(&flag, line, word);
+                    }
+                }
+            }
+            "2drop" => {
+                for _ in 0..2 {
+                    if let Some(StackVal::Flag(flag)) = state.pop() {
+                        self.emit_warning(&flag, line, word);
+                    }
+                }
+            }
+            "dup" => {
+                if let Some(top) = state.stack.last().cloned() {
+                    state.stack.push(top);
+                }
+            }
+            "swap" => {
+                let a = state.pop();
+                let b = state.pop();
+                if let Some(v) = a {
+                    state.stack.push(v);
+                }
+                if let Some(v) = b {
+                    state.stack.push(v);
+                }
+            }
+            "over" => {
+                if state.depth() >= 2 {
+                    let second = state.stack[state.depth() - 2].clone();
+                    state.stack.push(second);
+                }
+            }
+            "rot" => {
+                let c = state.pop();
+                let b = state.pop();
+                let a = state.pop();
+                if let Some(v) = b {
+                    state.stack.push(v);
+                }
+                if let Some(v) = c {
+                    state.stack.push(v);
+                }
+                if let Some(v) = a {
+                    state.stack.push(v);
+                }
+            }
+            "tuck" => {
+                let b = state.pop();
+                let a = state.pop();
+                if let Some(v) = b.clone() {
+                    state.stack.push(v);
+                }
+                if let Some(v) = a {
+                    state.stack.push(v);
+                }
+                if let Some(v) = b {
+                    state.stack.push(v);
+                }
+            }
+            "2dup" => {
+                if state.depth() >= 2 {
+                    let a = state.stack[state.depth() - 2].clone();
+                    let b = state.stack[state.depth() - 1].clone();
+                    state.stack.push(a);
+                    state.stack.push(b);
+                }
+            }
+            ">aux" => {
+                if let Some(v) = state.pop() {
+                    state.aux.push(v);
+                }
+            }
+            "aux>" => {
+                if let Some(v) = state.aux.pop() {
+                    state.stack.push(v);
+                }
+            }
+            "pick" | "roll" => {
+                // Conservative: push unknown (can't statically know depth)
+                state.push_other();
+            }
+
+            // Combinators — dip hides top, runs quotation, restores
+            "dip" => {
+                // ( x quot -- ? x ) — pop quot, pop x, run quot (unknown effect), push x
+                state.pop(); // quotation
+                let preserved = state.pop();
+                // Quotation effect unknown — conservatively clear flags from stack
+                // (quotation might check them, might not)
+                state.stack.retain(|v| !matches!(v, StackVal::Flag(_)));
+                if let Some(v) = preserved {
+                    state.stack.push(v);
+                }
+            }
+            "keep" => {
+                // ( x quot -- ? x ) — similar to dip but quotation gets x
+                state.pop(); // quotation
+                let preserved = state.pop();
+                state.stack.retain(|v| !matches!(v, StackVal::Flag(_)));
+                if let Some(v) = preserved {
+                    state.stack.push(v);
+                }
+            }
+            "bi" => {
+                // ( x q1 q2 -- ? ) — two quotations consume x
+                state.pop(); // q2
+                state.pop(); // q1
+                state.pop(); // x
+                // Both quotations have unknown effects
+                state.stack.retain(|v| !matches!(v, StackVal::Flag(_)));
+            }
+
+            // call — quotation effect unknown, conservatively assume it checks
+            "call" => {
+                state.pop(); // quotation
+                // Conservative: clear tracked flags (quotation might do anything)
+                state.stack.retain(|v| !matches!(v, StackVal::Flag(_)));
+            }
+
+            // Known type-conversion words that consume one value and push one
+            "int->string" | "int->float" | "float->int" | "float->string" | "char->string"
+            | "symbol->string" | "string->symbol" => {
+                // These consume the top value. If it's a flag, that's suspicious
+                // but not necessarily wrong (e.g., converting a Bool to string for display).
+                // Conservative: don't warn, just remove tracking.
+                state.pop();
+                state.push_other();
+            }
+
+            // Boolean operations that legitimately consume Bools
+            "and" | "or" | "not" => {
+                // These consume Bool(s) and produce Bool — not a check per se,
+                // but the user is clearly working with the Bool value.
+                // Conservative: mark as consumed (no warning).
+                state.pop();
+                if name != "not" {
+                    state.pop();
+                }
+                state.push_other();
+            }
+
+            // Test assertions that check Bools
+            "test.assert" | "test.assert-not" => {
+                state.pop(); // Bool consumed by assertion = checked
+            }
+
+            // All other words: conservative — assume they consume/produce
+            // unknown values. Pop any flags without warning (might be checked
+            // inside the word).
+            _ => {
+                // For unknown words, we don't know the stack effect.
+                // Conservative: leave the stack as-is (don't warn, don't clear).
+                // This avoids false positives from user-defined words that
+                // properly handle the Bool internally.
+            }
+        }
+    }
+
+    /// Estimate how many inputs a fallible operation consumes.
+    /// This is approximate — we just pop enough to avoid ghost flags.
+    fn consume_inputs(&self, name: &str, state: &mut FlagStack) {
+        let pops = match name {
+            // ( -- value Bool )
+            "io.read-line" | "chan.make" | "os.home-dir" | "os.current-dir" => 0,
+
+            // ( a -- value Bool )
+            "file.slurp"
+            | "file.delete"
+            | "file.size"
+            | "dir.make"
+            | "dir.delete"
+            | "dir.list"
+            | "string->int"
+            | "string->float"
+            | "os.getenv"
+            | "os.path-parent"
+            | "os.path-filename"
+            | "tcp.listen"
+            | "tcp.close"
+            | "encoding.base64-decode"
+            | "encoding.base64url-decode"
+            | "encoding.hex-decode"
+            | "compress.gzip"
+            | "compress.gunzip"
+            | "compress.zstd"
+            | "compress.unzstd"
+            | "regex.valid?"
+            | "crypto.sha256" => 1,
+
+            // ( a b -- value Bool )
+            "i./"
+            | "i.divide"
+            | "i.%"
+            | "i.modulo"
+            | "file.spit"
+            | "file.append"
+            | "tcp.write"
+            | "tcp.read"
+            | "tcp.accept"
+            | "map.get"
+            | "list.get"
+            | "chan.send"
+            | "regex.find"
+            | "regex.find-all"
+            | "regex.match?"
+            | "regex.captures"
+            | "regex.split"
+            | "crypto.aes-gcm-encrypt"
+            | "crypto.aes-gcm-decrypt"
+            | "crypto.hmac-sha256"
+            | "crypto.constant-time-eq"
+            | "crypto.ed25519-sign"
+            | "compress.gzip-level"
+            | "compress.zstd-level" => 2,
+
+            // ( a b c -- value Bool )
+            "list.set"
+            | "regex.replace"
+            | "regex.replace-all"
+            | "crypto.pbkdf2-sha256"
+            | "crypto.ed25519-verify" => 3,
+
+            // Channel receive: ( Channel -- value Bool )
+            "chan.receive" => 1,
+
+            _ => 0,
+        };
+        for _ in 0..pops {
+            state.pop();
+        }
+    }
+
+    fn emit_warning(&mut self, flag: &ErrorFlag, drop_line: usize, word: &WordDef) {
+        // Don't warn if the drop is adjacent to the operation (within 2 lines).
+        // Adjacent drops like `tcp.write drop` are covered by the pattern-based
+        // linter with better precision (exact column info, replacement suggestions).
+        // We only add value for non-adjacent drops (e.g., swap nip, aux round-trips).
+        if drop_line <= flag.created_line + 2 {
+            return;
+        }
+
+        self.diagnostics.push(LintDiagnostic {
+            id: "unchecked-error-flag".to_string(),
+            message: format!(
+                "`{}` returns a Bool error flag (indicates {}) — dropped without checking",
+                flag.operation,
+                fallible_op_info(&flag.operation)
+                    .map(|(_, desc)| desc)
+                    .unwrap_or("failure"),
+            ),
+            severity: Severity::Warning,
+            replacement: String::new(),
+            file: self.file.clone(),
+            line: flag.created_line,
+            end_line: Some(drop_line),
+            start_column: None,
+            end_column: None,
+            word_name: word.name.clone(),
+            start_index: 0,
+            end_index: 0,
+        });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ast::{Statement, WordDef};
+    use crate::types::{Effect, StackType};
+
+    fn make_word(name: &str, body: Vec<Statement>) -> WordDef {
+        WordDef {
+            name: name.to_string(),
+            effect: Some(Effect::new(StackType::Empty, StackType::Empty)),
+            body,
+            source: None,
+            allowed_lints: vec![],
+        }
+    }
+
+    fn word_call(name: &str, line: usize) -> Statement {
+        Statement::WordCall {
+            name: name.to_string(),
+            span: Some(Span {
+                line,
+                column: 0,
+                length: 1,
+            }),
+        }
+    }
+
+    #[test]
+    fn test_adjacent_drop_not_flagged() {
+        // file.slurp drop — same line, pattern linter handles this
+        let word = make_word(
+            "test",
+            vec![
+                Statement::StringLiteral("foo".to_string()),
+                word_call("file.slurp", 1),
+                word_call("drop", 1),
+            ],
+        );
+        let mut analyzer = ErrorFlagAnalyzer::new(Path::new("test.seq"));
+        let diags = analyzer.analyze_word(&word);
+        assert!(
+            diags.is_empty(),
+            "Adjacent drop should be left to pattern linter"
+        );
+    }
+
+    #[test]
+    fn test_non_adjacent_drop_flagged() {
+        // file.slurp swap nip — swap puts Bool below String, nip drops Bool
+        // Stack: (String Bool) → swap → (Bool String) → nip → (String)
+        // Bool was nipped without checking (lines spread apart)
+        let word = make_word(
+            "test",
+            vec![
+                Statement::StringLiteral("foo".to_string()),
+                word_call("file.slurp", 1),
+                word_call("swap", 5),
+                word_call("nip", 10),
+            ],
+        );
+        let mut analyzer = ErrorFlagAnalyzer::new(Path::new("test.seq"));
+        let diags = analyzer.analyze_word(&word);
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].id, "unchecked-error-flag");
+        assert!(diags[0].message.contains("file.slurp"));
+    }
+
+    #[test]
+    fn test_checked_by_if() {
+        // file.slurp if ... then — Bool checked
+        let word = make_word(
+            "test",
+            vec![
+                Statement::StringLiteral("foo".to_string()),
+                word_call("file.slurp", 1),
+                Statement::If {
+                    then_branch: vec![word_call("io.write-line", 3)],
+                    else_branch: Some(vec![word_call("drop", 5)]),
+                    span: Some(Span {
+                        line: 2,
+                        column: 0,
+                        length: 2,
+                    }),
+                },
+            ],
+        );
+        let mut analyzer = ErrorFlagAnalyzer::new(Path::new("test.seq"));
+        let diags = analyzer.analyze_word(&word);
+        assert!(diags.is_empty(), "Bool checked by if should not warn");
+    }
+
+    #[test]
+    fn test_aux_round_trip_drop() {
+        // file.slurp >aux ... aux> drop — Bool stashed and dropped
+        let word = make_word(
+            "test",
+            vec![
+                Statement::StringLiteral("foo".to_string()),
+                word_call("file.slurp", 1),
+                word_call(">aux", 5),
+                Statement::StringLiteral("other work".to_string()),
+                word_call("drop", 8),
+                word_call("aux>", 12),
+                word_call("drop", 15),
+            ],
+        );
+        let mut analyzer = ErrorFlagAnalyzer::new(Path::new("test.seq"));
+        let diags = analyzer.analyze_word(&word);
+        assert_eq!(diags.len(), 1);
+        assert!(diags[0].message.contains("file.slurp"));
+    }
+
+    #[test]
+    fn test_division_checked() {
+        // 10 0 i./ if ... then — division result checked
+        let word = make_word(
+            "test",
+            vec![
+                Statement::IntLiteral(10),
+                Statement::IntLiteral(0),
+                word_call("i./", 1),
+                Statement::If {
+                    then_branch: vec![],
+                    else_branch: Some(vec![word_call("drop", 3)]),
+                    span: Some(Span {
+                        line: 2,
+                        column: 0,
+                        length: 2,
+                    }),
+                },
+            ],
+        );
+        let mut analyzer = ErrorFlagAnalyzer::new(Path::new("test.seq"));
+        let diags = analyzer.analyze_word(&word);
+        assert!(diags.is_empty());
+    }
+
+    #[test]
+    fn test_nip_drops_flag() {
+        // string->int nip — nip drops the Int (below Bool), keeps Bool
+        // Actually: string->int produces (Int Bool), nip drops Int, keeps Bool
+        // That's fine — Bool is still on stack. No warning.
+        let word = make_word(
+            "test",
+            vec![
+                Statement::StringLiteral("42".to_string()),
+                word_call("string->int", 1),
+                word_call("nip", 2),
+                // Bool still on stack — returned (escape)
+            ],
+        );
+        let mut analyzer = ErrorFlagAnalyzer::new(Path::new("test.seq"));
+        let diags = analyzer.analyze_word(&word);
+        assert!(diags.is_empty(), "nip keeps Bool on top — no warning");
+    }
+
+    #[test]
+    fn test_swap_nip_drops_flag() {
+        // string->int swap nip — swap puts Bool below Int, nip drops Bool
+        let word = make_word(
+            "test",
+            vec![
+                Statement::StringLiteral("42".to_string()),
+                word_call("string->int", 1),
+                word_call("swap", 5),
+                word_call("nip", 10),
+            ],
+        );
+        let mut analyzer = ErrorFlagAnalyzer::new(Path::new("test.seq"));
+        let diags = analyzer.analyze_word(&word);
+        assert_eq!(diags.len(), 1);
+        assert!(diags[0].message.contains("string->int"));
+    }
+}
