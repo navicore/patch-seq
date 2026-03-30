@@ -27,6 +27,7 @@ include std:http
   then
 ;
 
+# seq:allow(unchecked-tcp-write)
 : handle-connection ( Int -- )
   dup tcp.read             # ( socket string success )
   not if

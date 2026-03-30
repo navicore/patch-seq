@@ -45,6 +45,7 @@
 ;
 
 # GCD using Euclidean algorithm
+# seq:allow(unchecked-mod)
 : gcd ( Int Int -- Int )
   dup 0 i.=
   if

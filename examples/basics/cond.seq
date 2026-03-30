@@ -25,6 +25,7 @@
 ;
 
 # Example 2: FizzBuzz logic using cond
+# seq:allow(unchecked-mod)
 : fizzbuzz ( Int -- String )
   [ dup 15 i.% drop 0 i.= ]  [ drop "FizzBuzz" ]
   [ dup 3 i.% drop 0 i.= ]   [ drop "Fizz" ]

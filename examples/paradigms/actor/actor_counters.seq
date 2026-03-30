@@ -550,6 +550,7 @@ union Message {
 ;
 
 # Handle 404 for unknown path segments
+# seq:allow(unchecked-tcp-write)
 : dispatch-404 ( Variant Int String Int -- Variant )
   drop drop
   "Not found - use 1-4 segments: company/region/district/store" http-not-found
@@ -601,6 +602,7 @@ union Message {
 
 # Handle GET request for store - get current count
 # Stack: ( registry socket path -- registry )
+# seq:allow(unchecked-tcp-write)
 : do-get-store ( Variant Int String -- Variant )
   # Strip leading / if present
   dup 0 string.char-at 47 i.= if  # 47 = '/'
@@ -628,6 +630,7 @@ union Message {
 
 # Handle INCREMENT request - increment counter and return new value
 # Stack: ( registry socket path -- registry )
+# seq:allow(unchecked-tcp-write)
 : do-increment ( Variant Int String -- Variant )
   # Strip leading / if present
   dup 0 string.char-at 47 i.= if
@@ -654,6 +657,7 @@ union Message {
 
 # Handle GET request for any actor (company, region, district) aggregate
 # Stack: ( registry socket path -- registry )
+# seq:allow(unchecked-tcp-write)
 : do-get-actor ( Variant Int String -- Variant )
   # Strip leading / if present
   dup 0 string.char-at 47 i.= if  # 47 = '/'
