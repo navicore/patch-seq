@@ -18,7 +18,10 @@ jobs:
           token: ${{ secrets.PAT }}
           ref: main
 
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.93.0
+          components: rustfmt, clippy
 
       - name: Install system dependencies
         run: |
@@ -236,8 +239,10 @@ jobs:
           ref: main
 
       - name: Install Rust with musl target
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: 1.93.0
+          components: rustfmt, clippy
           targets: x86_64-unknown-linux-musl
 
       - name: Install musl-tools and dependencies
@@ -309,7 +314,10 @@ jobs:
           ref: main
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.93.0
+          components: rustfmt, clippy
 
       # Note: libedit is pre-installed on macOS
 
@@ -369,7 +377,10 @@ jobs:
           ref: main
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.93.0
+          components: rustfmt, clippy
 
       # Note: libedit is pre-installed on macOS
 
