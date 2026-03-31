@@ -138,79 +138,83 @@ struct FallibleOpInfo {
 fn fallible_op_info(name: &str) -> Option<FallibleOpInfo> {
     let (inputs, values_before_bool, description) = match name {
         // Division — ( Int Int -- Int Bool )
-        "i./" | "i.divide"         => (2, 1, "division by zero"),
-        "i.%" | "i.modulo"         => (2, 1, "modulo by zero"),
+        "i./" | "i.divide" => (2, 1, "division by zero"),
+        "i.%" | "i.modulo" => (2, 1, "modulo by zero"),
 
         // File I/O
-        "file.slurp"               => (1, 1, "file read failure"),
-        "file.spit"                => (2, 0, "file write failure"),
-        "file.append"              => (2, 0, "file append failure"),
-        "file.delete"              => (1, 0, "file delete failure"),
-        "file.size"                => (1, 1, "file size failure"),
-        "dir.make"                 => (1, 0, "directory creation failure"),
-        "dir.delete"               => (1, 0, "directory delete failure"),
-        "dir.list"                 => (1, 1, "directory list failure"),
+        "file.slurp" => (1, 1, "file read failure"),
+        "file.spit" => (2, 0, "file write failure"),
+        "file.append" => (2, 0, "file append failure"),
+        "file.delete" => (1, 0, "file delete failure"),
+        "file.size" => (1, 1, "file size failure"),
+        "dir.make" => (1, 0, "directory creation failure"),
+        "dir.delete" => (1, 0, "directory delete failure"),
+        "dir.list" => (1, 1, "directory list failure"),
 
         // I/O — ( -- String Bool )
-        "io.read-line"             => (0, 1, "read failure"),
+        "io.read-line" => (0, 1, "read failure"),
 
         // Parsing — ( String -- value Bool )
-        "string->int"              => (1, 1, "parse failure"),
-        "string->float"            => (1, 1, "parse failure"),
+        "string->int" => (1, 1, "parse failure"),
+        "string->float" => (1, 1, "parse failure"),
 
         // Channels
-        "chan.send"                 => (2, 0, "send failure"),
-        "chan.receive"              => (1, 1, "receive failure"),
+        "chan.send" => (2, 0, "send failure"),
+        "chan.receive" => (1, 1, "receive failure"),
 
         // Map/List lookups
-        "map.get"                  => (2, 1, "key not found"),
-        "list.get"                 => (2, 1, "index out of bounds"),
-        "list.set"                 => (3, 1, "index out of bounds"),
+        "map.get" => (2, 1, "key not found"),
+        "list.get" => (2, 1, "index out of bounds"),
+        "list.set" => (3, 1, "index out of bounds"),
 
         // TCP
-        "tcp.listen"               => (1, 1, "listen failure"),
-        "tcp.accept"               => (1, 1, "accept failure"),
-        "tcp.read"                 => (1, 1, "read failure"),
-        "tcp.write"                => (2, 0, "write failure"),
-        "tcp.close"                => (1, 0, "close failure"),
+        "tcp.listen" => (1, 1, "listen failure"),
+        "tcp.accept" => (1, 1, "accept failure"),
+        "tcp.read" => (1, 1, "read failure"),
+        "tcp.write" => (2, 0, "write failure"),
+        "tcp.close" => (1, 0, "close failure"),
 
         // OS
-        "os.getenv"                => (1, 1, "env var not set"),
-        "os.home-dir"              => (0, 1, "home dir not available"),
-        "os.current-dir"           => (0, 1, "current dir not available"),
-        "os.path-parent"           => (1, 1, "no parent path"),
-        "os.path-filename"         => (1, 1, "no filename"),
+        "os.getenv" => (1, 1, "env var not set"),
+        "os.home-dir" => (0, 1, "home dir not available"),
+        "os.current-dir" => (0, 1, "current dir not available"),
+        "os.path-parent" => (1, 1, "no parent path"),
+        "os.path-filename" => (1, 1, "no filename"),
 
         // Regex
-        "regex.find"               => (2, 1, "no match or invalid regex"),
-        "regex.find-all"           => (2, 1, "invalid regex"),
-        "regex.replace"            => (3, 1, "invalid regex"),
-        "regex.replace-all"        => (3, 1, "invalid regex"),
-        "regex.captures"           => (2, 1, "invalid regex"),
-        "regex.split"              => (2, 1, "invalid regex"),
+        "regex.find" => (2, 1, "no match or invalid regex"),
+        "regex.find-all" => (2, 1, "invalid regex"),
+        "regex.replace" => (3, 1, "invalid regex"),
+        "regex.replace-all" => (3, 1, "invalid regex"),
+        "regex.captures" => (2, 1, "invalid regex"),
+        "regex.split" => (2, 1, "invalid regex"),
 
         // Encoding
-        "encoding.base64-decode"   => (1, 1, "invalid base64"),
+        "encoding.base64-decode" => (1, 1, "invalid base64"),
         "encoding.base64url-decode" => (1, 1, "invalid base64url"),
-        "encoding.hex-decode"      => (1, 1, "invalid hex"),
+        "encoding.hex-decode" => (1, 1, "invalid hex"),
 
         // Crypto
-        "crypto.aes-gcm-encrypt"   => (2, 1, "encryption failure"),
-        "crypto.aes-gcm-decrypt"   => (2, 1, "decryption failure"),
-        "crypto.pbkdf2-sha256"     => (3, 1, "key derivation failure"),
-        "crypto.ed25519-sign"      => (2, 1, "signing failure"),
+        "crypto.aes-gcm-encrypt" => (2, 1, "encryption failure"),
+        "crypto.aes-gcm-decrypt" => (2, 1, "decryption failure"),
+        "crypto.pbkdf2-sha256" => (3, 1, "key derivation failure"),
+        "crypto.ed25519-sign" => (2, 1, "signing failure"),
 
         // Compression
-        "compress.gzip"            => (1, 1, "compression failure"),
-        "compress.gzip-level"      => (2, 1, "compression failure"),
-        "compress.gunzip"          => (1, 1, "decompression failure"),
-        "compress.zstd"            => (1, 1, "compression failure"),
-        "compress.zstd-level"      => (2, 1, "compression failure"),
-        "compress.unzstd"          => (1, 1, "decompression failure"),
+        "compress.gzip" => (1, 1, "compression failure"),
+        "compress.gzip-level" => (2, 1, "compression failure"),
+        "compress.gunzip" => (1, 1, "decompression failure"),
+        "compress.zstd" => (1, 1, "compression failure"),
+        "compress.zstd-level" => (2, 1, "compression failure"),
+        "compress.unzstd" => (1, 1, "decompression failure"),
 
         _ => return None,
     };
-    Some(FallibleOpInfo { inputs, values_before_bool, description })
+    Some(FallibleOpInfo {
+        inputs,
+        values_before_bool,
+        description,
+    })
 }
 
 /// Words that consume a Bool as an error-checking mechanism
@@ -294,10 +298,7 @@ impl ErrorFlagAnalyzer {
                 span: _,
             } => {
                 // `if` consumes the Bool on top — this IS a check
-                let popped = state.pop();
-                // The Bool was checked by being used as an if-condition.
-                // (We don't need to do anything with `popped` — it's consumed correctly.)
-                let _ = popped;
+                state.pop();
 
                 let mut then_state = state.clone();
                 let mut else_state = state.clone();
@@ -360,8 +361,12 @@ impl ErrorFlagAnalyzer {
 
         // Check if this is a checking consumer
         if is_checking_consumer(name) {
-            // cond consumes the whole stack effectively — clear flags
-            state.stack.clear();
+            // `cond` is a multi-way conditional that consumes quotation pairs
+            // + a count from the stack. Its variable arity means we can't
+            // precisely model what it consumes. Conservative: assume it
+            // checks any flags it touches (no warning), but don't clear
+            // the entire stack — flags below the cond args may still need checking.
+            state.pop(); // at minimum, the count argument
             return;
         }
 
@@ -548,6 +553,8 @@ impl ErrorFlagAnalyzer {
         // Adjacent drops like `tcp.write drop` are covered by the pattern-based
         // linter with better precision (exact column info, replacement suggestions).
         // We only add value for non-adjacent drops (e.g., swap nip, aux round-trips).
+        // Note: if spans are missing, both lines default to 0 and this suppresses
+        // the warning — acceptable since span-less nodes are rare (synthetic AST only).
         if drop_line <= flag.created_line + 2 {
             return;
         }
@@ -710,17 +717,15 @@ mod tests {
     }
 
     #[test]
-    fn test_nip_drops_flag() {
-        // string->int nip — nip drops the Int (below Bool), keeps Bool
-        // Actually: string->int produces (Int Bool), nip drops Int, keeps Bool
-        // That's fine — Bool is still on stack. No warning.
+    fn test_nip_preserves_flag_on_top() {
+        // string->int produces (Int Bool). nip drops Int, keeps Bool on top.
+        // Bool is still on stack (returned = escape). No warning.
         let word = make_word(
             "test",
             vec![
                 Statement::StringLiteral("42".to_string()),
                 word_call("string->int", 1),
                 word_call("nip", 2),
-                // Bool still on stack — returned (escape)
             ],
         );
         let mut analyzer = ErrorFlagAnalyzer::new(Path::new("test.seq"));
@@ -744,5 +749,75 @@ mod tests {
         let diags = analyzer.analyze_word(&word);
         assert_eq!(diags.len(), 1);
         assert!(diags[0].message.contains("string->int"));
+    }
+
+    #[test]
+    fn test_allow_suppresses_warning() {
+        // seq:allow(unchecked-error-flag) should suppress the warning
+        let word = WordDef {
+            name: "test".to_string(),
+            effect: Some(Effect::new(StackType::Empty, StackType::Empty)),
+            body: vec![
+                Statement::StringLiteral("foo".to_string()),
+                word_call("file.slurp", 1),
+                word_call("swap", 5),
+                word_call("nip", 10),
+            ],
+            source: None,
+            allowed_lints: vec!["unchecked-error-flag".to_string()],
+        };
+        let mut analyzer = ErrorFlagAnalyzer::new(Path::new("test.seq"));
+        let program = crate::ast::Program {
+            includes: vec![],
+            unions: vec![],
+            words: vec![word],
+        };
+        let diags = analyzer.analyze_program(&program);
+        assert!(diags.is_empty(), "seq:allow should suppress warning");
+    }
+
+    #[test]
+    fn test_multiple_flags_both_dropped() {
+        // Two fallible calls, both flags dropped non-adjacently
+        let word = make_word(
+            "test",
+            vec![
+                Statement::StringLiteral("foo".to_string()),
+                word_call("file.slurp", 1),   // pushes (String, Flag)
+                word_call("swap", 5),         // (Flag, String)
+                word_call("nip", 10),         // drops Flag #1
+                word_call("string->int", 15), // pushes (Int, Flag)
+                word_call("swap", 20),
+                word_call("nip", 25), // drops Flag #2
+            ],
+        );
+        let mut analyzer = ErrorFlagAnalyzer::new(Path::new("test.seq"));
+        let diags = analyzer.analyze_word(&word);
+        assert_eq!(diags.len(), 2, "Both flags should produce warnings");
+    }
+
+    #[test]
+    fn test_dip_clears_flags_no_false_positive() {
+        // dip runs a quotation with unknown effects — flags on the
+        // pre-dip stack are conservatively cleared (no false positive)
+        let word = make_word(
+            "test",
+            vec![
+                Statement::StringLiteral("foo".to_string()),
+                word_call("file.slurp", 1), // (String, Flag)
+                Statement::Quotation {
+                    id: 0,
+                    body: vec![word_call("drop", 5)],
+                    span: None,
+                },
+                word_call("dip", 10),
+            ],
+        );
+        let mut analyzer = ErrorFlagAnalyzer::new(Path::new("test.seq"));
+        let diags = analyzer.analyze_word(&word);
+        assert!(
+            diags.is_empty(),
+            "dip conservatively clears flags — no false positive"
+        );
     }
 }
