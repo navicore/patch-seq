@@ -953,7 +953,7 @@ static BUILTIN_DOCS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::n
     );
     docs.insert(
         "io.read-line",
-        "Read a line from stdin. Returns (line, success).",
+        "Read a line from stdin. Returns (String Bool) -- Bool is false on EOF or read error.",
     );
     docs.insert(
         "io.read-line+",
@@ -971,21 +971,24 @@ static BUILTIN_DOCS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::n
     // File Operations
     docs.insert(
         "file.slurp",
-        "Read entire file contents. Returns (content, success).",
+        "Read entire file contents. Returns (String Bool) -- Bool is false if file not found or unreadable.",
     );
     docs.insert("file.exists?", "Check if a file exists at the given path.");
     docs.insert(
         "file.spit",
-        "Write string to file (creates or overwrites). Returns success.",
+        "Write string to file (creates or overwrites). Returns Bool -- false on write failure.",
     );
     docs.insert(
         "file.append",
-        "Append string to file (creates if needed). Returns success.",
+        "Append string to file (creates if needed). Returns Bool -- false on write failure.",
     );
-    docs.insert("file.delete", "Delete a file. Returns success.");
+    docs.insert(
+        "file.delete",
+        "Delete a file. Returns Bool -- false on failure.",
+    );
     docs.insert(
         "file.size",
-        "Get file size in bytes. Returns (size, success).",
+        "Get file size in bytes. Returns (Int Bool) -- Bool is false if file not found.",
     );
     docs.insert(
         "file.for-each-line+",
@@ -999,12 +1002,15 @@ static BUILTIN_DOCS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::n
     );
     docs.insert(
         "dir.make",
-        "Create a directory (and parent directories if needed). Returns success.",
+        "Create a directory (and parent directories if needed). Returns Bool -- false on failure.",
     );
-    docs.insert("dir.delete", "Delete an empty directory. Returns success.");
+    docs.insert(
+        "dir.delete",
+        "Delete an empty directory. Returns Bool -- false on failure.",
+    );
     docs.insert(
         "dir.list",
-        "List directory contents. Returns (list-of-names, success).",
+        "List directory contents. Returns (List Bool) -- Bool is false if directory not found.",
     );
 
     // Type Conversions
@@ -1023,11 +1029,11 @@ static BUILTIN_DOCS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::n
     );
     docs.insert(
         "string->int",
-        "Parse a string as an integer. Returns (value, success).",
+        "Parse a string as an integer. Returns (Int Bool) -- Bool is false if string is not a valid integer.",
     );
     docs.insert(
         "string->float",
-        "Parse a string as a float. Returns (value, success).",
+        "Parse a string as a float. Returns (Float Bool) -- Bool is false if string is not a valid number.",
     );
     docs.insert(
         "char->string",
@@ -1043,13 +1049,25 @@ static BUILTIN_DOCS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::n
     docs.insert("i.add", "Add two integers.");
     docs.insert("i.subtract", "Subtract second integer from first.");
     docs.insert("i.multiply", "Multiply two integers.");
-    docs.insert("i.divide", "Integer division (truncates toward zero).");
-    docs.insert("i.modulo", "Integer modulo (remainder after division).");
+    docs.insert(
+        "i.divide",
+        "Integer division. Returns (result Bool) -- Bool is false on division by zero.",
+    );
+    docs.insert(
+        "i.modulo",
+        "Integer modulo. Returns (result Bool) -- Bool is false on division by zero.",
+    );
     docs.insert("i.+", "Add two integers.");
     docs.insert("i.-", "Subtract second integer from first.");
     docs.insert("i.*", "Multiply two integers.");
-    docs.insert("i./", "Integer division (truncates toward zero).");
-    docs.insert("i.%", "Integer modulo (remainder after division).");
+    docs.insert(
+        "i./",
+        "Integer division. Returns (result Bool) -- Bool is false on division by zero.",
+    );
+    docs.insert(
+        "i.%",
+        "Integer modulo. Returns (result Bool) -- Bool is false on division by zero.",
+    );
 
     // Integer Comparison
     docs.insert("i.=", "Test if two integers are equal.");
@@ -1132,11 +1150,11 @@ static BUILTIN_DOCS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::n
     );
     docs.insert(
         "chan.send",
-        "Send a value on a channel. Returns success flag.",
+        "Send a value on a channel. Returns Bool -- false if channel is closed.",
     );
     docs.insert(
         "chan.receive",
-        "Receive a value from a channel. Returns (value, success).",
+        "Receive a value from a channel. Returns (value Bool) -- Bool is false if channel is closed.",
     );
     docs.insert("chan.close", "Close a channel.");
     docs.insert("chan.yield", "Yield control to the scheduler.");
@@ -1534,8 +1552,14 @@ static BUILTIN_DOCS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::n
     // List Operations
     docs.insert("list.make", "Create an empty list.");
     docs.insert("list.push", "Push a value onto a list. Returns new list.");
-    docs.insert("list.get", "Get value at index. Returns (value, success).");
-    docs.insert("list.set", "Set value at index. Returns (list, success).");
+    docs.insert(
+        "list.get",
+        "Get value at index. Returns (value Bool) -- Bool is false if index out of bounds.",
+    );
+    docs.insert(
+        "list.set",
+        "Set value at index. Returns (List Bool) -- Bool is false if index out of bounds.",
+    );
     docs.insert("list.length", "Get the number of elements in a list.");
     docs.insert("list.empty?", "Check if a list is empty.");
     docs.insert("list.reverse", "Reverse the elements of a list.");
@@ -1552,7 +1576,10 @@ static BUILTIN_DOCS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::n
 
     // Map Operations
     docs.insert("map.make", "Create an empty map.");
-    docs.insert("map.get", "Get value for key. Returns (value, success).");
+    docs.insert(
+        "map.get",
+        "Get value for key. Returns (value Bool) -- Bool is false if key not found.",
+    );
     docs.insert("map.set", "Set key to value. Returns new map.");
     docs.insert("map.has?", "Check if map contains a key.");
     docs.insert("map.remove", "Remove a key. Returns new map.");
@@ -1568,6 +1595,194 @@ static BUILTIN_DOCS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::n
         "map.fold",
         "Fold over key-value pairs with accumulator. Quotation: ( acc key value -- acc' ).",
     );
+
+    // TCP Operations
+    docs.insert(
+        "tcp.listen",
+        "Start listening on a port. Returns (fd Bool) -- Bool is false on failure.",
+    );
+    docs.insert(
+        "tcp.accept",
+        "Accept a connection. Returns (fd Bool) -- Bool is false on failure.",
+    );
+    docs.insert(
+        "tcp.read",
+        "Read from a connection. Returns (String Bool) -- Bool is false on failure.",
+    );
+    docs.insert(
+        "tcp.write",
+        "Write to a connection. Returns Bool -- false on failure.",
+    );
+    docs.insert(
+        "tcp.close",
+        "Close a connection. Returns Bool -- false on failure.",
+    );
+
+    // OS Operations
+    docs.insert(
+        "os.getenv",
+        "Get environment variable. Returns (String Bool) -- Bool is false if not set.",
+    );
+    docs.insert(
+        "os.home-dir",
+        "Get home directory. Returns (String Bool) -- Bool is false if unavailable.",
+    );
+    docs.insert(
+        "os.current-dir",
+        "Get current directory. Returns (String Bool) -- Bool is false if unavailable.",
+    );
+    docs.insert("os.path-exists", "Check if a path exists.");
+    docs.insert("os.path-is-file", "Check if a path is a file.");
+    docs.insert("os.path-is-dir", "Check if a path is a directory.");
+    docs.insert("os.path-join", "Join two path segments.");
+    docs.insert(
+        "os.path-parent",
+        "Get parent directory. Returns (String Bool) -- Bool is false for root.",
+    );
+    docs.insert(
+        "os.path-filename",
+        "Get filename component. Returns (String Bool) -- Bool is false if none.",
+    );
+    docs.insert("os.exit", "Exit the process with given exit code.");
+    docs.insert("os.name", "Get OS name (e.g., \"macos\", \"linux\").");
+    docs.insert(
+        "os.arch",
+        "Get CPU architecture (e.g., \"aarch64\", \"x86_64\").",
+    );
+
+    // Regex Operations
+    docs.insert("regex.match?", "Test if string matches regex pattern.");
+    docs.insert(
+        "regex.find",
+        "Find first match. Returns (String Bool) -- Bool is false if no match or invalid regex.",
+    );
+    docs.insert(
+        "regex.find-all",
+        "Find all matches. Returns (List Bool) -- Bool is false if invalid regex.",
+    );
+    docs.insert(
+        "regex.replace",
+        "Replace first match. Returns (String Bool) -- Bool is false if invalid regex.",
+    );
+    docs.insert(
+        "regex.replace-all",
+        "Replace all matches. Returns (String Bool) -- Bool is false if invalid regex.",
+    );
+    docs.insert(
+        "regex.captures",
+        "Get capture groups. Returns (List Bool) -- Bool is false if invalid regex.",
+    );
+    docs.insert(
+        "regex.split",
+        "Split by regex. Returns (List Bool) -- Bool is false if invalid regex.",
+    );
+    docs.insert("regex.valid?", "Check if a regex pattern is valid.");
+
+    // Encoding Operations
+    docs.insert("encoding.base64-encode", "Encode string as base64.");
+    docs.insert(
+        "encoding.base64-decode",
+        "Decode base64 string. Returns (String Bool) -- Bool is false if invalid.",
+    );
+    docs.insert("encoding.base64url-encode", "Encode string as base64url.");
+    docs.insert(
+        "encoding.base64url-decode",
+        "Decode base64url string. Returns (String Bool) -- Bool is false if invalid.",
+    );
+    docs.insert("encoding.hex-encode", "Encode string as hexadecimal.");
+    docs.insert(
+        "encoding.hex-decode",
+        "Decode hex string. Returns (String Bool) -- Bool is false if invalid.",
+    );
+
+    // Crypto Operations
+    docs.insert("crypto.sha256", "Compute SHA-256 hash of a string.");
+    docs.insert(
+        "crypto.hmac-sha256",
+        "Compute HMAC-SHA256. ( message key -- hash )",
+    );
+    docs.insert(
+        "crypto.constant-time-eq",
+        "Constant-time string equality comparison.",
+    );
+    docs.insert(
+        "crypto.random-bytes",
+        "Generate N random bytes as a string.",
+    );
+    docs.insert(
+        "crypto.random-int",
+        "Generate random integer in range [min, max).",
+    );
+    docs.insert("crypto.uuid4", "Generate a random UUID v4 string.");
+    docs.insert(
+        "crypto.aes-gcm-encrypt",
+        "AES-GCM encrypt. Returns (String Bool) -- Bool is false on failure.",
+    );
+    docs.insert("crypto.aes-gcm-decrypt", "AES-GCM decrypt. Returns (String Bool) -- Bool is false on failure (wrong key or tampered data).");
+    docs.insert(
+        "crypto.pbkdf2-sha256",
+        "Derive key with PBKDF2. Returns (String Bool) -- Bool is false on failure.",
+    );
+    docs.insert(
+        "crypto.ed25519-keypair",
+        "Generate Ed25519 keypair. Returns (public private).",
+    );
+    docs.insert(
+        "crypto.ed25519-sign",
+        "Sign with Ed25519. Returns (String Bool) -- Bool is false on failure.",
+    );
+    docs.insert(
+        "crypto.ed25519-verify",
+        "Verify Ed25519 signature. Returns Bool -- true if valid.",
+    );
+
+    // Compression Operations
+    docs.insert(
+        "compress.gzip",
+        "Gzip compress. Returns (String Bool) -- Bool is false on failure.",
+    );
+    docs.insert(
+        "compress.gzip-level",
+        "Gzip compress at level N. Returns (String Bool) -- Bool is false on failure.",
+    );
+    docs.insert(
+        "compress.gunzip",
+        "Gzip decompress. Returns (String Bool) -- Bool is false on failure.",
+    );
+    docs.insert(
+        "compress.zstd",
+        "Zstd compress. Returns (String Bool) -- Bool is false on failure.",
+    );
+    docs.insert(
+        "compress.zstd-level",
+        "Zstd compress at level N. Returns (String Bool) -- Bool is false on failure.",
+    );
+    docs.insert(
+        "compress.unzstd",
+        "Zstd decompress. Returns (String Bool) -- Bool is false on failure.",
+    );
+
+    // Signal Operations
+    docs.insert(
+        "signal.trap",
+        "Register a signal handler for the given signal number.",
+    );
+    docs.insert("signal.received?", "Check if a signal has been received.");
+    docs.insert("signal.pending?", "Check if a signal is pending.");
+    docs.insert("signal.default", "Reset signal to default handler.");
+    docs.insert("signal.ignore", "Ignore a signal.");
+    docs.insert("signal.clear", "Clear pending signal.");
+
+    // Terminal Operations
+    docs.insert("terminal.raw-mode", "Enable/disable raw terminal mode.");
+    docs.insert("terminal.read-char", "Read a single character (blocking).");
+    docs.insert(
+        "terminal.read-char?",
+        "Read a character if available (non-blocking). Returns 0 if none.",
+    );
+    docs.insert("terminal.width", "Get terminal width in columns.");
+    docs.insert("terminal.height", "Get terminal height in rows.");
+    docs.insert("terminal.flush", "Flush stdout.");
 
     // Float Arithmetic
     docs.insert("f.add", "Add two floats.");

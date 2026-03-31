@@ -306,6 +306,11 @@ fn lint_to_code_action(
     uri: &Url,
     range: &Range,
 ) -> Option<CodeAction> {
+    // For unchecked-* lint rules, offer "Add error check" instead of "Remove"
+    if lint_diag.id.starts_with("unchecked-") {
+        return unchecked_error_code_action(lint_diag, uri, range);
+    }
+
     // Create the title based on whether there's a replacement or removal
     let title = if lint_diag.replacement.is_empty() {
         format!("Remove redundant code ({})", lint_diag.id)
@@ -338,6 +343,68 @@ fn lint_to_code_action(
         edit: Some(workspace_edit),
         command: None,
         is_preferred: Some(true),
+        disabled: None,
+        data: None,
+    })
+}
+
+/// Generate a code action for unchecked error flag diagnostics.
+///
+/// Replaces `op drop` with an `if/else/then` error check skeleton:
+/// ```seq
+/// op if
+///   # success
+/// else
+///   drop  # handle error
+/// then
+/// ```
+fn unchecked_error_code_action(
+    lint_diag: &lint::LintDiagnostic,
+    uri: &Url,
+    range: &Range,
+) -> Option<CodeAction> {
+    let title = "Add error check (if/else/then)".to_string();
+
+    // The range covers "op drop" — replace just the "drop" part with the skeleton.
+    // The diagnostic range starts at the operation and ends after "drop".
+    // We want to replace "drop" (the last word in the range) with the skeleton.
+    // Since we can't easily compute the "drop" sub-range, we replace the whole
+    // matched pattern. The pattern is "op drop", so we replace with "op if ... then".
+    //
+    // Extract the operation name from the diagnostic message.
+    // Messages follow the pattern: "`op` returns ..."
+    let op_name = lint_diag
+        .message
+        .strip_prefix('`')
+        .and_then(|s| s.split('`').next())
+        .unwrap_or("op");
+
+    let new_text = format!(
+        "{} if\n    # success\n  else\n    drop  # handle {} error\n  then",
+        op_name, op_name,
+    );
+
+    let edit = TextEdit {
+        range: *range,
+        new_text,
+    };
+
+    let mut changes = HashMap::new();
+    changes.insert(uri.clone(), vec![edit]);
+
+    let workspace_edit = WorkspaceEdit {
+        changes: Some(changes),
+        document_changes: None,
+        change_annotations: None,
+    };
+
+    Some(CodeAction {
+        title,
+        kind: Some(CodeActionKind::QUICKFIX),
+        diagnostics: None,
+        edit: Some(workspace_edit),
+        command: None,
+        is_preferred: Some(false), // not preferred — user should review
         disabled: None,
         data: None,
     })
