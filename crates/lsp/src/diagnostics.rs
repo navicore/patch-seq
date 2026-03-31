@@ -176,6 +176,15 @@ pub fn check_document_with_quotations(
         }
     }
 
+    // Phase 4b: Error flag tracking (unchecked Bool from fallible operations)
+    {
+        let mut flag_analyzer = seqc::ErrorFlagAnalyzer::new(&lint_file_path);
+        let flag_diagnostics = flag_analyzer.analyze_program(&program);
+        for flag_diag in flag_diagnostics {
+            diagnostics.push(lint_to_diagnostic(&flag_diag, &source));
+        }
+    }
+
     (diagnostics, quotation_info)
 }
 
