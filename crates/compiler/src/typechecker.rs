@@ -54,6 +54,11 @@ pub struct TypeChecker {
     /// True when type-checking inside a quotation body (Issue #350)
     /// Aux operations are not supported in quotations (codegen limitation).
     in_quotation_scope: std::cell::Cell<bool>,
+    /// Resolved arithmetic sugar: maps (word_name, statement_index) -> concrete op name
+    /// E.g., `+` at position 3 in word `foo` -> `"i.+"` if top-of-stack is (Int, Int)
+    resolved_sugar: std::cell::RefCell<HashMap<(String, usize), String>>,
+    /// Current statement index during type-checking (for sugar resolution keying)
+    current_stmt_index: std::cell::Cell<usize>,
 }
 
 impl TypeChecker {
@@ -70,6 +75,8 @@ impl TypeChecker {
             current_aux_stack: std::cell::RefCell::new(StackType::Empty),
             aux_max_depths: std::cell::RefCell::new(HashMap::new()),
             in_quotation_scope: std::cell::Cell::new(false),
+            resolved_sugar: std::cell::RefCell::new(HashMap::new()),
+            current_stmt_index: std::cell::Cell::new(0),
         }
     }
 
@@ -155,6 +162,12 @@ impl TypeChecker {
     /// Returns map of (word_name, statement_index) -> top-of-stack type
     pub fn take_statement_top_types(&self) -> HashMap<(String, usize), Type> {
         self.statement_top_types.replace(HashMap::new())
+    }
+
+    /// Extract resolved arithmetic sugar for codegen
+    /// Maps (word_name, statement_index) -> concrete operation name
+    pub fn take_resolved_sugar(&self) -> HashMap<(String, usize), String> {
+        self.resolved_sugar.replace(HashMap::new())
     }
 
     /// Extract per-word aux stack max depths for codegen alloca sizing (Issue #350)
@@ -608,6 +621,9 @@ impl TypeChecker {
             } else {
                 None
             };
+
+            // Track current statement index (used by sugar resolution and type capture)
+            self.current_stmt_index.set(i);
 
             // Capture statement type info for codegen optimization (Issue #186)
             // Record the top-of-stack type BEFORE this statement for operations like dup
@@ -1229,6 +1245,54 @@ impl TypeChecker {
         span: &Option<crate::ast::Span>,
         current_stack: StackType,
     ) -> Result<(StackType, Subst, Vec<SideEffect>), String> {
+        // Arithmetic sugar resolution: resolve +, -, *, / etc. to concrete ops
+        // based on the types currently on the stack.
+        let is_sugar = matches!(
+            name,
+            "+" | "-" | "*" | "/" | "%" | "=" | "<" | ">" | "<=" | ">=" | "<>"
+        );
+        if is_sugar {
+            if let Some(resolved) = self.resolve_arithmetic_sugar(name, &current_stack) {
+                // Record the resolution for codegen, keyed by (word_name, statement_index)
+                if let Some((word_name, _)) = self.current_word.borrow().as_ref() {
+                    self.resolved_sugar.borrow_mut().insert(
+                        (word_name.clone(), self.current_stmt_index.get()),
+                        resolved.clone(),
+                    );
+                }
+                // Proceed as if the user wrote the resolved name
+                return self.infer_word_call(&resolved, span, current_stack);
+            }
+            // Sugar op but types don't match — give a helpful error
+            let line_prefix = self.line_prefix();
+            let (top_desc, second_desc) = {
+                let top = current_stack.clone().pop().map(|(_, t)| format!("{}", t));
+                let second = current_stack
+                    .clone()
+                    .pop()
+                    .and_then(|(r, _)| r.pop().map(|(_, t)| format!("{}", t)));
+                (
+                    top.unwrap_or_else(|| "empty".to_string()),
+                    second.unwrap_or_else(|| "empty".to_string()),
+                )
+            };
+            return Err(format!(
+                "{}`{}` requires matching types (Int+Int, Float+Float{}), got ({}, {}). \
+                 Use explicit operations like `i.{}` or `f.{}`.",
+                line_prefix,
+                name,
+                if matches!(name, "+" | "=") {
+                    ", or String+String"
+                } else {
+                    ""
+                },
+                second_desc,
+                top_desc,
+                name,
+                name,
+            ));
+        }
+
         // Special handling for aux stack operations (Issue #350)
         if name == ">aux" {
             return self.infer_to_aux(span, current_stack);
@@ -1400,6 +1464,59 @@ impl TypeChecker {
         let propagated_effects = fresh_effect.effects.clone();
 
         Ok((result_stack, subst, propagated_effects))
+    }
+
+    /// Resolve arithmetic sugar operators to concrete operations based on
+    /// the types on the stack. Returns `None` if the name is not a sugar op.
+    fn resolve_arithmetic_sugar(&self, name: &str, stack: &StackType) -> Option<String> {
+        // Only handle known sugar operators
+        let is_binary = matches!(
+            name,
+            "+" | "-" | "*" | "/" | "%" | "=" | "<" | ">" | "<=" | ">=" | "<>"
+        );
+        if !is_binary {
+            return None;
+        }
+
+        // Peek at the top two types on the stack
+        let (rest, top) = stack.clone().pop()?;
+        let (_, second) = rest.pop()?;
+
+        match (name, &second, &top) {
+            // Int × Int operations
+            ("+", Type::Int, Type::Int) => Some("i.+".to_string()),
+            ("-", Type::Int, Type::Int) => Some("i.-".to_string()),
+            ("*", Type::Int, Type::Int) => Some("i.*".to_string()),
+            ("/", Type::Int, Type::Int) => Some("i./".to_string()),
+            ("%", Type::Int, Type::Int) => Some("i.%".to_string()),
+            ("=", Type::Int, Type::Int) => Some("i.=".to_string()),
+            ("<", Type::Int, Type::Int) => Some("i.<".to_string()),
+            (">", Type::Int, Type::Int) => Some("i.>".to_string()),
+            ("<=", Type::Int, Type::Int) => Some("i.<=".to_string()),
+            (">=", Type::Int, Type::Int) => Some("i.>=".to_string()),
+            ("<>", Type::Int, Type::Int) => Some("i.<>".to_string()),
+
+            // Float × Float operations
+            ("+", Type::Float, Type::Float) => Some("f.+".to_string()),
+            ("-", Type::Float, Type::Float) => Some("f.-".to_string()),
+            ("*", Type::Float, Type::Float) => Some("f.*".to_string()),
+            ("/", Type::Float, Type::Float) => Some("f./".to_string()),
+            ("=", Type::Float, Type::Float) => Some("f.=".to_string()),
+            ("<", Type::Float, Type::Float) => Some("f.<".to_string()),
+            (">", Type::Float, Type::Float) => Some("f.>".to_string()),
+            ("<=", Type::Float, Type::Float) => Some("f.<=".to_string()),
+            (">=", Type::Float, Type::Float) => Some("f.>=".to_string()),
+            ("<>", Type::Float, Type::Float) => Some("f.<>".to_string()),
+
+            // String operations (only + for concat, = for equality)
+            ("+", Type::String, Type::String) => Some("string.concat".to_string()),
+            ("=", Type::String, Type::String) => Some("string.equal?".to_string()),
+
+            // No match — not a sugar op for these types (will fall through
+            // to normal lookup, which will fail with "Unknown word: '+'" —
+            // giving the user a clear error that they need explicit types)
+            _ => None,
+        }
     }
 
     /// Infer the stack effect of `dip`: ( ..a x quot -- ..b x )

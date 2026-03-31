@@ -1,0 +1,50 @@
+# Arithmetic Sugar
+#
+# The compiler resolves +, -, *, /, %, =, <, >, <=, >=, <> to
+# concrete operations based on the types on the stack.
+# No coercion — mismatched types are compile errors.
+
+: demo-int-arithmetic ( -- )
+  "--- Integer Arithmetic ---" io.write-line
+  3 4 + int->string "3 + 4 = " swap string.concat io.write-line
+  10 3 - int->string "10 - 3 = " swap string.concat io.write-line
+  6 7 * int->string "6 * 7 = " swap string.concat io.write-line
+  20 4 / drop int->string "20 / 4 = " swap string.concat io.write-line
+  17 5 % drop int->string "17 % 5 = " swap string.concat io.write-line
+;
+
+: demo-int-comparison ( -- )
+  "" io.write-line
+  "--- Integer Comparison ---" io.write-line
+  3 4 < if "3 < 4: true" else "3 < 4: false" then io.write-line
+  5 5 = if "5 = 5: true" else "5 = 5: false" then io.write-line
+  7 3 > if "7 > 3: true" else "7 > 3: false" then io.write-line
+  2 2 <= if "2 <= 2: true" else "2 <= 2: false" then io.write-line
+  8 5 <> if "8 <> 5: true" else "8 <> 5: false" then io.write-line
+;
+
+: demo-float-arithmetic ( -- )
+  "" io.write-line
+  "--- Float Arithmetic ---" io.write-line
+  3.14 2.0 + float->string "3.14 + 2.0 = " swap string.concat io.write-line
+  10.5 3.2 - float->string "10.5 - 3.2 = " swap string.concat io.write-line
+  2.5 4.0 * float->string "2.5 * 4.0 = " swap string.concat io.write-line
+  9.0 2.0 / float->string "9.0 / 2.0 = " swap string.concat io.write-line
+;
+
+: demo-string-ops ( -- )
+  "" io.write-line
+  "--- String Operations ---" io.write-line
+  "hello" " " + "world" + io.write-line
+  "abc" "abc" = if "abc = abc: true" else "abc = abc: false" then io.write-line
+  "abc" "xyz" = if "abc = xyz: true" else "abc = xyz: false" then io.write-line
+;
+
+: main ( -- Int )
+  "=== Arithmetic Sugar ===" io.write-line
+  demo-int-arithmetic
+  demo-int-comparison
+  demo-float-arithmetic
+  demo-string-ops
+  0
+;

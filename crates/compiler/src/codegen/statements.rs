@@ -20,6 +20,15 @@ impl CodeGen {
         name: &str,
         position: TailPosition,
     ) -> Result<String, CodeGenError> {
+        // Resolve arithmetic sugar (e.g., `+` → `i.+`) using typechecker's resolution
+        let resolved;
+        let name = if let Some(concrete) = self.resolve_sugar(name) {
+            resolved = concrete.to_string();
+            &resolved
+        } else {
+            name
+        };
+
         // Inline operations for common stack/arithmetic ops
         if let Some(result) = self.try_codegen_inline_op(stack_var, name)? {
             return Ok(result);
