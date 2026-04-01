@@ -9,6 +9,7 @@
   3 4 + int->string "3 + 4 = " swap string.concat io.write-line
   10 3 - int->string "10 - 3 = " swap string.concat io.write-line
   6 7 * int->string "6 * 7 = " swap string.concat io.write-line
+  # / and % return (result Bool) — Bool is false on division by zero
   20 4 / drop int->string "20 / 4 = " swap string.concat io.write-line
   17 5 % drop int->string "17 % 5 = " swap string.concat io.write-line
 ;

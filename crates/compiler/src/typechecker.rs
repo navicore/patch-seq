@@ -1270,15 +1270,27 @@ impl TypeChecker {
                     second.unwrap_or_else(|| "empty".to_string()),
                 )
             };
-            let type_options = match name {
-                "+" | "=" => "Int+Int, Float+Float, or String+String",
-                "%" => "Int+Int only (no float modulo)",
-                _ => "Int+Int or Float+Float",
+            let (type_options, suggestion) = match name {
+                "+" => (
+                    "Int+Int, Float+Float, or String+String",
+                    "Use `i.+`, `f.+`, or `string.concat`.",
+                ),
+                "=" => (
+                    "Int+Int, Float+Float, or String+String (equality)",
+                    "Use `i.=`, `f.=`, or `string.equal?`.",
+                ),
+                "%" => (
+                    "Int+Int only — float modulo is not supported",
+                    "Use `i.%` for integer modulo.",
+                ),
+                _ => (
+                    "Int+Int or Float+Float",
+                    "Use the `i.` or `f.` prefixed variant.",
+                ),
             };
             return Err(format!(
-                "{}`{}` requires matching types ({}), got ({}, {}). \
-                 Use explicit operations like `i.{}`.",
-                line_prefix, name, type_options, second_desc, top_desc, name,
+                "{}`{}` requires matching types ({}), got ({}, {}). {}",
+                line_prefix, name, type_options, second_desc, top_desc, suggestion,
             ));
         }
 

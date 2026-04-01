@@ -263,7 +263,9 @@ pub fn tokenize(source: &str) -> Vec<Token> {
             continue;
         }
 
-        // Arithmetic sugar operators: +, -, *, /, %, =, <, >, <=, >=, <>
+        // Arithmetic sugar operators: +, *, /, %, =, <, >, <=, >=, <>
+        // Note: `-` is omitted — it's handled by the identifier path (line 250)
+        // since it can also start negative numbers and hyphenated words.
         if matches!(ch, '+' | '*' | '/' | '%' | '=' | '<' | '>') {
             pos += 1;
             // Check for two-character operators: <=, >=, <>
