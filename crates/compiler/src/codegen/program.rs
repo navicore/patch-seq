@@ -43,6 +43,7 @@ impl CodeGen {
         // Store type map for use during code generation
         self.type_map = type_map;
         self.statement_types = statement_types;
+        // resolved_sugar is set separately via set_resolved_sugar()
 
         // Store union definitions for pattern matching
         self.unions = program.unions.clone();

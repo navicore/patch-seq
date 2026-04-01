@@ -18,8 +18,20 @@ impl CodeGen {
         &mut self,
         stack_var: &str,
         name: &str,
+        span: Option<&crate::ast::Span>,
         position: TailPosition,
     ) -> Result<String, CodeGenError> {
+        // Resolve arithmetic sugar (e.g., `+` → `i.+`) using typechecker's resolution
+        let resolved;
+        let name = if let Some(s) = span
+            && let Some(concrete) = self.resolve_sugar_at(s.line, s.column)
+        {
+            resolved = concrete.to_string();
+            &resolved
+        } else {
+            name
+        };
+
         // Inline operations for common stack/arithmetic ops
         if let Some(result) = self.try_codegen_inline_op(stack_var, name)? {
             return Ok(result);
@@ -403,7 +415,9 @@ impl CodeGen {
             Statement::BoolLiteral(b) => self.codegen_bool_literal(stack_var, *b),
             Statement::StringLiteral(s) => self.codegen_string_literal(stack_var, s),
             Statement::Symbol(s) => self.codegen_symbol_literal(stack_var, s),
-            Statement::WordCall { name, .. } => self.codegen_word_call(stack_var, name, position),
+            Statement::WordCall { name, span } => {
+                self.codegen_word_call(stack_var, name, span.as_ref(), position)
+            }
             Statement::If {
                 then_branch,
                 else_branch,
