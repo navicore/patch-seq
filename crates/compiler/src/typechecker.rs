@@ -54,11 +54,10 @@ pub struct TypeChecker {
     /// True when type-checking inside a quotation body (Issue #350)
     /// Aux operations are not supported in quotations (codegen limitation).
     in_quotation_scope: std::cell::Cell<bool>,
-    /// Resolved arithmetic sugar: maps (word_name, statement_index) -> concrete op name
-    /// E.g., `+` at position 3 in word `foo` -> `"i.+"` if top-of-stack is (Int, Int)
-    resolved_sugar: std::cell::RefCell<HashMap<(String, usize), String>>,
-    /// Current statement index during type-checking (for sugar resolution keying)
-    current_stmt_index: std::cell::Cell<usize>,
+    /// Resolved arithmetic sugar: maps (line, column) -> concrete op name.
+    /// Keyed by source location, which is unique per occurrence and available
+    /// to both the typechecker and codegen via the AST span.
+    resolved_sugar: std::cell::RefCell<HashMap<(usize, usize), String>>,
 }
 
 impl TypeChecker {
@@ -76,7 +75,6 @@ impl TypeChecker {
             aux_max_depths: std::cell::RefCell::new(HashMap::new()),
             in_quotation_scope: std::cell::Cell::new(false),
             resolved_sugar: std::cell::RefCell::new(HashMap::new()),
-            current_stmt_index: std::cell::Cell::new(0),
         }
     }
 
@@ -165,8 +163,8 @@ impl TypeChecker {
     }
 
     /// Extract resolved arithmetic sugar for codegen
-    /// Maps (word_name, statement_index) -> concrete operation name
-    pub fn take_resolved_sugar(&self) -> HashMap<(String, usize), String> {
+    /// Maps (line, column) -> concrete operation name
+    pub fn take_resolved_sugar(&self) -> HashMap<(usize, usize), String> {
         self.resolved_sugar.replace(HashMap::new())
     }
 
@@ -621,9 +619,6 @@ impl TypeChecker {
             } else {
                 None
             };
-
-            // Track current statement index (used by sugar resolution and type capture)
-            self.current_stmt_index.set(i);
 
             // Capture statement type info for codegen optimization (Issue #186)
             // Record the top-of-stack type BEFORE this statement for operations like dup
@@ -1253,12 +1248,11 @@ impl TypeChecker {
         );
         if is_sugar {
             if let Some(resolved) = self.resolve_arithmetic_sugar(name, &current_stack) {
-                // Record the resolution for codegen, keyed by (word_name, statement_index)
-                if let Some((word_name, _)) = self.current_word.borrow().as_ref() {
-                    self.resolved_sugar.borrow_mut().insert(
-                        (word_name.clone(), self.current_stmt_index.get()),
-                        resolved.clone(),
-                    );
+                // Record the resolution for codegen, keyed by source location (line, column)
+                if let Some(s) = span {
+                    self.resolved_sugar
+                        .borrow_mut()
+                        .insert((s.line, s.column), resolved.clone());
                 }
                 // Proceed as if the user wrote the resolved name
                 return self.infer_word_call(&resolved, span, current_stack);
@@ -1276,20 +1270,15 @@ impl TypeChecker {
                     second.unwrap_or_else(|| "empty".to_string()),
                 )
             };
+            let type_options = match name {
+                "+" | "=" => "Int+Int, Float+Float, or String+String",
+                "%" => "Int+Int only (no float modulo)",
+                _ => "Int+Int or Float+Float",
+            };
             return Err(format!(
-                "{}`{}` requires matching types (Int+Int, Float+Float{}), got ({}, {}). \
-                 Use explicit operations like `i.{}` or `f.{}`.",
-                line_prefix,
-                name,
-                if matches!(name, "+" | "=") {
-                    ", or String+String"
-                } else {
-                    ""
-                },
-                second_desc,
-                top_desc,
-                name,
-                name,
+                "{}`{}` requires matching types ({}), got ({}, {}). \
+                 Use explicit operations like `i.{}`.",
+                line_prefix, name, type_options, second_desc, top_desc, name,
             ));
         }
 

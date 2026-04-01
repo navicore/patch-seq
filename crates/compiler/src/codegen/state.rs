@@ -145,9 +145,9 @@ pub struct CodeGen {
     /// Per-statement type info for optimization (Issue #186)
     /// Maps (word_name, statement_index) -> top-of-stack type before statement
     pub(super) statement_types: HashMap<(String, usize), Type>,
-    /// Resolved arithmetic sugar: maps (word_name, statement_index) -> concrete op name
-    /// E.g., `+` at (foo, 3) -> `"i.+"` if typechecker resolved it for Int operands
-    pub(super) resolved_sugar: HashMap<(String, usize), String>,
+    /// Resolved arithmetic sugar: maps (line, column) -> concrete op name
+    /// E.g., `+` at line 5, column 3 -> `"i.+"` if typechecker resolved it for Int operands
+    pub(super) resolved_sugar: HashMap<(usize, usize), String>,
     /// Current word being compiled (for statement type lookup)
     pub(super) current_word_name: Option<String>,
     /// Current statement index within the word (for statement type lookup)
@@ -242,18 +242,12 @@ impl CodeGen {
     }
 
     /// Set resolved arithmetic sugar mappings from the typechecker
-    pub fn set_resolved_sugar(&mut self, sugar: HashMap<(String, usize), String>) {
+    pub fn set_resolved_sugar(&mut self, sugar: HashMap<(usize, usize), String>) {
         self.resolved_sugar = sugar;
     }
 
-    /// Look up the resolved name for an arithmetic sugar op at the current position
-    pub(super) fn resolve_sugar(&self, _name: &str) -> Option<&str> {
-        if let Some(word_name) = &self.current_word_name {
-            let key = (word_name.clone(), self.current_stmt_index);
-            if let Some(resolved) = self.resolved_sugar.get(&key) {
-                return Some(resolved.as_str());
-            }
-        }
-        None
+    /// Look up the resolved name for an arithmetic sugar op by source location
+    pub(super) fn resolve_sugar_at(&self, line: usize, column: usize) -> Option<&str> {
+        self.resolved_sugar.get(&(line, column)).map(|s| s.as_str())
     }
 }

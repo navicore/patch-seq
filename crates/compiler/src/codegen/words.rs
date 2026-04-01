@@ -486,10 +486,16 @@ impl CodeGen {
             return false;
         }
         match statement {
-            Statement::WordCall { name, .. } => {
+            Statement::WordCall { name, span } => {
                 // Phase 2 TCO: `call` is now TCO-eligible (it emits its own ret)
                 if name == "call" {
                     return true;
+                }
+                // Arithmetic sugar ops resolve to inline builtins — they don't emit tail calls
+                if let Some(s) = span
+                    && self.resolve_sugar_at(s.line, s.column).is_some()
+                {
+                    return false;
                 }
                 !self.is_runtime_builtin(name)
             }

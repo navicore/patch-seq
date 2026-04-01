@@ -263,6 +263,21 @@ pub fn tokenize(source: &str) -> Vec<Token> {
             continue;
         }
 
+        // Arithmetic sugar operators: +, -, *, /, %, =, <, >, <=, >=, <>
+        if matches!(ch, '+' | '*' | '/' | '%' | '=' | '<' | '>') {
+            pos += 1;
+            // Check for two-character operators: <=, >=, <>
+            if pos < chars.len() {
+                let next = chars[pos];
+                if (ch == '<' && (next == '=' || next == '>')) || (ch == '>' && next == '=') {
+                    pos += 1;
+                }
+            }
+            let text: String = chars[start..pos].iter().collect();
+            tokens.push(Token::new(TokenKind::Builtin, start, pos, text));
+            continue;
+        }
+
         // Unknown character
         pos += 1;
         tokens.push(Token::new(TokenKind::Unknown, start, pos, ch.to_string()));
