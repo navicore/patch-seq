@@ -260,8 +260,10 @@ pub fn analyze_with_config(source: &str, config: &CompilerConfig) -> AnalysisRes
         let quotation_types = typechecker.take_quotation_types();
         let statement_types = typechecker.take_statement_top_types();
         let aux_max_depths = typechecker.take_aux_max_depths();
+        let resolved_sugar = typechecker.take_resolved_sugar();
         let mut codegen = CodeGen::new();
         codegen.set_aux_slot_counts(aux_max_depths);
+        codegen.set_resolved_sugar(resolved_sugar);
         match codegen.codegen_program_with_config(
             &program,
             quotation_types,
