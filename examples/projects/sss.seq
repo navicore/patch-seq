@@ -1,0 +1,465 @@
+# ============================================================================
+# Shamir's Secret Sharing — Tutorial Implementation in Seq
+#
+# Implements SSS over GF(256), the same finite field used by AES.
+# A secret is split into N shares such that any K can reconstruct it,
+# but K-1 shares reveal absolutely nothing (information-theoretic security).
+# ============================================================================
+
+include std:list
+
+# ============================================================================
+#                       GF(256) Finite Field Arithmetic
+# ============================================================================
+#
+# GF(256) = GF(2)[x] / (x^8 + x^4 + x^3 + x + 1)
+#
+# Each element is a byte (0..255). Addition is XOR. Every nonzero
+# element has a multiplicative inverse — essential for Lagrange interpolation.
+
+: gf256-add ( Int Int -- Int )  bxor ;
+: gf256-sub ( Int Int -- Int )  bxor ;
+
+# Peasant multiplication: shift-and-XOR with polynomial reduction.
+# Stack: ( a b result -- result )
+: gf256-mul-loop ( Int Int Int -- Int )
+  over 0 i.= if
+    nip nip
+  else
+    # If low bit of b is set, XOR a into result
+    over 1 band 0 i.<> if
+      >aux over aux> bxor
+    then
+    # Shift a left; reduce if it overflows a byte
+    rot 1 shl
+    dup 0x100 band 0 i.<> if 0x11B bxor then
+    rot rot
+    # Shift b right
+    swap 1 shr swap
+    gf256-mul-loop
+  then
+;
+
+: gf256-mul ( Int Int -- Int )  0 gf256-mul-loop ;
+
+# Inverse via Fermat: a^(-1) = a^254 in GF(256).
+# Stack: ( a result count -- result )
+: gf256-inv-loop ( Int Int Int -- Int )
+  dup 0 i.<= if
+    drop nip
+  else
+    1 i.-
+    swap dup gf256-mul
+    rot dup >aux gf256-mul
+    aux> swap rot
+    gf256-inv-loop
+  then
+;
+
+: gf256-inv ( Int -- Int )
+  dup 6 gf256-inv-loop
+  dup gf256-mul
+;
+
+: gf256-div ( Int Int -- Int )  gf256-inv gf256-mul ;
+
+# ============================================================================
+#                         Polynomial Evaluation
+# ============================================================================
+# Horner's method: p(x) = c0 + x*(c1 + x*(c2 + ...))
+
+# Stack: ( coeffs x idx acc -- result )
+: eval-poly-loop ( List Int Int Int -- Int )
+  over 0 i.< if
+    nip nip nip
+  else
+    2 pick gf256-mul
+    3 pick 2 pick list.get drop
+    gf256-add
+    swap 1 i.- swap
+    eval-poly-loop
+  then
+;
+
+: eval-poly ( List Int -- Int )
+  over list.length 1 i.-
+  0 eval-poly-loop
+;
+
+# ============================================================================
+#                      Random Polynomial Generation
+# ============================================================================
+
+# Stack: ( coeffs remaining -- coeffs' )
+: make-random-poly-loop ( List Int -- List )
+  dup 0 i.<= if
+    drop
+  else
+    1 i.-
+    swap 0 256 crypto.random-int lv swap
+    make-random-poly-loop
+  then
+;
+
+: make-random-poly ( Int Int -- List )
+  swap list-of swap lv
+  swap 1 i.-
+  make-random-poly-loop
+;
+
+# ============================================================================
+#                        Splitting (Single Byte)
+# ============================================================================
+# Each point is packed as (x << 8) | y.
+
+# Stack: ( coeffs n x points -- points' )
+: split-byte-loop ( List Int Int List -- List )
+  over 3 pick i.> if
+    nip nip nip
+  else
+    3 pick 2 pick eval-poly
+    2 pick 8 shl bor
+    lv
+    swap 1 i.+ swap
+    split-byte-loop
+  then
+;
+
+: split-byte ( Int Int Int -- List )
+  rot rot make-random-poly swap
+  1 list-of split-byte-loop
+;
+
+# ============================================================================
+#                       Lagrange Interpolation
+# ============================================================================
+# p(0) = sum_i  y_i * L_i(0)
+# L_i(0) = product_{j!=i}  x_j / (x_i XOR x_j)
+
+# Fold step for basis product. Packed acc = (basis << 8) | x_i.
+: lagrange-basis-step ( Int Int -- Int )
+  over 0xff band
+  over i.= if
+    drop
+  else
+    swap dup 0xff band
+    >aux
+    8 shr swap
+    dup aux> dup >aux
+    bxor
+    gf256-div
+    gf256-mul
+    8 shl aux> bor
+  then
+;
+
+: lagrange-basis ( List Int -- Int )
+  256 i.+
+  [ lagrange-basis-step ] list.fold
+  8 shr
+;
+
+# Outer loop: sum y_i * L_i(0).
+# Stack: ( xs ys sum idx -- result )
+: lagrange-outer-loop ( List List Int Int -- Int )
+  2 pick list.length over i.<= if
+    drop nip nip
+  else
+    2 pick over list.get drop
+    4 pick 2 pick list.get drop
+    5 pick swap lagrange-basis
+    gf256-mul
+    rot gf256-add swap
+    1 i.+ lagrange-outer-loop
+  then
+;
+
+: lagrange-at-zero ( List -- Int )
+  dup [ 8 shr ] list.map
+  swap [ 0xff band ] list.map
+  0 0 lagrange-outer-loop
+;
+
+# ============================================================================
+#                          Select Shares
+# ============================================================================
+# Pick specific shares from a points list by index.
+# Stack: ( points indices idx result -- result )
+: select-loop ( List List Int List -- List )
+  over 3 pick list.length i.>= if
+    nip nip nip
+  else
+    2 pick 2 pick list.get drop
+    4 pick swap list.get drop
+    lv
+    swap 1 i.+ swap
+    select-loop
+  then
+;
+
+: select-shares ( List List -- List )
+  0 list-of select-loop
+;
+
+# ============================================================================
+#                      Multi-Byte Split / Reconstruct
+# ============================================================================
+# Strategy: split each byte of the secret independently.
+# split-bytes returns a list of point-lists (one per byte position).
+# To reconstruct, select the same share indices from each byte's list
+# and interpolate each one.
+
+# Convert string to list of byte values (ASCII codepoints).
+# Stack: ( str idx result -- result )
+: str-to-bytes-loop ( String Int List -- List )
+  over 3 pick string.length i.>= if
+    nip nip
+  else
+    2 pick 2 pick string.char-at
+    lv
+    swap 1 i.+ swap
+    str-to-bytes-loop
+  then
+;
+
+: str-to-bytes ( String -- List )
+  0 list-of str-to-bytes-loop
+;
+
+# Split all bytes into per-byte point lists.
+# Stack: ( bytes k n idx result -- result )
+: split-bytes-loop ( List Int Int Int List -- List )
+  # Check: idx >= bytes.length
+  # Careful with depths: bytes=4, k=3, n=2, idx=1, result=0
+  1 pick 5 pick list.length i.>= if
+    nip nip nip nip
+  else
+    # Get bytes[idx]: need bytes (depth 4) and idx (depth 1)
+    4 pick 2 pick list.get drop     # ... byte
+    # split-byte(byte, k, n): need k (now depth 4) and n (now depth 3)
+    4 pick 4 pick split-byte        # ... points
+    lv                               # bytes k n idx result'
+    swap 1 i.+ swap                  # bytes k n (idx+1) result'
+    split-bytes-loop
+  then
+;
+
+: split-bytes ( List Int Int -- List )
+  0 list-of split-bytes-loop
+;
+
+# Reconstruct all bytes from per-byte point lists.
+# Stack: ( all_points indices idx result -- result )
+# Depths: all=3, indices=2, idx=1, result=0
+: reconstruct-loop ( List List Int List -- List )
+  1 pick 4 pick list.length i.>= if
+    nip nip nip
+  else
+    # Get point-list for byte[idx]: all (depth 3), idx (depth 1)
+    3 pick 2 pick list.get drop       # ... byte_points
+    # Select shares: indices is now at depth 3
+    3 pick select-shares              # ... selected_points
+    lagrange-at-zero                  # ... byte_val
+    lv                                 # all indices idx result'
+    swap 1 i.+ swap
+    reconstruct-loop
+  then
+;
+
+: reconstruct-bytes ( List List -- List )
+  0 list-of reconstruct-loop
+;
+
+# Collect y-values for one share across all bytes.
+# Stack: ( all_points share_idx byte_idx result -- result )
+# Depths: all=3, s=2, b=1, result=0
+: collect-ys-loop ( List Int Int List -- List )
+  1 pick 4 pick list.length i.>= if
+    nip nip nip
+  else
+    # Get all[b]: all (depth 3), b (depth 1)
+    3 pick 2 pick list.get drop       # ... byte_points
+    # Get byte_points[s]: s is now at depth 3
+    3 pick list.get drop              # ... packed_point
+    0xff band                          # extract y value
+    lv                                 # all s b result'
+    swap 1 i.+ swap
+    collect-ys-loop
+  then
+;
+
+: collect-share-ys ( List Int -- List )
+  0 list-of collect-ys-loop
+;
+
+# ============================================================================
+#                         Display Helpers
+# ============================================================================
+
+: show ( String String -- )
+  swap string.concat io.write-line
+;
+
+: print-point ( Int -- )
+  dup 8 shr int->string
+  swap 0xff band int->string
+  "  Share x=" rot string.concat ", y=" string.concat swap string.concat
+  io.write-line
+;
+
+: print-points-loop ( List Int -- )
+  over list.length over i.<= if
+    drop drop
+  else
+    over over list.get drop print-point
+    1 i.+ print-points-loop
+  then
+;
+
+: print-points ( List -- )
+  dup 0 print-points-loop drop
+;
+
+# Print a list of byte values as hex.
+: print-hex-byte ( Int -- )
+  dup 16 i./ drop int->string swap
+  16 i.% drop int->string
+  string.concat io.write " " io.write
+;
+
+: print-bytes-hex-loop ( List Int -- )
+  over list.length over i.<= if
+    drop drop
+  else
+    over over list.get drop print-hex-byte
+    1 i.+ print-bytes-hex-loop
+  then
+;
+
+: print-bytes-hex ( List -- )
+  dup 0 print-bytes-hex-loop drop
+;
+
+# Print comma-separated list of ints.
+: print-ints-loop ( List Int -- )
+  over list.length over i.<= if
+    drop drop
+  else
+    dup 0 i.> if ", " io.write then
+    over over list.get drop int->string io.write
+    1 i.+ print-ints-loop
+  then
+;
+
+# Print one share's y-values across all bytes.
+# Stack: ( all_points share_idx -- )
+: print-share ( List Int -- )
+  dup 1 i.+ int->string "  Sled " swap string.concat ": [" string.concat io.write
+  collect-share-ys
+  dup 0 print-ints-loop drop
+  "]" io.write-line
+;
+
+# Print all n shares. n = length of first byte's point list.
+# Stack: ( all_points n share_idx -- )
+: print-all-shares-loop ( List Int Int -- )
+  2dup i.<= if
+    drop drop drop
+  else
+    2 pick over print-share
+    1 i.+ print-all-shares-loop
+  then
+;
+
+: print-all-shares ( List Int -- )
+  0 print-all-shares-loop
+;
+
+# ============================================================================
+#                               Demo
+# ============================================================================
+
+: main ( -- )
+  "=== Shamir's Secret Sharing Demo ===" io.write-line
+  "" io.write-line
+
+  "--- Single-Byte Demo ---" io.write-line
+  42 dup int->string "Secret byte: " show
+  "" io.write-line
+
+  # Split 42 into 5 shares, threshold 3
+  3 5 split-byte
+
+  "Split into 5 shares (3-of-5 scheme):" io.write-line
+  dup print-points
+  "" io.write-line
+
+  # Reconstruct with indices 0, 2, 4 (shares x=1, x=3, x=5)
+  "Reconstructing from shares x=1, x=3, x=5..." io.write-line
+  dup list-of 0 lv 2 lv 4 lv select-shares
+  lagrange-at-zero
+  dup int->string "Recovered byte: " show
+  42 i.= if
+    "SUCCESS — matches original!" io.write-line
+  else
+    "MISMATCH!" io.write-line
+  then
+  "" io.write-line
+
+  # Different subset: indices 1, 3, 4 (shares x=2, x=4, x=5)
+  "Reconstructing from shares x=2, x=4, x=5..." io.write-line
+  dup list-of 1 lv 3 lv 4 lv select-shares
+  lagrange-at-zero
+  dup int->string "Recovered byte: " show
+  42 i.= if
+    "SUCCESS — also matches!" io.write-line
+  else
+    "MISMATCH!" io.write-line
+  then
+  "" io.write-line
+
+  # Too few shares
+  "With only 2 shares (below threshold of 3):" io.write-line
+  list-of 0 lv 1 lv select-shares
+  lagrange-at-zero
+  int->string "Result: " show
+  "This is garbage — 2 shares reveal nothing!" io.write-line
+  "" io.write-line
+
+  # ---- Multi-byte demo ----
+  "--- Multi-Byte Demo ---" io.write-line
+  "Secret: \"Hello\"" io.write-line
+  "Hello" str-to-bytes
+  dup "Bytes:  [" io.write [ int->string ] list.map ", " string.join io.write
+  "]" io.write-line
+  "" io.write-line
+
+  # Split each byte: 3-of-5 scheme
+  3 5 split-bytes
+  "Each byte split into 5 shares (3-of-5):" io.write-line
+  dup 5 print-all-shares
+  "" io.write-line
+
+  # Reconstruct with shares 0, 2, 4 (sleds 1, 3, 5)
+  "Reconstructing from sleds 1, 3, 5..." io.write-line
+  dup list-of 0 lv 2 lv 4 lv reconstruct-bytes
+  "Recovered: [" io.write
+  dup [ int->string ] list.map ", " string.join io.write
+  "]" io.write-line
+
+  # Check: should be [72, 101, 108, 108, 111]
+  # Sum the bytes and compare (72+101+108+108+111 = 500)
+  0 [ i.+ ] list.fold
+  500 i.= if
+    "SUCCESS — secret recovered!" io.write-line
+  else
+    "MISMATCH!" io.write-line
+  then
+  drop   # drop the all_points list
+  "" io.write-line
+
+  "=== Hardware Sled Analogy ===" io.write-line
+  "Imagine a rack with 5 sleds, each holding one share." io.write-line
+  "Steal 1 or 2 sleds and you learn NOTHING." io.write-line
+  "Only by combining 3+ sleds can the secret be recovered." io.write-line
+;
