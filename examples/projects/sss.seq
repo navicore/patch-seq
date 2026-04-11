@@ -43,6 +43,9 @@ include std:list
 : gf256-mul ( Int Int -- Int )  0 gf256-mul-loop ;
 
 # Inverse via Fermat: a^(-1) = a^254 in GF(256).
+# Precondition: a must be nonzero. gf256-inv(0) silently returns 0,
+# which would produce garbage in Lagrange interpolation. This can only
+# happen if two shares have the same x-coordinate (a bug in split).
 # Stack: ( a result count -- result )
 : gf256-inv-loop ( Int Int Int -- Int )
   dup 0 i.<= if
@@ -320,34 +323,6 @@ include std:list
   dup 0 print-points-loop drop
 ;
 
-# Print a list of byte values as hex.
-: print-hex-byte ( Int -- )
-  dup 16 i./ if
-    int->string swap
-  else
-    drop "0" swap
-  then
-  16 i.% if
-    int->string
-  else
-    drop "0"
-  then
-  string.concat io.write " " io.write
-;
-
-: print-bytes-hex-loop ( List Int -- )
-  over list.length over i.<= if
-    drop drop
-  else
-    over over list.get drop print-hex-byte
-    1 i.+ print-bytes-hex-loop
-  then
-;
-
-: print-bytes-hex ( List -- )
-  dup 0 print-bytes-hex-loop drop
-;
-
 # Print comma-separated list of ints.
 : print-ints-loop ( List Int -- )
   over list.length over i.<= if
@@ -362,7 +337,7 @@ include std:list
 # Print one share's y-values across all bytes.
 # Stack: ( all_points share_idx -- )
 : print-share ( List Int -- )
-  dup 1 i.+ int->string "  Sled " swap string.concat ": [" string.concat io.write
+  dup 1 i.+ int->string "  Share " swap string.concat ": [" string.concat io.write
   collect-share-ys
   dup 0 print-ints-loop drop
   "]" io.write-line
@@ -381,6 +356,22 @@ include std:list
 
 : print-all-shares ( List Int -- )
   0 print-all-shares-loop
+;
+
+# Element-wise list equality check.
+# Stack: ( actual expected idx -- bool )
+: verify-eq-loop ( List List Int -- Bool )
+  1 pick list.length over i.<= if
+    drop drop drop true
+  else
+    2 pick over list.get drop
+    2 pick 2 pick list.get drop
+    i.<> if
+      drop drop drop false
+    else
+      1 i.+ verify-eq-loop
+    then
+  then
 ;
 
 # ============================================================================
@@ -448,17 +439,17 @@ include std:list
   dup 5 print-all-shares
   "" io.write-line
 
-  # Reconstruct with shares 0, 2, 4 (sleds 1, 3, 5)
-  "Reconstructing from sleds 1, 3, 5..." io.write-line
+  # Reconstruct with shares 0, 2, 4 (shares 1, 3, 5)
+  "Reconstructing from shares 1, 3, 5..." io.write-line
   dup list-of 0 lv 2 lv 4 lv reconstruct-bytes
   "Recovered: [" io.write
   dup [ int->string ] list.map ", " string.join io.write
   "]" io.write-line
 
-  # Check: should be [72, 101, 108, 108, 111]
-  # Sum the bytes and compare (72+101+108+108+111 = 500)
-  0 [ i.+ ] list.fold
-  500 i.= if
+  # Verify element-wise: should be [72, 101, 108, 108, 111]
+  list-of 72 lv 101 lv 108 lv 108 lv 111 lv
+  0 verify-eq-loop
+  if
     "SUCCESS — secret recovered!" io.write-line
   else
     "MISMATCH!" io.write-line
