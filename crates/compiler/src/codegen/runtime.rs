@@ -382,6 +382,15 @@ pub static RUNTIME_DECLARATIONS: LazyLock<Vec<RuntimeDecl>> = LazyLock::new(|| {
             decl: "declare i64 @patch_seq_strand_spawn(ptr, ptr)",
             category: None,
         },
+        // Exit code handling
+        RuntimeDecl {
+            decl: "declare void @patch_seq_set_exit_code(i64)",
+            category: Some("; Exit code handling"),
+        },
+        RuntimeDecl {
+            decl: "declare i64 @patch_seq_get_exit_code()",
+            category: None,
+        },
         // Command-line argument operations
         RuntimeDecl {
             decl: "declare void @patch_seq_args_init(i32, ptr)",

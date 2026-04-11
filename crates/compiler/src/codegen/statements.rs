@@ -518,7 +518,25 @@ impl CodeGen {
             // Emit at-exit report (no-op unless SEQ_REPORT is set at runtime)
             writeln!(&mut self.output, "  call void @patch_seq_report()")?;
 
-            writeln!(&mut self.output, "  ret i32 0")?;
+            // Read the exit code that seq_main wrote (Issue #355).
+            // Defaults to 0 for void main (never written) or for any
+            // program that didn't reach the exit code write path.
+            let exit_code_var = self.fresh_temp();
+            writeln!(
+                &mut self.output,
+                "  %{} = call i64 @patch_seq_get_exit_code()",
+                exit_code_var
+            )?;
+            // Truncate to i32 — Unix exit codes are limited to the low 8
+            // bits on Linux; other platforms vary. We pass through whatever
+            // the user returned and let the OS apply its convention.
+            let exit_code_i32 = self.fresh_temp();
+            writeln!(
+                &mut self.output,
+                "  %{} = trunc i64 %{} to i32",
+                exit_code_i32, exit_code_var
+            )?;
+            writeln!(&mut self.output, "  ret i32 %{}", exit_code_i32)?;
         }
         writeln!(&mut self.output, "}}")?;
 

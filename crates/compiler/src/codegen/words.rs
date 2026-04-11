@@ -122,7 +122,22 @@ impl CodeGen {
             let stack_var = self.spill_virtual_stack(&stack_var)?;
 
             if is_main && !self.pure_inline_test {
-                // Normal mode: free the stack before returning
+                // Normal mode: maybe write exit code, then free stack and return.
+                //
+                // For `main ( -- Int )`: peek the top Int from the stack and
+                // write it to the global exit code via patch_seq_set_exit_code,
+                // BEFORE freeing the stack. The C `main` reads it after the
+                // scheduler joins all strands. (Issue #355)
+                if self.main_returns_int {
+                    let top_ptr = self.emit_stack_gep(&stack_var, -1)?;
+                    let exit_val = self.emit_load_int_payload(&top_ptr)?;
+                    writeln!(
+                        &mut self.output,
+                        "  call void @patch_seq_set_exit_code(i64 %{})",
+                        exit_val
+                    )?;
+                }
+                // Free the stack
                 writeln!(
                     &mut self.output,
                     "  call void @seq_stack_free(ptr %tagged_stack)"
