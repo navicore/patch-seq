@@ -21,19 +21,19 @@ install:
 # Build the Rust runtime as static library
 build-runtime:
     @echo "Building runtime (clean concatenative foundation)..."
-    cargo build --release -p seq-runtime
+    cargo build --locked --release -p seq-runtime
     @echo "✅ Runtime built: target/release/libseq_runtime.a"
 
 # Build the compiler
 build-compiler:
     @echo "Building compiler..."
-    cargo build --release -p seq-compiler
+    cargo build --locked --release -p seq-compiler
     @echo "✅ Compiler built: target/release/seqc"
 
 # Build the LSP server
 build-lsp:
     @echo "Building LSP server..."
-    cargo build --release -p seq-lsp
+    cargo build --locked --release -p seq-lsp
     @echo "✅ LSP server built: target/release/seq-lsp"
 
 # Build all example programs
@@ -73,12 +73,12 @@ build-examples: build
 # Run all Rust unit tests
 test:
     @echo "Running Rust unit tests..."
-    cargo test --workspace --all-targets
+    cargo test --locked --workspace --all-targets
 
 # Run clippy on all workspace members
 lint:
     @echo "Running clippy..."
-    cargo clippy --workspace --all-targets -- -D warnings
+    cargo clippy --locked --workspace --all-targets -- -D warnings
 
 # Format all code
 fmt:

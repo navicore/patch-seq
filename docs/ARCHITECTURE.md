@@ -473,13 +473,35 @@ json-empty-object "name" json-string "John" json-string obj-with
 2. **Serialization size limits** - Arrays > 3 elements, objects > 2 pairs show as `[...]`/`{...}`
 3. **roll type checking** - `3 roll` works at runtime but type checker can't fully verify
 
-## Building
+## Building and CI
+
+The `justfile` is the source of truth for all build, test, and lint
+operations. GitHub Actions calls these recipes directly — there is no
+duplication between local development and CI.
 
 ```bash
-cargo build --release
-cargo test --all
-cargo clippy --all
+just build       # build runtime, compiler, LSP
+just test        # run all unit tests
+just lint        # clippy with warnings as errors
+just ci          # everything CI runs: fmt-check, lint, test, build,
+                 # examples, integration tests, seq lint
 ```
+
+Run `just ci` before pushing — it's the same pipeline that runs in
+GitHub Actions and will catch formatting, clippy, test, and lint
+failures locally.
+
+### Toolchain pinning
+
+The Rust toolchain is pinned in three places that must always agree:
+
+- `rust-toolchain.toml` — used by `rustup` for local development
+- `.github/workflows/ci-linux.yml` — `dtolnay/rust-toolchain@master`
+  with explicit `toolchain:` input
+- `.github/workflows/ci-macos.yml` — same explicit pin
+
+All cargo commands in the `ci` pipeline use `--locked` so a stale
+`Cargo.lock` is a build failure rather than a silent re-resolve.
 
 ## Running Programs
 
