@@ -41,6 +41,18 @@ Bit manipulation algorithms from the book *Hacker's Delight*:
 
 Demonstrates Seq's bitwise operations: `band`, `bor`, `bxor`, `shl`, `shr`, `popcount`, `clz`, `ctz`.
 
+## Shamir's Secret Sharing (sss.seq)
+
+A tutorial implementation of [Shamir's Secret Sharing](https://en.wikipedia.org/wiki/Shamir%27s_secret_sharing) over GF(256), the same finite field used by AES. A secret is split into N shares such that any K can reconstruct it, but K-1 shares reveal nothing.
+
+Demonstrates:
+- **GF(256) finite field arithmetic** — addition (XOR), peasant multiplication, Fermat inverse
+- **Polynomial evaluation** via Horner's method
+- **Lagrange interpolation** to reconstruct secrets from share subsets
+- **Packed accumulators** — encoding two byte values in one Int for `list.fold`
+- **Deep stack management** — `pick`/`roll` patterns for 4+ item stacks
+- **Cryptographic randomness** — `crypto.random-int` for polynomial coefficients
+
 ## Cryptography (crypto.seq)
 
 Cryptographic operations including hashing and encoding.
