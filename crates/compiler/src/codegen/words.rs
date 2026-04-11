@@ -160,6 +160,7 @@ impl CodeGen {
     /// Returns wrapper and impl function names for TCO support
     pub(super) fn codegen_quotation(
         &mut self,
+        quot_id: usize,
         body: &[Statement],
         quot_type: &Type,
     ) -> Result<QuotationFunctions, CodeGenError> {
@@ -177,13 +178,21 @@ impl CodeGen {
         // incorrect type lookups (quotations don't have their own type info)
         let saved_word_name = self.current_word_name.take();
 
-        // Save and clear aux state (Issue #350)
-        // Quotations are separate LLVM functions; the typechecker rejects aux
-        // ops inside quotations, but we clear defensively to avoid generating
-        // references to the enclosing word's aux allocas.
+        // Save and clear aux state (Issue #350, #393).
+        // Each quotation gets its own aux slot table — they are independent
+        // LLVM functions with their own stack frames. The fresh slots will
+        // be emitted after `entry:` below if this quotation uses aux.
         let saved_aux_slots = std::mem::take(&mut self.current_aux_slots);
         let saved_aux_sp = self.current_aux_sp;
         self.current_aux_sp = 0;
+
+        // Look up how many aux slots this quotation needs (Issue #393).
+        // Zero for quotations that don't use >aux/aux>.
+        let quot_aux_slot_count = self
+            .quotation_aux_slot_counts
+            .get(&quot_id)
+            .copied()
+            .unwrap_or(0);
 
         // Generate function signature based on type
         match quot_type {
@@ -200,6 +209,16 @@ impl CodeGen {
                     impl_name
                 )?;
                 writeln!(&mut self.output, "entry:")?;
+
+                // Allocate aux stack slots if this quotation uses >aux/aux> (Issue #393).
+                // Each quotation function has its own slots, independent of the
+                // enclosing word and any sibling/nested quotations.
+                self.current_aux_slots.clear();
+                for i in 0..quot_aux_slot_count {
+                    let slot_name = format!("aux_slot_{}", i);
+                    writeln!(&mut self.output, "  %{} = alloca %Value", slot_name)?;
+                    self.current_aux_slots.push(slot_name);
+                }
 
                 let mut stack_var = "stack".to_string();
                 let body_len = body.len();
@@ -269,6 +288,14 @@ impl CodeGen {
                     base_name
                 )?;
                 writeln!(&mut self.output, "entry:")?;
+
+                // Allocate aux stack slots if this closure uses >aux/aux> (Issue #393).
+                self.current_aux_slots.clear();
+                for i in 0..quot_aux_slot_count {
+                    let slot_name = format!("aux_slot_{}", i);
+                    writeln!(&mut self.output, "  %{} = alloca %Value", slot_name)?;
+                    self.current_aux_slots.push(slot_name);
+                }
 
                 // Push captured values onto the stack before executing body
                 // Captures are stored bottom-to-top, so push them in order

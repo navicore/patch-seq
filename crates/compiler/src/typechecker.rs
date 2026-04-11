@@ -87,9 +87,15 @@ pub struct TypeChecker {
     /// Maximum aux stack depth per word, for codegen alloca sizing (Issue #350)
     /// Maps word_name -> max_depth (number of %Value allocas needed)
     aux_max_depths: std::cell::RefCell<HashMap<String, usize>>,
-    /// True when type-checking inside a quotation body (Issue #350)
-    /// Aux operations are not supported in quotations (codegen limitation).
-    in_quotation_scope: std::cell::Cell<bool>,
+    /// Maximum aux stack depth per quotation, for codegen alloca sizing (Issue #393)
+    /// Maps quotation_id -> max_depth (number of %Value allocas needed)
+    /// Quotation IDs are program-wide unique, assigned by the parser.
+    quotation_aux_depths: std::cell::RefCell<HashMap<usize, usize>>,
+    /// Stack of currently-active quotation IDs during type checking (Issue #393).
+    /// Pushed when entering `infer_quotation`, popped on exit. The top of the
+    /// stack is the innermost quotation. Empty means we're in word body scope.
+    /// Replaces the old `in_quotation_scope` boolean.
+    quotation_id_stack: std::cell::RefCell<Vec<usize>>,
     /// Resolved arithmetic sugar: maps (line, column) -> concrete op name.
     /// Keyed by source location, which is unique per occurrence and available
     /// to both the typechecker and codegen via the AST span.
@@ -109,7 +115,8 @@ impl TypeChecker {
             call_graph: None,
             current_aux_stack: std::cell::RefCell::new(StackType::Empty),
             aux_max_depths: std::cell::RefCell::new(HashMap::new()),
-            in_quotation_scope: std::cell::Cell::new(false),
+            quotation_aux_depths: std::cell::RefCell::new(HashMap::new()),
+            quotation_id_stack: std::cell::RefCell::new(Vec::new()),
             resolved_sugar: std::cell::RefCell::new(HashMap::new()),
         }
     }
@@ -207,6 +214,12 @@ impl TypeChecker {
     /// Extract per-word aux stack max depths for codegen alloca sizing (Issue #350)
     pub fn take_aux_max_depths(&self) -> HashMap<String, usize> {
         self.aux_max_depths.replace(HashMap::new())
+    }
+
+    /// Extract per-quotation aux stack max depths for codegen alloca sizing (Issue #393)
+    /// Maps quotation_id -> max_depth
+    pub fn take_quotation_aux_depths(&self) -> HashMap<usize, usize> {
+        self.quotation_aux_depths.replace(HashMap::new())
     }
 
     /// Count the number of concrete types in a StackType (for aux depth tracking)
@@ -1213,19 +1226,47 @@ impl TypeChecker {
         let expected_for_this_quotation = self.expected_quotation_type.borrow().clone();
         *self.expected_quotation_type.borrow_mut() = None;
 
-        // Save enclosing aux stack and mark quotation scope (Issue #350)
-        // Aux operations are rejected inside quotations because quotations are
-        // compiled as separate LLVM functions without their own aux slot allocas.
-        // Users should extract quotation bodies into named words if they need aux.
+        // Save enclosing aux stack and enter quotation scope (Issue #350, #393).
+        // Quotations are compiled as separate LLVM functions; each gets its own
+        // aux slot table. The save/restore here means the enclosing word's aux
+        // state is undisturbed by the quotation, and the quotation's aux usage
+        // is tracked independently in `quotation_aux_depths` (Issue #393).
         let saved_aux = self.current_aux_stack.borrow().clone();
         *self.current_aux_stack.borrow_mut() = StackType::Empty;
-        let saved_in_quotation = self.in_quotation_scope.get();
-        self.in_quotation_scope.set(true);
+        self.quotation_id_stack.borrow_mut().push(id);
 
-        // Infer the effect of the quotation body (includes computational effects)
-        let body_effect = self.infer_statements(body)?;
+        // Infer the effect of the quotation body (includes computational effects).
+        //
+        // If we have an expected quotation type from a combinator's signature
+        // (e.g., list.fold expects [..b Acc T -- ..b Acc]), seed the body
+        // inference with that input stack. Without this, the body inference
+        // starts from a polymorphic row variable, and operations like >aux
+        // can't pop because they don't know the type. Issue #393.
+        let body_effect = if let Some(expected) = &expected_for_this_quotation {
+            let expected_effect = match expected {
+                Type::Quotation(eff) => Some((**eff).clone()),
+                Type::Closure { effect, .. } => Some((**effect).clone()),
+                _ => None,
+            };
+            if let Some(eff) = expected_effect {
+                // Freshen the expected effect to avoid row-variable name clashes
+                // with the enclosing scope.
+                let fresh = self.freshen_effect(&eff);
+                let (result, subst, effects) =
+                    self.infer_statements_from(body, &fresh.inputs, false)?;
+                let normalized_start = subst.apply_stack(&fresh.inputs);
+                let normalized_result = subst.apply_stack(&result);
+                Effect::with_effects(normalized_start, normalized_result, effects)
+            } else {
+                self.infer_statements(body)?
+            }
+        } else {
+            self.infer_statements(body)?
+        };
 
-        // Verify quotation's aux stack is balanced (Issue #350)
+        // Verify quotation's aux stack is balanced (Issue #350).
+        // This enforces lexical scoping: every >aux inside the quotation must
+        // have a matching aux> inside the same quotation.
         let quot_aux = self.current_aux_stack.borrow().clone();
         if quot_aux != StackType::Empty {
             return Err(format!(
@@ -1236,9 +1277,9 @@ impl TypeChecker {
             ));
         }
 
-        // Restore enclosing aux stack and quotation scope flag
+        // Restore enclosing aux stack and exit quotation scope
         *self.current_aux_stack.borrow_mut() = saved_aux;
-        self.in_quotation_scope.set(saved_in_quotation);
+        self.quotation_id_stack.borrow_mut().pop();
 
         // Restore expected type for capture analysis of THIS quotation
         *self.expected_quotation_type.borrow_mut() = expected_for_this_quotation;
@@ -1387,27 +1428,36 @@ impl TypeChecker {
         Ok((result_stack, subst, propagated_effects))
     }
 
-    /// Handle >aux: pop from main stack, push onto word-local aux stack (Issue #350)
+    /// Handle >aux: pop from main stack, push onto scope-local aux stack
+    /// (Issue #350, Issue #393).
+    ///
+    /// In word-body scope, depth is tracked per word in `aux_max_depths`.
+    /// In quotation-body scope, depth is tracked per quotation ID in
+    /// `quotation_aux_depths`. Each quotation gets its own slot table at
+    /// codegen time.
     fn infer_to_aux(
         &self,
         _span: &Option<crate::ast::Span>,
         current_stack: StackType,
     ) -> Result<(StackType, Subst, Vec<SideEffect>), String> {
-        if self.in_quotation_scope.get() {
-            return Err(">aux is not supported inside quotations.\n\
-                 Quotations are compiled as separate functions without aux stack slots.\n\
-                 Extract the quotation body into a named word if you need aux."
-                .to_string());
-        }
         let (rest, top_type) = self.pop_type(&current_stack, ">aux")?;
 
         // Push onto aux stack
         let mut aux = self.current_aux_stack.borrow_mut();
         *aux = aux.clone().push(top_type);
 
-        // Track max depth for codegen alloca sizing
+        // Track max depth for codegen alloca sizing.
+        // If we're inside a quotation, key the depth by quotation ID.
+        // Otherwise, key by the enclosing word name.
         let depth = Self::stack_depth(&aux);
-        if let Some((word_name, _)) = self.current_word.borrow().as_ref() {
+        let quot_stack = self.quotation_id_stack.borrow();
+        if let Some(&quot_id) = quot_stack.last() {
+            let mut depths = self.quotation_aux_depths.borrow_mut();
+            let entry = depths.entry(quot_id).or_insert(0);
+            if depth > *entry {
+                *entry = depth;
+            }
+        } else if let Some((word_name, _)) = self.current_word.borrow().as_ref() {
             let mut depths = self.aux_max_depths.borrow_mut();
             let entry = depths.entry(word_name.clone()).or_insert(0);
             if depth > *entry {
@@ -1418,18 +1468,12 @@ impl TypeChecker {
         Ok((rest, Subst::empty(), vec![]))
     }
 
-    /// Handle aux>: pop from aux stack, push onto main stack (Issue #350)
+    /// Handle aux>: pop from aux stack, push onto main stack (Issue #350, #393).
     fn infer_from_aux(
         &self,
         _span: &Option<crate::ast::Span>,
         current_stack: StackType,
     ) -> Result<(StackType, Subst, Vec<SideEffect>), String> {
-        if self.in_quotation_scope.get() {
-            return Err("aux> is not supported inside quotations.\n\
-                 Quotations are compiled as separate functions without aux stack slots.\n\
-                 Extract the quotation body into a named word if you need aux."
-                .to_string());
-        }
         let mut aux = self.current_aux_stack.borrow_mut();
         match aux.clone().pop() {
             Some((rest, top_type)) => {
@@ -5290,15 +5334,18 @@ mod tests {
     }
 
     #[test]
-    fn test_aux_in_quotation_rejected() {
-        // >aux inside a quotation should be rejected (codegen limitation)
+    fn test_aux_in_quotation_balanced_accepted() {
+        // Issue #393: balanced >aux/aux> inside a quotation is now allowed.
+        // The word produces a quotation [ Int -- Int ]. The quotation body
+        // uses >aux/aux> to round-trip the input Int. Lexical scoping is
+        // preserved because both ops are inside the same quotation.
         let program = Program {
             includes: vec![],
             unions: vec![],
             words: vec![WordDef {
                 name: "test".to_string(),
                 effect: Some(Effect::new(
-                    StackType::singleton(Type::Int),
+                    StackType::Empty,
                     StackType::singleton(Type::Quotation(Box::new(Effect::new(
                         StackType::singleton(Type::Int),
                         StackType::singleton(Type::Int),
@@ -5316,11 +5363,47 @@ mod tests {
 
         let mut checker = TypeChecker::new();
         let result = checker.check_program(&program);
+        assert!(
+            result.is_ok(),
+            "should accept balanced aux in quotation: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn test_aux_in_quotation_unbalanced_rejected() {
+        // Issue #393: a quotation that pushes onto aux without popping
+        // must still be rejected. Lexical scoping requires every >aux to
+        // be matched by an aux> within the same quotation.
+        let program = Program {
+            includes: vec![],
+            unions: vec![],
+            words: vec![WordDef {
+                name: "test".to_string(),
+                effect: Some(Effect::new(
+                    StackType::Empty,
+                    StackType::singleton(Type::Quotation(Box::new(Effect::new(
+                        StackType::singleton(Type::Int),
+                        StackType::Empty,
+                    )))),
+                )),
+                body: vec![Statement::Quotation {
+                    span: None,
+                    id: 0,
+                    body: vec![make_word_call(">aux")],
+                }],
+                source: None,
+                allowed_lints: vec![],
+            }],
+        };
+
+        let mut checker = TypeChecker::new();
+        let result = checker.check_program(&program);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
-            err.contains("not supported inside quotations"),
-            "Expected quotation rejection error, got: {}",
+            err.contains("unbalanced aux stack"),
+            "Expected unbalanced aux error, got: {}",
             err
         );
     }

@@ -171,6 +171,9 @@ pub struct CodeGen {
     /// Per-word aux stack slot counts from typechecker (Issue #350)
     /// Maps word_name -> number of %Value allocas needed
     pub(super) aux_slot_counts: HashMap<String, usize>,
+    /// Per-quotation aux stack slot counts from typechecker (Issue #393)
+    /// Maps quotation_id -> number of %Value allocas needed for that quotation
+    pub(super) quotation_aux_slot_counts: HashMap<usize, usize>,
     /// LLVM alloca names for current word's aux slots (Issue #350)
     pub(super) current_aux_slots: Vec<String>,
     /// Compile-time index into aux slots (Issue #350)
@@ -224,6 +227,7 @@ impl CodeGen {
             virtual_stack: Vec::new(),
             specialized_words: HashMap::new(),
             aux_slot_counts: HashMap::new(),
+            quotation_aux_slot_counts: HashMap::new(),
             current_aux_slots: Vec::new(),
             current_aux_sp: 0,
             instrument: false,
@@ -244,6 +248,11 @@ impl CodeGen {
     /// Set per-word aux stack slot counts from typechecker (Issue #350)
     pub fn set_aux_slot_counts(&mut self, counts: HashMap<String, usize>) {
         self.aux_slot_counts = counts;
+    }
+
+    /// Set per-quotation aux stack slot counts from typechecker (Issue #393)
+    pub fn set_quotation_aux_slot_counts(&mut self, counts: HashMap<usize, usize>) {
+        self.quotation_aux_slot_counts = counts;
     }
 
     /// Set resolved arithmetic sugar mappings from the typechecker

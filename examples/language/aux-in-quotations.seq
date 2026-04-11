@@ -1,0 +1,73 @@
+# Aux Stack Inside Quotations (Issue #393)
+#
+# Quotations now have their own aux stack slot table. Use >aux/aux>
+# inside a quotation body for temporary storage during the quotation's
+# own computation. The aux stack is per-scope: each quotation gets a
+# fresh aux that is empty on entry and must be empty on exit.
+#
+# Lexical scoping is preserved — you cannot >aux outside a quotation
+# and aux> inside it (or vice versa). The enclosing scope's aux is
+# saved on quotation entry and restored on exit.
+#
+# Use cases:
+# - Temporary storage when a quotation builds intermediate values that
+#   need to be set aside while the quotation does other work
+# - Avoiding deep stack juggling inside fold/each callbacks
+
+include std:list
+
+# Example 1: aux as a temp slot inside list.each
+# For each element, compute (elem * 2 + elem * 3) by stashing the doubled
+# value on aux while computing the tripled value, then combining.
+: demo-each-with-aux ( -- )
+  "--- list.each with aux ---" io.write-line
+  list-of 1 lv 2 lv 3 lv 4 lv
+  [
+    dup 2 i.* >aux       # stash doubled value
+    3 i.*                # tripled
+    aux> i.+             # add the stashed double
+    int->string io.write-line
+  ] list.each
+;
+
+# Example 2: aux for a multi-step computation in a fold body.
+# Compute the running sum of squares — at each step, square the current
+# accumulator, stash it, then add the new element squared.
+: demo-fold-with-aux ( -- )
+  "" io.write-line
+  "--- list.fold with aux ---" io.write-line
+  list-of 1 lv 2 lv 3 lv
+  0 [
+    # Stack: ( acc elem )
+    # Compute elem*elem and stash it
+    dup i.* >aux
+    # Compute acc*acc
+    swap dup i.*
+    # Add the stashed elem*elem
+    aux> i.+
+  ] list.fold
+  int->string "sum of squares (running): " swap string.concat io.write-line
+;
+
+# Example 3: nested quotations each get their own aux slots.
+# The inner quotation's aux is independent of the outer's.
+: demo-nested-aux ( -- )
+  "" io.write-line
+  "--- nested quotations with aux ---" io.write-line
+  [
+    5 >aux
+    [
+      10 >aux 100 aux> i.+   # inner aux: 10
+    ] call
+    aux> i.+                  # outer aux: 5
+  ] call
+  int->string "result: " swap string.concat io.write-line
+;
+
+: main ( -- Int )
+  "=== Aux Inside Quotations (Issue #393) ===" io.write-line
+  demo-each-with-aux
+  demo-fold-with-aux
+  demo-nested-aux
+  0
+;
