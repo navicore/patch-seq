@@ -310,24 +310,47 @@ fn run_lint(
         println!("No lint issues found in {} file(s)", files_checked);
     } else {
         print!("{}", lint::format_diagnostics(&all_diagnostics));
-        let files_with_issues: std::collections::HashSet<_> =
-            all_diagnostics.iter().map(|d| &d.file).collect();
-        println!(
-            "\n{} issue(s) in {} file(s) ({} file(s) checked)",
-            all_diagnostics.len(),
-            files_with_issues.len(),
-            files_checked
-        );
-        // Exit with error if there are any errors, or any issues when --deny-warnings is set
-        let has_errors = all_diagnostics
-            .iter()
-            .any(|d| d.severity == lint::Severity::Error);
 
-        let has_warnings = all_diagnostics
+        let error_count = all_diagnostics
             .iter()
-            .any(|d| d.severity == lint::Severity::Warning);
+            .filter(|d| d.severity == lint::Severity::Error)
+            .count();
+        let warning_count = all_diagnostics
+            .iter()
+            .filter(|d| d.severity == lint::Severity::Warning)
+            .count();
+        let hint_count = all_diagnostics
+            .iter()
+            .filter(|d| d.severity == lint::Severity::Hint)
+            .count();
 
-        if has_errors || (deny_warnings && has_warnings) {
+        let issue_count = error_count + warning_count;
+        let files_with_issues: std::collections::HashSet<_> = all_diagnostics
+            .iter()
+            .filter(|d| d.severity != lint::Severity::Hint)
+            .map(|d| &d.file)
+            .collect();
+
+        if issue_count > 0 {
+            println!(
+                "\n{} issue(s) in {} file(s) ({} file(s) checked)",
+                issue_count,
+                files_with_issues.len(),
+                files_checked
+            );
+        }
+        if hint_count > 0 {
+            println!("{} hint(s) ({} file(s) checked)", hint_count, files_checked);
+        }
+        if issue_count == 0 && hint_count > 0 {
+            println!(
+                "\nNo errors or warnings ({} file(s) checked)",
+                files_checked
+            );
+        }
+
+        // Exit with error if there are any errors, or any warnings when --deny-warnings is set
+        if error_count > 0 || (deny_warnings && warning_count > 0) {
             process::exit(1);
         }
     }

@@ -322,8 +322,16 @@ include std:list
 
 # Print a list of byte values as hex.
 : print-hex-byte ( Int -- )
-  dup 16 i./ drop int->string swap
-  16 i.% drop int->string
+  dup 16 i./ if
+    int->string swap
+  else
+    drop "0" swap
+  then
+  16 i.% if
+    int->string
+  else
+    drop "0"
+  then
   string.concat io.write " " io.write
 ;
 
