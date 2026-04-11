@@ -177,6 +177,10 @@ pub struct CodeGen {
     pub(super) current_aux_sp: usize,
     /// Whether to emit per-word atomic call counters (--instrument)
     pub(super) instrument: bool,
+    /// True if the user's `main` word has effect `( -- Int )`.
+    /// Determines whether `seq_main` writes the top-of-stack int to the
+    /// global exit code before freeing the stack. (Issue #355)
+    pub(super) main_returns_int: bool,
     /// Maps word name -> sequential ID for instrumentation counters
     pub(super) word_instrument_ids: HashMap<String, usize>,
 }
@@ -224,6 +228,7 @@ impl CodeGen {
             current_aux_sp: 0,
             instrument: false,
             word_instrument_ids: HashMap::new(),
+            main_returns_int: false,
         }
     }
 

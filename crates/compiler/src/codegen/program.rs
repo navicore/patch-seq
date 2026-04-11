@@ -6,12 +6,31 @@
 use super::{
     CodeGen, CodeGenError, emit_runtime_decls, ffi_c_args, ffi_return_type, get_target_triple,
 };
-use crate::ast::Program;
+use crate::ast::{Program, WordDef};
 use crate::config::CompilerConfig;
 use crate::ffi::FfiBindings;
-use crate::types::Type;
+use crate::types::{StackType, Type};
 use std::collections::HashMap;
 use std::fmt::Write as _;
+
+/// Detect whether `main` was declared with effect `( -- Int )`.
+///
+/// Returns true if main's declared output is a single Int (with no row
+/// variable below it). Returns false for `( -- )` or anything else.
+/// The typechecker is responsible for rejecting other shapes; this just
+/// reads the declared effect.
+fn main_returns_int_effect(word: &WordDef) -> bool {
+    let Some(effect) = &word.effect else {
+        return false;
+    };
+    // Inputs must be empty (or just a row var) — main takes no inputs
+    // Outputs must be exactly one Int on top of the row var
+    matches!(
+        &effect.outputs,
+        StackType::Cons { rest, top: Type::Int }
+            if matches!(**rest, StackType::Empty | StackType::RowVar(_))
+    )
+}
 
 impl CodeGen {
     /// Generate LLVM IR for entire program
@@ -63,10 +82,11 @@ impl CodeGen {
             }
         }
 
-        // Verify we have a main word
-        if program.find_word("main").is_none() {
-            return Err(CodeGenError::Logic("No main word defined".to_string()));
-        }
+        // Verify we have a main word and detect its return shape (Issue #355)
+        let main_word = program
+            .find_word("main")
+            .ok_or_else(|| CodeGenError::Logic("No main word defined".to_string()))?;
+        self.main_returns_int = main_returns_int_effect(main_word);
 
         // Generate all user-defined words
         for word in &program.words {
@@ -160,10 +180,11 @@ impl CodeGen {
             }
         }
 
-        // Verify we have a main word
-        if program.find_word("main").is_none() {
-            return Err(CodeGenError::Logic("No main word defined".to_string()));
-        }
+        // Verify we have a main word and detect its return shape (Issue #355)
+        let main_word = program
+            .find_word("main")
+            .ok_or_else(|| CodeGenError::Logic("No main word defined".to_string()))?;
+        self.main_returns_int = main_returns_int_effect(main_word);
 
         // Generate all user-defined words
         for word in &program.words {

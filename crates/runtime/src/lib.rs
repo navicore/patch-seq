@@ -24,6 +24,7 @@ pub mod combinators;
 pub mod cond;
 pub mod diagnostics;
 pub mod encoding;
+pub mod exit_code;
 pub mod file;
 pub mod float_ops;
 pub mod io;
@@ -236,6 +237,11 @@ pub use combinators::{bi, dip, keep};
 
 // Conditional combinator (exported for LLVM linking)
 pub use cond::patch_seq_cond as cond;
+
+// Exit code handling (exported for LLVM linking)
+pub use exit_code::{
+    patch_seq_get_exit_code as get_exit_code, patch_seq_set_exit_code as set_exit_code,
+};
 
 // TCP operations (exported for LLVM linking)
 pub use tcp::{

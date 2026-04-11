@@ -19,6 +19,42 @@ fn format_line_prefix(line: usize) -> String {
     format!("at line {}: ", line + 1)
 }
 
+/// Validate that `main` has an allowed signature (Issue #355).
+///
+/// Only `( -- )` and `( -- Int )` are accepted. The first is "void main"
+/// (process exits with 0). The second is "int main" (return value is the
+/// process exit code).
+///
+/// Any other shape — extra inputs, multiple outputs, non-Int output —
+/// is rejected with an actionable error.
+fn validate_main_effect(effect: &Effect) -> Result<(), String> {
+    // Inputs must be empty (just the row var, no concrete types)
+    let inputs_ok = matches!(&effect.inputs, StackType::Empty | StackType::RowVar(_));
+
+    // Outputs: either empty (void main) or exactly one Int (int main)
+    let outputs_ok = match &effect.outputs {
+        StackType::Empty | StackType::RowVar(_) => true,
+        StackType::Cons {
+            rest,
+            top: Type::Int,
+        } if matches!(**rest, StackType::Empty | StackType::RowVar(_)) => true,
+        _ => false,
+    };
+
+    if inputs_ok && outputs_ok {
+        return Ok(());
+    }
+
+    Err(format!(
+        "Word 'main' has an invalid stack effect: ( {} -- {} ).\n\
+         `main` must be declared with one of:\n\
+           ( -- )       — void main, process exits with code 0\n\
+           ( -- Int )   — exit code is the returned Int\n\
+         Other shapes are not allowed.",
+        effect.inputs, effect.outputs
+    ))
+}
+
 pub struct TypeChecker {
     /// Environment mapping word names to their effects
     env: HashMap<String, Effect>,
@@ -459,6 +495,12 @@ impl TypeChecker {
                     word.name, word.name
                 ));
             }
+        }
+
+        // Validate main's signature (Issue #355).
+        // Only `( -- )` and `( -- Int )` are allowed.
+        if let Some(main_effect) = self.env.get("main") {
+            validate_main_effect(main_effect)?;
         }
 
         // Third pass: type check each word body

@@ -385,6 +385,40 @@ store i64 %result, ptr %slot1_ptr
 Complex operations (string handling, variants, closures) still call into the
 Rust runtime for memory safety and code maintainability.
 
+## The `main` Word and Exit Codes
+
+Every executable Seq program defines a `main` word with one of two
+allowed signatures:
+
+```seq
+: main ( -- )      # void main: process exits with code 0
+: main ( -- Int )  # int main: returned Int becomes the process exit code
+```
+
+The compiler rejects any other shape (extra inputs, multiple outputs,
+non-Int output) at type-check time.
+
+For `main ( -- Int )`, the top-of-stack Int at the end of `main` is
+written to a runtime global by the generated `seq_main`, and the C-level
+`main` function returns it as the process exit code (truncated to i32).
+This means Seq programs compose naturally with shell tooling: `&&`,
+`||`, `$?`, `set -e`, CI gates, and test harnesses all work as
+expected.
+
+```seq
+: main ( -- Int )
+  do-work
+  0    # success
+;
+```
+
+```bash
+./myprog && echo "succeeded" || echo "failed with $?"
+```
+
+Script mode (`seqc script.seq`) inherits this behavior automatically
+because it just `exec`s the compiled binary.
+
 ## Compilation Pipeline
 
 1. **Parse** - Tokenize and build AST (`parser.rs`)
