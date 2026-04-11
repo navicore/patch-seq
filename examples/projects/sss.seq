@@ -43,6 +43,17 @@ include std:list
 : gf256-mul ( Int Int -- Int )  0 gf256-mul-loop ;
 
 # Inverse via Fermat: a^(-1) = a^254 in GF(256).
+# The multiplicative group has order 255, so a^255 = 1, hence a^254 = a^(-1).
+#
+# The loop body is `result = result² × a`, starting with result = a.
+# After n iterations the exponent is (2^(n+1) - 1):
+#   iter 0: a → a² × a = a^3       (exponent 2^1 + 1 = 3)
+#   iter 1: a^3 → a^6 × a = a^7    (exponent 2^2 + 3 = 7)
+#   iter 2: a^7 → a^14 × a = a^15  (exponent 2^3 + 7 = 15)
+#   ...
+#   iter 5: a^63 → a^126 × a = a^127
+# Then the final square in gf256-inv gives a^254.
+#
 # Precondition: a must be nonzero. gf256-inv(0) silently returns 0,
 # which would produce garbage in Lagrange interpolation. This can only
 # happen if two shares have the same x-coordinate (a bug in split).
@@ -92,7 +103,15 @@ include std:list
 # ============================================================================
 #                      Random Polynomial Generation
 # ============================================================================
+#
+# The polynomial has the form p(x) = secret + c1*x + c2*x^2 + ... + c_{k-1}*x^{k-1}
+# with secret as the constant term. The leading coefficient c_{k-1} MUST be
+# nonzero — otherwise the effective polynomial degree drops below k-1, which
+# means fewer than k shares would suffice to reconstruct the secret. For k=2
+# specifically, a zero leading coefficient would make every share equal the
+# secret. Middle coefficients (c1..c_{k-2}) can be anything including zero.
 
+# Generate `remaining` random bytes from [0, 256) and append to coeffs.
 # Stack: ( coeffs remaining -- coeffs' )
 : make-random-poly-loop ( List Int -- List )
   dup 0 i.<= if
@@ -104,10 +123,19 @@ include std:list
   then
 ;
 
+# Build a degree-(k-1) polynomial with `secret_byte` as the constant term.
+# Stack: ( secret_byte k -- coeffs )
 : make-random-poly ( Int Int -- List )
-  swap list-of swap lv
-  swap 1 i.-
-  make-random-poly-loop
+  swap list-of swap lv          # [secret_byte]
+  swap                           # [secret_byte] k
+  dup 1 i.<= if
+    drop                         # k=1: just [secret_byte], no randomization
+  else
+    2 i.-                        # k-2 middle coefficients (may be zero)
+    make-random-poly-loop
+    # Leading coefficient sampled from [1, 256) — must be nonzero.
+    1 256 crypto.random-int lv
+  then
 ;
 
 # ============================================================================
@@ -163,6 +191,10 @@ include std:list
 ;
 
 # Outer loop: sum y_i * L_i(0).
+# Invariant: xs.length == ys.length. The loop terminates on ys.length;
+# if the two lists were mismatched, xs access would go out of bounds.
+# lagrange-at-zero is the only caller and builds both lists from the
+# same points list, so this invariant holds by construction.
 # Stack: ( xs ys sum idx -- result )
 : lagrange-outer-loop ( List List Int Int -- Int )
   2 pick list.length over i.<= if
@@ -359,6 +391,9 @@ include std:list
 ;
 
 # Element-wise list equality check.
+# Precondition: actual.length >= expected.length. The loop terminates on
+# expected.length and does not bounds-check actual. In the demo both lists
+# are always 5 bytes, so this holds.
 # Stack: ( actual expected idx -- bool )
 : verify-eq-loop ( List List Int -- Bool )
   1 pick list.length over i.<= if
