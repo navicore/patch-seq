@@ -1320,8 +1320,8 @@ impl TypeChecker {
                     let (new_stack, actual_type) = self.pop_type(&stack, "closure capture")?;
                     unify_types(&actual_type, expected_type).map_err(|e| {
                         format!(
-                            "closure capture type mismatch at position {}: \
-                             expected {}, got {}: {}",
+                            "closure capture type mismatch at capture {} \
+                             (0 = bottommost): expected {}, got {}: {}",
                             i, expected_type, actual_type, e
                         )
                     })?;
@@ -2127,12 +2127,11 @@ impl TypeChecker {
                 let expected_inputs = extract_concrete_types(&expected_effect.inputs);
 
                 // Auto-capture triggers when the body needs more concrete inputs
-                // than the expected provides. Two sub-cases:
+                // than the expected provides. Three branches:
                 // (a) Expected is empty (strand.spawn): body needs any inputs → capture all.
                 // (b) Expected has concrete inputs (list.fold): body has MORE → capture excess.
-                // We skip auto-capture when expected has ONLY a row variable and no
-                // concrete inputs — that's the strand.weave case where the body's
-                // row-variable inputs should unify with the expected, not be captured.
+                // (c) Expected has ONLY a row variable and no concrete inputs
+                //     (strand.weave): don't capture, fall through to unification.
                 let expected_is_empty = matches!(expected_effect.inputs, StackType::Empty);
                 let should_capture = if expected_is_empty {
                     !body_inputs.is_empty()
