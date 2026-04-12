@@ -30,23 +30,21 @@ include std:list
   ] list.each
 ;
 
-# Example 2: aux for a multi-step computation in a fold body.
-# Compute the running sum of squares — at each step, square the current
-# accumulator, stash it, then add the new element squared.
+# Example 2: aux as a temporary slot inside a fold body.
+# At each step we compute (2 * acc + elem) — Horner's method for binary.
+# We stash elem on aux while computing 2*acc, then retrieve and add it.
+# (Without aux this would need swap/dup/swap juggling.)
 : demo-fold-with-aux ( -- )
   "" io.write-line
   "--- list.fold with aux ---" io.write-line
-  list-of 1 lv 2 lv 3 lv
+  list-of 1 lv 0 lv 1 lv 1 lv  # binary digits for 1011 = 11
   0 [
     # Stack: ( acc elem )
-    # Compute elem*elem and stash it
-    dup i.* >aux
-    # Compute acc*acc
-    swap dup i.*
-    # Add the stashed elem*elem
-    aux> i.+
+    >aux           # stash elem, stack: ( acc )
+    2 i.*          # double acc, stack: ( 2*acc )
+    aux> i.+       # add stashed elem, stack: ( 2*acc + elem )
   ] list.fold
-  int->string "sum of squares (running): " swap string.concat io.write-line
+  int->string "binary 1011 = " swap string.concat io.write-line  # 11
 ;
 
 # Example 3: nested quotations each get their own aux slots.

@@ -1221,8 +1221,8 @@ impl TypeChecker {
         body: &[Statement],
         current_stack: StackType,
     ) -> Result<(StackType, Subst, Vec<SideEffect>), String> {
-        // Save and clear expected type so nested quotations don't inherit it
-        // The expected type applies only to THIS quotation, not inner ones
+        // Save and clear expected type so nested quotations don't inherit it.
+        // The expected type applies only to THIS quotation, not inner ones.
         let expected_for_this_quotation = self.expected_quotation_type.borrow().clone();
         *self.expected_quotation_type.borrow_mut() = None;
 
@@ -1235,54 +1235,64 @@ impl TypeChecker {
         *self.current_aux_stack.borrow_mut() = StackType::Empty;
         self.quotation_id_stack.borrow_mut().push(id);
 
-        // Infer the effect of the quotation body (includes computational effects).
-        //
-        // If we have an expected quotation type from a combinator's signature
-        // (e.g., list.fold expects [..b Acc T -- ..b Acc]), seed the body
-        // inference with that input stack. Without this, the body inference
-        // starts from a polymorphic row variable, and operations like >aux
-        // can't pop because they don't know the type. Issue #393.
-        let body_effect = if let Some(expected) = &expected_for_this_quotation {
-            let expected_effect = match expected {
-                Type::Quotation(eff) => Some((**eff).clone()),
-                Type::Closure { effect, .. } => Some((**effect).clone()),
-                _ => None,
-            };
-            if let Some(eff) = expected_effect {
-                // Freshen the expected effect to avoid row-variable name clashes
-                // with the enclosing scope.
-                let fresh = self.freshen_effect(&eff);
-                let (result, subst, effects) =
-                    self.infer_statements_from(body, &fresh.inputs, false)?;
-                let normalized_start = subst.apply_stack(&fresh.inputs);
-                let normalized_result = subst.apply_stack(&result);
-                Effect::with_effects(normalized_start, normalized_result, effects)
+        // Run the body inference and balance check inside an immediately-invoked
+        // closure so we can restore scope state on every exit path — including
+        // errors. Without this, an error in body inference or the balance check
+        // would leave the typechecker with a corrupt scope stack and a polluted
+        // aux stack, which matters for callers that inspect errors and continue.
+        let body_result: Result<Effect, String> = (|| {
+            // Infer the effect of the quotation body.
+            //
+            // If we have an expected quotation type from a combinator's signature
+            // (e.g., list.fold expects [..b Acc T -- ..b Acc]), seed the body
+            // inference with that input stack. Without this, the body inference
+            // starts from a polymorphic row variable, and operations like >aux
+            // can't pop because they don't know the type. Issue #393.
+            let body_effect = if let Some(expected) = &expected_for_this_quotation {
+                let expected_effect = match expected {
+                    Type::Quotation(eff) => Some((**eff).clone()),
+                    Type::Closure { effect, .. } => Some((**effect).clone()),
+                    _ => None,
+                };
+                if let Some(eff) = expected_effect {
+                    // Freshen to avoid row-variable name clashes with the
+                    // enclosing scope.
+                    let fresh = self.freshen_effect(&eff);
+                    let (result, subst, effects) =
+                        self.infer_statements_from(body, &fresh.inputs, false)?;
+                    let normalized_start = subst.apply_stack(&fresh.inputs);
+                    let normalized_result = subst.apply_stack(&result);
+                    Effect::with_effects(normalized_start, normalized_result, effects)
+                } else {
+                    self.infer_statements(body)?
+                }
             } else {
                 self.infer_statements(body)?
+            };
+
+            // Verify quotation's aux stack is balanced (Issue #350).
+            // Lexical scoping: every >aux inside the quotation must have a
+            // matching aux> inside the same quotation.
+            let quot_aux = self.current_aux_stack.borrow().clone();
+            if quot_aux != StackType::Empty {
+                return Err(format!(
+                    "Quotation has unbalanced aux stack.\n\
+                     Remaining aux stack: {}\n\
+                     Every >aux must be matched by a corresponding aux> within the quotation.",
+                    quot_aux
+                ));
             }
-        } else {
-            self.infer_statements(body)?
-        };
 
-        // Verify quotation's aux stack is balanced (Issue #350).
-        // This enforces lexical scoping: every >aux inside the quotation must
-        // have a matching aux> inside the same quotation.
-        let quot_aux = self.current_aux_stack.borrow().clone();
-        if quot_aux != StackType::Empty {
-            return Err(format!(
-                "Quotation has unbalanced aux stack.\n\
-                 Remaining aux stack: {}\n\
-                 Every >aux must be matched by a corresponding aux> within the quotation.",
-                quot_aux
-            ));
-        }
+            Ok(body_effect)
+        })();
 
-        // Restore enclosing aux stack and exit quotation scope
+        // Always restore scope state, regardless of whether the body inference
+        // succeeded or failed.
         *self.current_aux_stack.borrow_mut() = saved_aux;
         self.quotation_id_stack.borrow_mut().pop();
+        *self.expected_quotation_type.borrow_mut() = expected_for_this_quotation.clone();
 
-        // Restore expected type for capture analysis of THIS quotation
-        *self.expected_quotation_type.borrow_mut() = expected_for_this_quotation;
+        let body_effect = body_result?;
 
         // Perform capture analysis
         let quot_type = self.analyze_captures(&body_effect, &current_stack)?;
