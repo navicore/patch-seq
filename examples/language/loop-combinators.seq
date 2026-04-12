@@ -1,0 +1,58 @@
+# Loop Combinators
+#
+# Counted iteration via `times` and `each-integer` from std:loops.
+# These are pure stdlib words backed by recursion + TCO.
+
+include std:loops
+
+# ============================================================================
+#                              times
+# ============================================================================
+
+: demo-times ( -- )
+  "--- times ---" io.write-line
+  5 [ "x" io.write ] times
+  "" io.write-line
+
+  "zero: " io.write
+  0 [ "x" io.write ] times
+  "(nothing)" io.write-line
+
+  "negative: " io.write
+  -3 [ "x" io.write ] times
+  "(nothing)" io.write-line
+;
+
+# ============================================================================
+#                          each-integer
+# ============================================================================
+
+: demo-each-integer ( -- )
+  "" io.write-line
+  "--- each-integer ---" io.write-line
+  5 [ int->string io.write " " io.write ] each-integer
+  "" io.write-line
+
+  "zero: " io.write
+  0 [ int->string io.write ] each-integer
+  "(nothing)" io.write-line
+;
+
+# ============================================================================
+#                          practical use
+# ============================================================================
+
+: demo-practical ( -- )
+  "" io.write-line
+  "--- practical: countdown ---" io.write-line
+  5 [ 5 swap i.- int->string io.write " " io.write ] each-integer
+  "go!" io.write-line
+;
+
+: main ( -- Int )
+  "=== Loop Combinators ===" io.write-line
+  demo-times
+  demo-each-integer
+  demo-practical
+  0
+;
