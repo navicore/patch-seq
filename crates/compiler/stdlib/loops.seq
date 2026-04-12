@@ -5,8 +5,9 @@
 #
 # ## Available Words
 #
-# - times:        ( Int [ -- ] -- )         Execute quotation N times
-# - each-integer: ( Int [ Int -- ] -- )     Call quotation with 0, 1, ..., n-1
+# - times:         ( Int [ -- ] -- )              Execute quotation N times
+# - each-integer:  ( Int [ Int -- ] -- )           Call quotation with 0..n-1
+# - integer-fold:  ( Int acc [ acc Int -- acc ] -- acc )  Fold over 0..n-1 with accumulator
 #
 # ## Examples
 #
@@ -15,11 +16,14 @@
 #   5 [ int->string io.write-line ] each-integer
 #   # prints: 0 1 2 3 4
 #
+#   5 0 [ i.+ ] integer-fold
+#   # result: 10 (0+1+2+3+4)
+#
 # ## Notes
 #
 # - Negative or zero counts are no-ops (the base case fires immediately).
 # - TCO is guaranteed — the recursive helpers are self-tail-recursive,
-#   so `1000000 [ ] times` will not stack-overflow.
+#   so `1000000 0 [ i.+ ] integer-fold` will not stack-overflow.
 # - `while` is intentionally excluded. It requires row-polymorphic
 #   quotation effects that can't be expressed in stdlib. Use direct
 #   recursion with TCO for while-type loops.
@@ -27,17 +31,14 @@
 # --------------------------------------------------------------------------
 # times — execute quotation N times
 # --------------------------------------------------------------------------
-# Stack layout: ( count quot )
-# Base case: count <= 0 -> drop both
-# Recursive case: dup the quot, call it, decrement count, recurse
 
 # Internal recursive helper — use `times` instead.
 : times-loop ( Int [ -- ] -- )
   over 0 i.<= if
     drop drop                 # base case: drop count and quotation
   else
-    dup call                  # call the quotation (dup preserves it for next iteration)
-    swap 1 i.- swap           # decrement count: ( quot count ) -> ( count-1 quot )
+    dup call                  # call the quotation (dup preserves it)
+    swap 1 i.- swap           # decrement count
     times-loop                # tail recurse
   then
 ;
@@ -47,11 +48,45 @@
 ;
 
 # --------------------------------------------------------------------------
+# integer-fold — fold over 0, 1, ..., n-1 with accumulator
+# --------------------------------------------------------------------------
+
+# Internal recursive helper — use `integer-fold` instead.
+# Stack: ( quot cur lim acc )
+#   pos 3: quot = quotation [ acc idx -- acc' ]
+#   pos 2: cur  = current index (0, 1, 2, ...)
+#   pos 1: lim  = upper bound (exclusive)
+#   pos 0: acc  = accumulator (top of stack)
+: integer-fold-loop ( [ Int Int -- Int ] Int Int Int -- Int )
+  2 pick 2 pick i.>= if
+    # cur >= lim: done. Return acc.
+    nip nip nip               # drop lim, cur, quot; leave acc
+  else
+    # Call quot(acc, cur). Stack: ( quot cur lim acc )
+    dup                       # ( quot cur lim acc acc )
+    3 pick                    # ( quot cur lim acc acc cur )
+    5 pick                    # ( quot cur lim acc acc cur quot )
+    call                      # ( quot cur lim acc acc' )
+    nip                       # ( quot cur lim acc' ) — drop old acc
+    # Increment cur: rot brings cur to top, add 1, rot rot restores layout
+    rot 1 i.+ rot rot         # ( quot cur lim acc' ) -> ( quot cur+1 lim acc' )
+    integer-fold-loop         # tail recurse
+  then
+;
+
+: integer-fold ( Int Int [ Int Int -- Int ] -- Int )
+  # Input: ( lim acc quot ). Need: ( quot 0 lim acc )
+  swap rot                    # ( quot 0 lim ) — wait, actually ( quot acc lim )
+  # swap on (acc quot) → (quot acc), rot on (lim quot acc) → (quot acc lim)
+  # Need ( quot 0 lim acc ). acc starts at position 1. Insert 0 before lim:
+  0 swap                      # ( quot acc 0 lim )
+  rot                         # ( quot 0 lim acc )
+  integer-fold-loop
+;
+
+# --------------------------------------------------------------------------
 # each-integer — call quotation with 0, 1, ..., n-1
 # --------------------------------------------------------------------------
-# Stack layout: ( current limit quot )
-# Base case: current >= limit -> drop all three
-# Recursive case: call quot with current, increment current, recurse
 
 # Internal recursive helper — use `each-integer` instead.
 # Stack layout: ( current limit quot )
