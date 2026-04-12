@@ -6,7 +6,7 @@
 use crate::ast::{Program, Statement, WordDef};
 use crate::builtins::builtin_signature;
 use crate::call_graph::CallGraph;
-use crate::capture_analysis::calculate_captures;
+use crate::capture_analysis::{calculate_captures, extract_concrete_types};
 use crate::types::{
     Effect, SideEffect, StackType, Type, UnionTypeInfo, VariantFieldInfo, VariantInfo,
 };
@@ -2123,8 +2123,6 @@ impl TypeChecker {
             Some(Type::Quotation(expected_effect)) => {
                 // Check if we need to auto-create a closure by comparing the
                 // body's concrete input count against what the combinator provides.
-                use crate::capture_analysis::extract_concrete_types;
-
                 let body_inputs = extract_concrete_types(&body_effect.inputs);
                 let expected_inputs = extract_concrete_types(&expected_effect.inputs);
 

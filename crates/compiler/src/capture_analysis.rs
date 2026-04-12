@@ -68,6 +68,11 @@ pub fn calculate_captures(body_effect: &Effect, call_effect: &Effect) -> Result<
     // Captures are the first N types (bottom of stack)
     // Example: body needs [Int, String] (bottom to top), call provides [String]
     // Captures: [Int] (the bottom type)
+    //
+    // TODO: verify that body_inputs[capture_count..] structurally matches
+    // call_inputs. Currently the topmost types are not checked here — the
+    // mismatch would be caught downstream by unification or at runtime,
+    // but catching it here would give clearer error messages.
     Ok(body_inputs[0..capture_count].to_vec())
 }
 
