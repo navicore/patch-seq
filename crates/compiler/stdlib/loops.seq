@@ -1,0 +1,74 @@
+# Loop Combinators for Seq
+#
+# Counted iteration words backed by recursion + TCO.
+# No compiler or runtime changes — these are pure stdlib.
+#
+# ## Available Words
+#
+# - times:        ( Int [ -- ] -- )         Execute quotation N times
+# - each-integer: ( Int [ Int -- ] -- )     Call quotation with 0, 1, ..., n-1
+#
+# ## Examples
+#
+#   3 [ "hello" io.write-line ] times
+#
+#   5 [ int->string io.write-line ] each-integer
+#   # prints: 0 1 2 3 4
+#
+# ## Notes
+#
+# - Negative or zero counts are no-ops (the base case fires immediately).
+# - TCO is guaranteed — the recursive helpers are self-tail-recursive,
+#   so `1000000 [ ] times` will not stack-overflow.
+# - `while` is intentionally excluded. It requires row-polymorphic
+#   quotation effects that can't be expressed in stdlib. Use direct
+#   recursion with TCO for while-type loops.
+
+# --------------------------------------------------------------------------
+# times — execute quotation N times
+# --------------------------------------------------------------------------
+# Stack layout: ( count quot )
+# Base case: count <= 0 -> drop both
+# Recursive case: dup the quot, call it, decrement count, recurse
+
+# Internal recursive helper — use `times` instead.
+: times-loop ( Int [ -- ] -- )
+  over 0 i.<= if
+    drop drop                 # base case: drop count and quotation
+  else
+    dup call                  # call the quotation (dup preserves it for next iteration)
+    swap 1 i.- swap           # decrement count: ( quot count ) -> ( count-1 quot )
+    times-loop                # tail recurse
+  then
+;
+
+: times ( Int [ -- ] -- )
+  times-loop
+;
+
+# --------------------------------------------------------------------------
+# each-integer — call quotation with 0, 1, ..., n-1
+# --------------------------------------------------------------------------
+# Stack layout: ( current limit quot )
+# Base case: current >= limit -> drop all three
+# Recursive case: call quot with current, increment current, recurse
+
+# Internal recursive helper — use `each-integer` instead.
+# Stack layout: ( current limit quot )
+: ei-loop ( Int Int [ Int -- ] -- )
+  2 pick 2 pick i.>= if
+    drop drop drop            # base case: current >= limit, drop all three
+  else
+    # call quot with current index:
+    # 2 pick copies current to top, over copies quot, call runs quot(current)
+    2 pick over call
+    # increment current: rot brings current to top, add 1, rot rot restores layout
+    rot 1 i.+ rot rot         # ( current limit quot ) -> ( current+1 limit quot )
+    ei-loop                   # tail recurse
+  then
+;
+
+# Insert current=0 below limit and quot to produce ( 0 limit quot )
+: each-integer ( Int [ Int -- ] -- )
+  0 rot rot ei-loop
+;

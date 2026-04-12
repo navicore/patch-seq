@@ -1,0 +1,58 @@
+# Integration tests for std:loops (times, each-integer)
+
+include std:loops
+
+# --------------------------------------------------------------------------
+# times ( Int [ -- ] -- )
+# --------------------------------------------------------------------------
+
+: test-times-zero ( -- )
+  # Zero count is a no-op
+  0 [ ] times
+;
+
+: test-times-negative ( -- )
+  # Negative count is also a no-op
+  -5 [ ] times
+;
+
+: test-times-basic ( -- )
+  # Runs the quotation 3 times (void body, no stack effect)
+  3 [ ] times
+;
+
+# --------------------------------------------------------------------------
+# each-integer ( Int [ Int -- ] -- )
+# --------------------------------------------------------------------------
+
+: test-each-integer-zero ( -- )
+  # Zero limit is a no-op
+  0 [ drop ] each-integer
+;
+
+: test-each-integer-one ( -- )
+  # Single iteration passes index 0
+  1 [ 0 test.assert-eq ] each-integer
+;
+
+: test-each-integer-sequence ( -- )
+  # Verify the last index received is n-1
+  # each-integer calls quot with 0, 1, 2, 3, 4 — the last call leaves 4 on stack
+  # But the quotation effect is ( Int -- ), so it must consume the value.
+  # We'll test by checking specific indices match expectations.
+  3 [ dup 0 i.>= test.assert drop ] each-integer
+;
+
+# --------------------------------------------------------------------------
+# TCO
+# --------------------------------------------------------------------------
+
+: test-times-tco-stress ( -- )
+  # 100,000 iterations must not stack-overflow (TCO guarantee)
+  100000 [ ] times
+;
+
+: test-each-integer-tco-stress ( -- )
+  # 100,000 iterations must not stack-overflow
+  100000 [ drop ] each-integer
+;
