@@ -53,6 +53,14 @@ mod tests {
     }
 
     #[test]
+    fn test_loops_stdlib_exists() {
+        assert!(has_stdlib("loops"));
+        let content = get_stdlib("loops").unwrap();
+        assert!(content.contains("times"));
+        assert!(content.contains("each-integer"));
+    }
+
+    #[test]
     fn test_nonexistent_stdlib() {
         assert!(!has_stdlib("nonexistent"));
         assert!(get_stdlib("nonexistent").is_none());
