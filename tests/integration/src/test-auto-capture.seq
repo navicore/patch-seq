@@ -1,0 +1,86 @@
+# Integration tests for auto-capture in combinator quotations (Issue #395)
+
+include std:list
+
+# --------------------------------------------------------------------------
+# list.fold with one captured value
+# --------------------------------------------------------------------------
+
+# Body receives (acc, elem) from fold, plus captured 'mult' on top.
+# Uses aux to stash the captured value during computation.
+: test-fold-capture-one ( -- )
+  list-of 1 lv 2 lv 3 lv
+  0     # acc
+  10    # multiplier — auto-captured
+  [
+    >aux              # stash captured mult
+    aux> i.* i.+      # acc + elem * mult
+  ] list.fold
+  60 test.assert-eq   # 1*10 + 2*10 + 3*10 = 60
+;
+
+# --------------------------------------------------------------------------
+# list.map with captured value
+# --------------------------------------------------------------------------
+
+: test-map-capture ( -- )
+  list-of 1 lv 2 lv 3 lv
+  100    # base — auto-captured
+  [
+    # Stack: ( elem base ) — base on top (captured)
+    i.+
+  ] list.map
+  # Result is a list of [101, 102, 103]
+  0 list.get drop 101 test.assert-eq
+;
+
+# --------------------------------------------------------------------------
+# list.filter with captured threshold
+# --------------------------------------------------------------------------
+
+: test-filter-capture ( -- )
+  list-of 1 lv 5 lv 3 lv 7 lv 2 lv
+  4    # threshold — auto-captured
+  [
+    # Stack: ( elem threshold ) — threshold on top (captured)
+    >aux aux> i.<     # elem < threshold
+  ] list.filter
+  # Should keep [1, 3, 2] — three elements less than 4
+  list.length 3 test.assert-eq
+;
+
+# --------------------------------------------------------------------------
+# list.each with captured value (side effects)
+# --------------------------------------------------------------------------
+
+: test-each-capture ( -- )
+  # Just verify it compiles and runs without crashing.
+  # list.each has no return value to assert on.
+  list-of 1 lv 2 lv 3 lv
+  0    # base — auto-captured
+  [
+    # Stack: ( elem base ) — base on top
+    i.+ drop   # compute elem + base, discard
+  ] list.each
+;
+
+# --------------------------------------------------------------------------
+# Horner polynomial evaluation via fold with capture
+# --------------------------------------------------------------------------
+
+: test-horner-poly ( -- )
+  # p(x) = 2 + 1*x + 4*x^2 evaluated at x=3
+  # Horner left-to-right: ((0*3+2)*3+1)*3+4 = 25
+  list-of 2 lv 1 lv 4 lv
+  0     # acc
+  3     # x — auto-captured
+  [
+    # Stack: ( acc coeff x ) — x on top (captured)
+    # Horner step: acc * x + coeff
+    >aux              # stash x
+    swap              # ( coeff acc )
+    aux> i.*          # ( coeff acc*x )
+    i.+               # ( coeff + acc*x )
+  ] list.fold
+  25 test.assert-eq
+;

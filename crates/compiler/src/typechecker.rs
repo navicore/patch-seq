@@ -1309,10 +1309,22 @@ impl TypeChecker {
                 current_stack.push(quot_type)
             }
             Type::Closure { captures, .. } => {
-                // Pop captured values from stack, then push closure
+                // Pop captured values from stack, then push closure.
+                // Captures are bottom-to-top, but we pop top-down from the
+                // stack, so iterate in reverse to match positions correctly.
+                // Verify each popped type unifies with the expected capture
+                // type — this catches type mismatches at the capture site
+                // rather than letting them through to runtime. (Issue #395)
                 let mut stack = current_stack.clone();
-                for _ in 0..captures.len() {
-                    let (new_stack, _value) = self.pop_type(&stack, "closure capture")?;
+                for (i, expected_type) in captures.iter().enumerate().rev() {
+                    let (new_stack, actual_type) = self.pop_type(&stack, "closure capture")?;
+                    unify_types(&actual_type, expected_type).map_err(|e| {
+                        format!(
+                            "closure capture type mismatch at position {}: \
+                             expected {}, got {}: {}",
+                            i, expected_type, actual_type, e
+                        )
+                    })?;
                     stack = new_stack;
                 }
                 stack.push(quot_type)
@@ -2109,25 +2121,49 @@ impl TypeChecker {
                 Ok(Type::Closure { effect, captures })
             }
             Some(Type::Quotation(expected_effect)) => {
-                // User declared quotation type - check if we need to auto-create closure
-                // Auto-create closure only when:
-                // 1. Expected effect has empty inputs (like spawn's ( -- ))
-                // 2. Body effect has non-empty inputs (needs values to execute)
+                // Check if we need to auto-create a closure by comparing the
+                // body's concrete input count against what the combinator provides.
+                use crate::capture_analysis::extract_concrete_types;
 
+                let body_inputs = extract_concrete_types(&body_effect.inputs);
+                let expected_inputs = extract_concrete_types(&expected_effect.inputs);
+
+                // Auto-capture triggers when the body needs more concrete inputs
+                // than the expected provides. Two sub-cases:
+                // (a) Expected is empty (strand.spawn): body needs any inputs → capture all.
+                // (b) Expected has concrete inputs (list.fold): body has MORE → capture excess.
+                // We skip auto-capture when expected has ONLY a row variable and no
+                // concrete inputs — that's the strand.weave case where the body's
+                // row-variable inputs should unify with the expected, not be captured.
                 let expected_is_empty = matches!(expected_effect.inputs, StackType::Empty);
-                let body_needs_inputs = !matches!(body_effect.inputs, StackType::Empty);
+                let should_capture = if expected_is_empty {
+                    !body_inputs.is_empty()
+                } else if !expected_inputs.is_empty() {
+                    body_inputs.len() > expected_inputs.len()
+                } else {
+                    false // row-variable-only expected — don't capture, unify instead
+                };
 
-                if expected_is_empty && body_needs_inputs {
-                    // Body needs inputs but expected provides none
-                    // Auto-create closure to capture the inputs
+                if should_capture {
+                    // Body needs more inputs than the combinator provides.
+                    // The excess (bottommost) become captures; the topmost must
+                    // align with what the combinator provides.
+                    //
+                    // Example: list.fold expects ( ..b Acc T -- ..b Acc ).
+                    // Body inferred as ( ..b X Acc T -- ..b Acc ).
+                    // expected_inputs = [Acc, T], body_inputs = [X, Acc, T].
+                    // Captures = [X]. Topmost 2 of body must match expected's 2.
+                    //
+                    // Issue #395: this extends the empty-input auto-capture
+                    // (used by strand.spawn) to the non-empty case.
                     let captures = calculate_captures(body_effect, &expected_effect)?;
                     Ok(Type::Closure {
                         effect: expected_effect,
                         captures,
                     })
                 } else {
-                    // Verify the body effect is compatible with the expected effect
-                    // by unifying the quotation types. This catches:
+                    // Body has same or fewer inputs — standard unification path.
+                    // This catches:
                     // - Stack pollution: body pushes values when expected is stack-neutral
                     // - Stack underflow: body consumes values when expected is stack-neutral
                     // - Wrong return type: body returns Int when Bool expected

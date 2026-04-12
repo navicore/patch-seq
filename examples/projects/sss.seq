@@ -1,34 +1,19 @@
 # ============================================================================
 # Shamir's Secret Sharing — Tutorial Implementation in Seq
 #
-# ⚠ STATUS: WORK IN PROGRESS — DO NOT USE FOR REAL SECRETS ⚠
+# ⚠ DO NOT USE FOR REAL SECRETS ⚠
 #
-# This is a tutorial / language showcase, not production code. It runs
-# end-to-end and reconstructs secrets correctly under the test inputs,
-# but several pieces are not yet idiomatic Seq because the language is
-# missing features:
+# This is a tutorial / language showcase, not production code. The
+# cryptography is correct (GF(256) arithmetic, Lagrange interpolation
+# in the field, information-theoretic security properties), but this
+# has not been audited and should not be used in real applications.
+# Use a vetted SSS library written in a language with mature crypto
+# tooling.
 #
-#   - `eval-poly` is implemented as a manual recursive loop with
-#     pick/roll stack juggling. The natural form is `list.fold` with
-#     the evaluation point `x` auto-captured into the fold quotation.
-#     That requires Issue #395 (auto-capture for combinator quotations).
-#     Until #395 lands, the recursive form is the only option.
-#
-#   - Lagrange interpolation has the same constraint: the natural form
-#     folds the share list with the current x-index captured into the
-#     quotation. Same blocker as above.
-#
-#   - This file is kept as a real example because the *cryptography* is
-#     correct (GF(256) arithmetic, Lagrange interpolation in the field,
-#     information-theoretic security properties), and it pressures the
-#     language with realistic requirements. The non-idiomatic loops are
-#     a documented limitation, not a recommendation.
-#
-# Tracking: see docs/design/AUTO_CAPTURE_COMBINATORS.md and
-#           https://github.com/navicore/patch-seq/issues/395
-#
-# Do not copy this code into a real cryptographic application. Use a
-# vetted SSS library written in a language with mature crypto tooling.
+# The Lagrange interpolation outer loop still uses manual recursion
+# with deep `pick` access because it needs both the xs and ys lists
+# in scope at every iteration. This will improve when the outer loop
+# can be converted to a fold with multiple captured values.
 # ============================================================================
 #
 # Implements SSS over GF(256), the same finite field used by AES.
@@ -112,27 +97,23 @@ include std:list
 # ============================================================================
 # Horner's method: p(x) = c0 + x*(c1 + x*(c2 + ...))
 #
-# ⚠ NON-IDIOMATIC: this is implemented as a manual recursive loop with
-# pick/roll stack juggling because the natural form requires auto-capture
-# of `x` into a `list.fold` quotation. See Issue #395 / the file header.
-# When #395 lands, this should become a single `list.fold` call.
-
-# Stack: ( coeffs x idx acc -- result )
-: eval-poly-loop ( List Int Int Int -- Int )
-  over 0 i.< if
-    nip nip nip
-  else
-    2 pick gf256-mul
-    3 pick 2 pick list.get drop
-    gf256-add
-    swap 1 i.- swap
-    eval-poly-loop
-  then
-;
+# Coefficients are stored low-to-high [c0, c1, ...], so we reverse for
+# Horner left-to-right processing. The evaluation point `x` is auto-captured
+# into the fold quotation (Issue #395), and aux stashes it during each step.
 
 : eval-poly ( List Int -- Int )
-  over list.length 1 i.-
-  0 eval-poly-loop
+  swap list.reverse swap        # ( reversed_coeffs x )
+  >aux                          # stash x in word-level aux: ( reversed_coeffs )
+  0                             # initial accumulator: ( reversed_coeffs 0 )
+  aux>                          # retrieve x: ( reversed_coeffs 0 x )
+  [
+    # Fold body: ( acc coeff x ) — x on top (auto-captured)
+    # Horner step: acc * x + coeff
+    >aux                        # stash x in quotation-level aux
+    swap                        # ( coeff acc )
+    aux> gf256-mul              # ( coeff acc*x )  — using GF(256) multiply
+    gf256-add                   # ( coeff + acc*x )
+  ] list.fold
 ;
 
 # ============================================================================
