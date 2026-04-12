@@ -65,6 +65,27 @@ pub fn calculate_captures(body_effect: &Effect, call_effect: &Effect) -> Result<
     // Calculate how many to capture (from bottom of stack)
     let capture_count = body_inputs.len() - call_inputs.len();
 
+    // Verify the topmost body inputs (the non-captured ones) align with
+    // what the call site provides. If they don't match, the body is
+    // incompatible with the combinator regardless of captures.
+    let body_provided = &body_inputs[capture_count..];
+    for (i, (body_type, call_type)) in body_provided.iter().zip(call_inputs.iter()).enumerate() {
+        if body_type != call_type {
+            // Type variables (like Acc, T from row polymorphism) won't match
+            // concrete types here — that's expected, because the body's types
+            // are inferred from a seeded row-variable stack. Skip the check
+            // for type variables; they'll be verified by downstream unification.
+            let is_var = matches!(body_type, Type::Var(_)) || matches!(call_type, Type::Var(_));
+            if !is_var {
+                return Err(format!(
+                    "Closure capture error: body input at position {} (from top) is {}, \
+                     but combinator provides {}. The non-captured inputs must match.",
+                    i, body_type, call_type
+                ));
+            }
+        }
+    }
+
     // Captures are the first N types (bottom of stack)
     // Example: body needs [Int, String] (bottom to top), call provides [String]
     // Captures: [Int] (the bottom type)
