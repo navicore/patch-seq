@@ -10,10 +10,15 @@
 # Use a vetted SSS library written in a language with mature crypto
 # tooling.
 #
-# The Lagrange interpolation outer loop still uses manual recursion
-# with deep `pick` access because it needs both the xs and ys lists
-# in scope at every iteration. This will improve when the outer loop
-# can be converted to a fold with multiple captured values.
+# Style notes:
+#   - `eval-poly` and `lagrange-basis` use `list.fold` with auto-captured
+#     values (Issue #395) — the idiomatic Seq pattern for reduction with
+#     context.
+#   - Display helpers use `list.each` and `each-integer`.
+#   - Several loops (split-byte, select-shares, reconstruct, collect-ys,
+#     the Lagrange outer sum) still use manual recursion because they need
+#     multiple values in scope simultaneously. Multi-value capture is a
+#     potential future language enhancement.
 # ============================================================================
 #
 # Implements SSS over GF(256), the same finite field used by AES.
@@ -22,6 +27,7 @@
 # ============================================================================
 
 include std:list
+include std:loops
 
 # ============================================================================
 #                       GF(256) Finite Field Arithmetic
@@ -64,7 +70,6 @@ include std:list
 # After n iterations the exponent is (2^(n+1) - 1):
 #   iter 0: a → a² × a = a^3       (exponent 2^1 + 1 = 3)
 #   iter 1: a^3 → a^6 × a = a^7    (exponent 2^2 + 3 = 7)
-#   iter 2: a^7 → a^14 × a = a^15  (exponent 2^3 + 7 = 15)
 #   ...
 #   iter 5: a^63 → a^126 × a = a^127
 # Then the final square in gf256-inv gives a^254.
@@ -99,19 +104,18 @@ include std:list
 #
 # Coefficients are stored low-to-high [c0, c1, ...], so we reverse for
 # Horner left-to-right processing. The evaluation point `x` is auto-captured
-# into the fold quotation (Issue #395), and aux stashes it during each step.
+# into the fold quotation, and aux stashes it during each step.
 
 : eval-poly ( List Int -- Int )
   swap list.reverse swap        # ( reversed_coeffs x )
-  >aux                          # stash x in word-level aux: ( reversed_coeffs )
-  0                             # initial accumulator: ( reversed_coeffs 0 )
+  >aux                          # stash x in word-level aux
+  0                             # initial accumulator
   aux>                          # retrieve x: ( reversed_coeffs 0 x )
   [
     # Fold body: ( acc coeff x ) — x on top (auto-captured)
-    # Horner step: acc * x + coeff
     >aux                        # stash x in quotation-level aux
     swap                        # ( coeff acc )
-    aux> gf256-mul              # ( coeff acc*x )  — using GF(256) multiply
+    aux> gf256-mul              # ( coeff acc*x )
     gf256-add                   # ( coeff + acc*x )
   ] list.fold
 ;
@@ -183,44 +187,35 @@ include std:list
 # p(0) = sum_i  y_i * L_i(0)
 # L_i(0) = product_{j!=i}  x_j / (x_i XOR x_j)
 #
-# ⚠ NON-IDIOMATIC: the basis product fold packs `x_i` into the high bits of
-# the accumulator (`(basis << 8) | x_i`) because the fold quotation has no
-# way to access `x_i` from outside scope. With auto-capture (Issue #395),
-# `x_i` would be captured naturally and the basis would be a plain Int.
-#
-# The outer Lagrange loop (`lagrange-outer-loop`) is also a manual recursive
-# loop with deep `pick` access for the same reason — it needs both the xs
-# and ys lists in scope at every iteration. With #395, that becomes another
-# `list.fold` with the lists captured.
+# The basis product fold uses auto-capture: x_i is captured into the fold
+# quotation, eliminating the old bit-packing workaround.
 
-# Fold step for basis product. Packed acc = (basis << 8) | x_i.
-: lagrange-basis-step ( Int Int -- Int )
-  over 0xff band
-  over i.= if
-    drop
+# Fold step for basis product.
+# Stack: ( acc x_j x_i ) — x_i on top (auto-captured)
+: lagrange-basis-fold-step ( Int Int Int -- Int )
+  >aux                            # stash x_i, stack: ( acc x_j )
+  dup aux> dup >aux               # ( acc x_j x_i x_i ) ... peek x_i
+  i.= if
+    drop                          # skip j == i: ( acc )
   else
-    swap dup 0xff band
-    >aux
-    8 shr swap
-    dup aux> dup >aux
-    bxor
-    gf256-div
-    gf256-mul
-    8 shl aux> bor
+    dup                           # ( acc x_j x_j )
+    aux> dup >aux                 # ( acc x_j x_j x_i )
+    bxor                          # ( acc x_j denom ) where denom = x_j XOR x_i
+    gf256-div                     # ( acc x_j/denom )
+    gf256-mul                     # ( acc * x_j/denom )
   then
+  aux> drop                       # clean up stashed x_i
 ;
 
 : lagrange-basis ( List Int -- Int )
-  256 i.+
-  [ lagrange-basis-step ] list.fold
-  8 shr
+  swap                            # ( x_i xs )
+  1                               # initial basis = 1
+  rot                             # ( xs 1 x_i )
+  [ lagrange-basis-fold-step ] list.fold
 ;
 
 # Outer loop: sum y_i * L_i(0).
-# Invariant: xs.length == ys.length. The loop terminates on ys.length;
-# if the two lists were mismatched, xs access would go out of bounds.
-# lagrange-at-zero is the only caller and builds both lists from the
-# same points list, so this invariant holds by construction.
+# Needs xs and ys lists simultaneously — manual recursion required.
 # Stack: ( xs ys sum idx -- result )
 : lagrange-outer-loop ( List List Int Int -- Int )
   2 pick list.length over i.<= if
@@ -245,6 +240,7 @@ include std:list
 #                          Select Shares
 # ============================================================================
 # Pick specific shares from a points list by index.
+# Needs points and indices lists simultaneously — manual recursion.
 # Stack: ( points indices idx result -- result )
 : select-loop ( List List Int List -- List )
   over 3 pick list.length i.>= if
@@ -290,17 +286,13 @@ include std:list
 # Split all bytes into per-byte point lists.
 # Stack: ( bytes k n idx result -- result )
 : split-bytes-loop ( List Int Int Int List -- List )
-  # Check: idx >= bytes.length
-  # Careful with depths: bytes=4, k=3, n=2, idx=1, result=0
   1 pick 5 pick list.length i.>= if
     nip nip nip nip
   else
-    # Get bytes[idx]: need bytes (depth 4) and idx (depth 1)
-    4 pick 2 pick list.get drop     # ... byte
-    # split-byte(byte, k, n): need k (now depth 4) and n (now depth 3)
-    4 pick 4 pick split-byte        # ... points
-    lv                               # bytes k n idx result'
-    swap 1 i.+ swap                  # bytes k n (idx+1) result'
+    4 pick 2 pick list.get drop
+    4 pick 4 pick split-byte
+    lv
+    swap 1 i.+ swap
     split-bytes-loop
   then
 ;
@@ -311,17 +303,14 @@ include std:list
 
 # Reconstruct all bytes from per-byte point lists.
 # Stack: ( all_points indices idx result -- result )
-# Depths: all=3, indices=2, idx=1, result=0
 : reconstruct-loop ( List List Int List -- List )
   1 pick 4 pick list.length i.>= if
     nip nip nip
   else
-    # Get point-list for byte[idx]: all (depth 3), idx (depth 1)
-    3 pick 2 pick list.get drop       # ... byte_points
-    # Select shares: indices is now at depth 3
-    3 pick select-shares              # ... selected_points
-    lagrange-at-zero                  # ... byte_val
-    lv                                 # all indices idx result'
+    3 pick 2 pick list.get drop
+    3 pick select-shares
+    lagrange-at-zero
+    lv
     swap 1 i.+ swap
     reconstruct-loop
   then
@@ -333,17 +322,14 @@ include std:list
 
 # Collect y-values for one share across all bytes.
 # Stack: ( all_points share_idx byte_idx result -- result )
-# Depths: all=3, s=2, b=1, result=0
 : collect-ys-loop ( List Int Int List -- List )
   1 pick 4 pick list.length i.>= if
     nip nip nip
   else
-    # Get all[b]: all (depth 3), b (depth 1)
-    3 pick 2 pick list.get drop       # ... byte_points
-    # Get byte_points[s]: s is now at depth 3
-    3 pick list.get drop              # ... packed_point
-    0xff band                          # extract y value
-    lv                                 # all s b result'
+    3 pick 2 pick list.get drop
+    3 pick list.get drop
+    0xff band
+    lv
     swap 1 i.+ swap
     collect-ys-loop
   then
@@ -368,20 +354,14 @@ include std:list
   io.write-line
 ;
 
-: print-points-loop ( List Int -- )
-  over list.length over i.<= if
-    drop drop
-  else
-    over over list.get drop print-point
-    1 i.+ print-points-loop
-  then
-;
-
 : print-points ( List -- )
-  dup 0 print-points-loop drop
+  [ print-point ] list.each
 ;
 
 # Print comma-separated list of ints.
+# Uses manual recursion because the comma-before-all-but-first pattern
+# needs both the list and an index, and the index-conditional logic
+# makes each-integer awkward here.
 : print-ints-loop ( List Int -- )
   over list.length over i.<= if
     drop drop
@@ -392,16 +372,19 @@ include std:list
   then
 ;
 
+: print-ints ( List -- )
+  dup 0 print-ints-loop drop
+;
+
 # Print one share's y-values across all bytes.
-# Stack: ( all_points share_idx -- )
 : print-share ( List Int -- )
   dup 1 i.+ int->string "  Share " swap string.concat ": [" string.concat io.write
   collect-share-ys
-  dup 0 print-ints-loop drop
+  print-ints
   "]" io.write-line
 ;
 
-# Print all n shares. n = length of first byte's point list.
+# Print all n shares.
 # Stack: ( all_points n share_idx -- )
 : print-all-shares-loop ( List Int Int -- )
   2dup i.<= if
@@ -417,9 +400,7 @@ include std:list
 ;
 
 # Element-wise list equality check.
-# Precondition: actual.length >= expected.length. The loop terminates on
-# expected.length and does not bounds-check actual. In the demo both lists
-# are always 5 bytes, so this holds.
+# Precondition: actual.length >= expected.length.
 # Stack: ( actual expected idx -- bool )
 : verify-eq-loop ( List List Int -- Bool )
   1 pick list.length over i.<= if
