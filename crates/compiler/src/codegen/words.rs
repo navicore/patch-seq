@@ -79,14 +79,9 @@ impl CodeGen {
         self.virtual_stack.clear();
 
         // Allocate aux stack slots if this word uses >aux/aux> (Issue #350)
-        self.current_aux_slots.clear();
         self.current_aux_sp = 0;
         let aux_slot_count = self.aux_slot_counts.get(&word.name).copied().unwrap_or(0);
-        for i in 0..aux_slot_count {
-            let slot_name = format!("aux_slot_{}", i);
-            writeln!(&mut self.output, "  %{} = alloca %Value", slot_name)?;
-            self.current_aux_slots.push(slot_name);
-        }
+        self.emit_aux_slots(aux_slot_count)?;
 
         // Emit instrumentation counter increment (--instrument)
         if let Some(&word_id) = self.word_instrument_ids.get(&word.name) {
@@ -160,6 +155,7 @@ impl CodeGen {
     /// Returns wrapper and impl function names for TCO support
     pub(super) fn codegen_quotation(
         &mut self,
+        quot_id: usize,
         body: &[Statement],
         quot_type: &Type,
     ) -> Result<QuotationFunctions, CodeGenError> {
@@ -177,13 +173,21 @@ impl CodeGen {
         // incorrect type lookups (quotations don't have their own type info)
         let saved_word_name = self.current_word_name.take();
 
-        // Save and clear aux state (Issue #350)
-        // Quotations are separate LLVM functions; the typechecker rejects aux
-        // ops inside quotations, but we clear defensively to avoid generating
-        // references to the enclosing word's aux allocas.
+        // Save and clear aux state (Issue #350, #393).
+        // Each quotation gets its own aux slot table — they are independent
+        // LLVM functions with their own stack frames. The fresh slots will
+        // be emitted after `entry:` below if this quotation uses aux.
         let saved_aux_slots = std::mem::take(&mut self.current_aux_slots);
         let saved_aux_sp = self.current_aux_sp;
         self.current_aux_sp = 0;
+
+        // Look up how many aux slots this quotation needs (Issue #393).
+        // Zero for quotations that don't use >aux/aux>.
+        let quot_aux_slot_count = self
+            .quotation_aux_slot_counts
+            .get(&quot_id)
+            .copied()
+            .unwrap_or(0);
 
         // Generate function signature based on type
         match quot_type {
@@ -200,6 +204,11 @@ impl CodeGen {
                     impl_name
                 )?;
                 writeln!(&mut self.output, "entry:")?;
+
+                // Allocate aux stack slots if this quotation uses >aux/aux> (Issue #393).
+                // Each quotation function has its own slots, independent of the
+                // enclosing word and any sibling/nested quotations.
+                self.emit_aux_slots(quot_aux_slot_count)?;
 
                 let mut stack_var = "stack".to_string();
                 let body_len = body.len();
@@ -270,6 +279,9 @@ impl CodeGen {
                 )?;
                 writeln!(&mut self.output, "entry:")?;
 
+                // Allocate aux stack slots if this closure uses >aux/aux> (Issue #393).
+                self.emit_aux_slots(quot_aux_slot_count)?;
+
                 // Push captured values onto the stack before executing body
                 // Captures are stored bottom-to-top, so push them in order
                 let mut stack_var = "stack".to_string();
@@ -329,6 +341,25 @@ impl CodeGen {
         BUILTIN_SYMBOLS.contains_key(name)
             || self.external_builtins.contains_key(name)
             || self.ffi_bindings.is_ffi_function(name)
+    }
+
+    /// Emit `alloca %Value` slots for the aux stack and populate
+    /// `current_aux_slots` with their LLVM names.
+    ///
+    /// Used by `codegen_word`, the quotation arm of `codegen_quotation`,
+    /// and the closure arm of `codegen_quotation`. Each function (word,
+    /// quotation, or closure) gets its own independent slot table — they
+    /// are never shared across function boundaries.
+    ///
+    /// Caller is responsible for resetting `current_aux_sp` if needed.
+    pub(super) fn emit_aux_slots(&mut self, count: usize) -> Result<(), CodeGenError> {
+        self.current_aux_slots.clear();
+        for i in 0..count {
+            let slot_name = format!("aux_slot_{}", i);
+            writeln!(&mut self.output, "  %{} = alloca %Value", slot_name)?;
+            self.current_aux_slots.push(slot_name);
+        }
+        Ok(())
     }
 
     /// Emit code to push a captured value onto the stack.

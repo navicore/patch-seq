@@ -25,8 +25,8 @@
 ;
 
 # Aux inside if/else (balanced in both branches)
-: test-if-else ( Int -- )
-  >aux
+: test-if-else ( -- )
+  7 >aux
   true if
     aux> 10 i.+ int->string io.write-line
   else
@@ -56,10 +56,54 @@
   int->string io.write-line  # prints 2
 ;
 
-: main ( -- )
-  test-basic
-  test-lifo
-  test-mixed-types
-  7 test-if-else
-  test-nested
-  test-with-stack-ops ;
+# ============================================================================
+# Aux Inside Quotations (Issue #393)
+# ============================================================================
+# These tests cover the codegen path: each quotation gets its own aux slot
+# table, isolated from the enclosing word and from sibling/nested quotations.
+# Unlike the print-and-eyeball tests above, these use test.assert-eq so
+# `seqc test` actually runs and reports them.
+
+include std:list
+
+# Basic aux round-trip inside a quotation called via `call`.
+: test-quotation-aux-round-trip ( -- )
+  [ 5 >aux 10 aux> i.+ ] call
+  15 test.assert-eq
+;
+
+# Nested quotations: each gets its own independent aux slots.
+# Outer aux holds 5, inner aux holds 10, neither sees the other.
+: test-nested-quotation-aux ( -- )
+  [
+    5 >aux
+    [ 10 >aux 100 aux> i.+ ] call
+    aux> i.+
+  ] call
+  115 test.assert-eq
+;
+
+# Aux inside a `list.each` callback. The fold body uses aux for temporary
+# storage. We assert by accumulating the printed values' sum into a fold.
+: test-aux-in-list-each-via-fold ( -- )
+  # Use list.fold (which has a verifiable result) to exercise aux in a
+  # combinator quotation. For each element, stash it, multiply acc by 2,
+  # then add the stashed element back. With elements [1,2,3,4] and acc=0:
+  # 0 -> 1 -> 4 -> 11 -> 26
+  list-of 1 lv 2 lv 3 lv 4 lv
+  0 [ >aux 2 i.* aux> i.+ ] list.fold
+  26 test.assert-eq
+;
+
+# Closure that uses aux internally. The closure captures one Int and
+# takes one Int input; the body uses aux for temporary storage.
+: aux-using-closure ( Int -- Closure[Int -- Int] )
+  # Body sees ( captured_base input ); stash input, increment base, restore.
+  [ >aux 1 i.+ aux> i.+ ]
+;
+
+: test-aux-in-closure ( -- )
+  # 10 captured, 5 input: stash 5, 10+1=11, restore 5, 11+5=16
+  10 aux-using-closure 5 swap call
+  16 test.assert-eq
+;

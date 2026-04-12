@@ -298,6 +298,8 @@ pub fn compile_file_with_config(
     let statement_types = type_checker.take_statement_top_types();
     // Extract per-word aux stack max depths for codegen (Issue #350)
     let aux_max_depths = type_checker.take_aux_max_depths();
+    // Extract per-quotation aux stack max depths for codegen (Issue #393)
+    let quotation_aux_depths = type_checker.take_quotation_aux_depths();
     // Extract resolved arithmetic sugar for codegen
     let resolved_sugar = type_checker.take_resolved_sugar();
 
@@ -311,6 +313,7 @@ pub fn compile_file_with_config(
         CodeGen::new()
     };
     codegen.set_aux_slot_counts(aux_max_depths);
+    codegen.set_quotation_aux_slot_counts(quotation_aux_depths);
     codegen.set_resolved_sugar(resolved_sugar);
     let ir = codegen
         .codegen_program_with_ffi(
@@ -435,10 +438,12 @@ pub fn compile_to_ir_with_config(source: &str, config: &CompilerConfig) -> Resul
     let quotation_types = type_checker.take_quotation_types();
     let statement_types = type_checker.take_statement_top_types();
     let aux_max_depths = type_checker.take_aux_max_depths();
+    let quotation_aux_depths = type_checker.take_quotation_aux_depths();
     let resolved_sugar = type_checker.take_resolved_sugar();
 
     let mut codegen = CodeGen::new();
     codegen.set_aux_slot_counts(aux_max_depths);
+    codegen.set_quotation_aux_slot_counts(quotation_aux_depths);
     codegen.set_resolved_sugar(resolved_sugar);
     codegen
         .codegen_program_with_config(&program, quotation_types, statement_types, config)

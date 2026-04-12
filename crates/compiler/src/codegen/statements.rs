@@ -258,7 +258,7 @@ impl CodeGen {
         let stack_var = stack_var.as_str();
 
         let quot_type = self.get_quotation_type(id)?.clone();
-        let fns = self.codegen_quotation(body, &quot_type)?;
+        let fns = self.codegen_quotation(id, body, &quot_type)?;
 
         match quot_type {
             Type::Quotation(_) => {
