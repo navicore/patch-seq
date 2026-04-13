@@ -333,6 +333,10 @@ pub static RUNTIME_DECLARATIONS: LazyLock<Vec<RuntimeDecl>> = LazyLock::new(|| {
             category: None,
         },
         RuntimeDecl {
+            decl: "declare ptr @patch_seq_env_push_value(ptr, ptr, i64, i32)",
+            category: None,
+        },
+        RuntimeDecl {
             decl: "declare %Value @patch_seq_make_closure(i64, ptr)",
             category: None,
         },
