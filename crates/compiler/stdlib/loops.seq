@@ -5,8 +5,9 @@
 #
 # ## Available Words
 #
-# - times:        ( Int [ -- ] -- )         Execute quotation N times
-# - each-integer: ( Int [ Int -- ] -- )     Call quotation with 0, 1, ..., n-1
+# - times:         ( Int [ -- ] -- )              Execute quotation N times
+# - each-integer:  ( Int [ Int -- ] -- )           Call quotation with 0..n-1
+# - integer-fold:  ( Int acc [ acc Int -- acc ] -- acc )  Fold over 0..n-1 with accumulator
 #
 # ## Examples
 #
@@ -15,11 +16,16 @@
 #   5 [ int->string io.write-line ] each-integer
 #   # prints: 0 1 2 3 4
 #
+#   5 0 [ i.+ ] integer-fold
+#   # result: 10 (0+1+2+3+4)
+#
 # ## Notes
 #
 # - Negative or zero counts are no-ops (the base case fires immediately).
 # - TCO is guaranteed — the recursive helpers are self-tail-recursive,
-#   so `1000000 [ ] times` will not stack-overflow.
+#   so `1000000 0 [ i.+ ] integer-fold` will not stack-overflow.
+# - The accumulator for `integer-fold` is currently typed as Int.
+#   This is a stdlib-level limitation, not a language limitation.
 # - `while` is intentionally excluded. It requires row-polymorphic
 #   quotation effects that can't be expressed in stdlib. Use direct
 #   recursion with TCO for while-type loops.
@@ -36,14 +42,52 @@
   over 0 i.<= if
     drop drop                 # base case: drop count and quotation
   else
-    dup call                  # call the quotation (dup preserves it for next iteration)
-    swap 1 i.- swap           # decrement count: ( quot count ) -> ( count-1 quot )
+    dup call                  # call the quotation (dup preserves it)
+    swap 1 i.- swap           # decrement count
     times-loop                # tail recurse
   then
 ;
 
 : times ( Int [ -- ] -- )
   times-loop
+;
+
+# --------------------------------------------------------------------------
+# integer-fold — fold over 0, 1, ..., n-1 with accumulator
+# --------------------------------------------------------------------------
+# Stack layout: ( quot cur lim acc )
+# Base case: cur >= lim -> return acc
+# Recursive case: dup quot, call with (acc, cur), replace acc, increment cur
+
+# Internal recursive helper — use `integer-fold` instead.
+# Stack: ( quot cur lim acc )
+#   pos 3: quot = quotation [ acc idx -- acc' ]
+#   pos 2: cur  = current index (0, 1, 2, ...)
+#   pos 1: lim  = upper bound (exclusive)
+#   pos 0: acc  = accumulator (top of stack)
+: integer-fold-loop ( [ Int Int -- Int ] Int Int Int -- Int )
+  2 pick 2 pick i.>= if
+    # cur >= lim: done. Return acc.
+    nip nip nip               # drop lim, cur, quot; leave acc
+  else
+    # Call quot(acc, cur). Stack: ( quot cur lim acc )
+    dup                       # ( quot cur lim acc acc )
+    3 pick                    # ( quot cur lim acc acc cur )
+    5 pick                    # ( quot cur lim acc acc cur quot )
+    call                      # ( quot cur lim acc acc' )
+    nip                       # ( quot cur lim acc' ) — drop old acc
+    # Increment cur: rot brings cur to top, add 1, rot rot restores layout
+    rot 1 i.+ rot rot         # ( quot cur+1 lim acc' )
+    integer-fold-loop         # tail recurse
+  then
+;
+
+: integer-fold ( Int Int [ Int Int -- Int ] -- Int )
+  # Rearrange: ( lim acc quot ) -> ( quot 0 lim acc )
+  swap rot           # ( quot acc lim )
+  0 swap             # ( quot acc 0 lim )
+  rot                # ( quot 0 lim acc )
+  integer-fold-loop
 ;
 
 # --------------------------------------------------------------------------
@@ -54,7 +98,6 @@
 # Recursive case: call quot with current, increment current, recurse
 
 # Internal recursive helper — use `each-integer` instead.
-# Stack layout: ( current limit quot )
 : ei-loop ( Int Int [ Int -- ] -- )
   2 pick 2 pick i.>= if
     drop drop drop            # base case: current >= limit, drop all three
@@ -63,7 +106,7 @@
     # 2 pick copies current to top, over copies quot, call runs quot(current)
     2 pick over call
     # increment current: rot brings current to top, add 1, rot rot restores layout
-    rot 1 i.+ rot rot         # ( current limit quot ) -> ( current+1 limit quot )
+    rot 1 i.+ rot rot         # ( current+1 limit quot )
     ei-loop                   # tail recurse
   then
 ;

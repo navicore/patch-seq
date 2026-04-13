@@ -56,3 +56,38 @@ include std:loops
   # 100,000 iterations must not stack-overflow
   100000 [ drop ] each-integer
 ;
+
+# --------------------------------------------------------------------------
+# integer-fold ( Int acc [ acc Int -- acc ] -- result )
+# --------------------------------------------------------------------------
+
+: test-integer-fold-sum ( -- )
+  # Sum 0+1+2+3+4 = 10
+  5 0 [ i.+ ] integer-fold
+  10 test.assert-eq
+;
+
+: test-integer-fold-zero ( -- )
+  # Zero iterations returns initial accumulator unchanged
+  0 99 [ drop ] integer-fold
+  99 test.assert-eq
+;
+
+: test-integer-fold-negative ( -- )
+  # Negative limit returns initial accumulator unchanged
+  -5 42 [ drop ] integer-fold
+  42 test.assert-eq
+;
+
+: test-integer-fold-product ( -- )
+  # Factorial 5! = 120 using (idx+1) to avoid multiplying by 0
+  # Body receives ( acc idx ), need acc * (idx + 1)
+  5 1 [ 1 i.+ i.* ] integer-fold
+  120 test.assert-eq
+;
+
+: test-integer-fold-tco-stress ( -- )
+  # 1000 iterations with verifiable result: sum 0..999 = 499500
+  1000 0 [ i.+ ] integer-fold
+  499500 test.assert-eq
+;

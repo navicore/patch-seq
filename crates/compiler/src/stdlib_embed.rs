@@ -58,6 +58,7 @@ mod tests {
         let content = get_stdlib("loops").unwrap();
         assert!(content.contains("times"));
         assert!(content.contains("each-integer"));
+        assert!(content.contains("integer-fold"));
     }
 
     #[test]
