@@ -1,6 +1,7 @@
 # Integration tests for auto-capture in combinator quotations (Issue #395)
 
 include std:list
+include std:map
 
 # --------------------------------------------------------------------------
 # list.fold with one captured value
@@ -67,6 +68,31 @@ include std:list
 # --------------------------------------------------------------------------
 # Horner polynomial evaluation via fold with capture
 # --------------------------------------------------------------------------
+
+# --------------------------------------------------------------------------
+# list.fold with captured Variant (list)
+# --------------------------------------------------------------------------
+
+# --------------------------------------------------------------------------
+# list.fold with captured Map
+# --------------------------------------------------------------------------
+
+: test-fold-capture-map ( -- )
+  # Capture a map into a fold body. For each key in a list, look up the
+  # value in the captured map and sum them.
+  map-of "a" 10 kv "b" 20 kv "c" 30 kv  # map to capture
+  list-of "a" lv "b" lv "c" lv            # keys to fold over
+  0                                        # acc
+  rot                                      # ( keys acc map ) — map on top
+  [
+    # Body: ( acc key map ) — map on top (captured)
+    >aux
+    aux> dup >aux
+    swap map.get drop i.+
+    aux> drop
+  ] list.fold
+  60 test.assert-eq                        # 10 + 20 + 30 = 60
+;
 
 # --------------------------------------------------------------------------
 # list.fold with captured Variant (list)

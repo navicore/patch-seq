@@ -320,7 +320,16 @@ pub unsafe extern "C" fn patch_seq_env_push_value(
     // Clone the value from the environment and push onto the stack.
     // This works for any Value variant (Variant, Map, Symbol, Channel, etc.)
     // The clone is O(1) for Arc-wrapped types (Variant, Map) — just a refcount bump.
+    //
+    // Primitive types (Int, Bool, Float) should use their specialized getters
+    // (env_get_int, etc.) for efficiency. This generic path is for types that
+    // don't have specialized LLVM IR representations.
     let value = unsafe { (*env_data.add(idx)).clone() };
+    debug_assert!(
+        !matches!(value, Value::Int(_) | Value::Bool(_) | Value::Float(_)),
+        "env_push_value called for primitive type {:?} — use the specialized getter",
+        value
+    );
     unsafe { push(stack, value) }
 }
 

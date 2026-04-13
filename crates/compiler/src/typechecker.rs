@@ -1297,15 +1297,14 @@ impl TypeChecker {
         // Perform capture analysis
         let quot_type = self.analyze_captures(&body_effect, &current_stack)?;
 
-        // Record this quotation's type in the type map (for CodeGen to use later)
-        self.quotation_types
-            .borrow_mut()
-            .insert(id, quot_type.clone());
-
         // If this is a closure, we need to pop the captured values from the stack
+        // and correct the capture types from the caller's actual stack.
         let result_stack = match &quot_type {
             Type::Quotation(_) => {
-                // Stateless - no captures, just push quotation onto stack
+                // Stateless - no captures. Record in type map for codegen.
+                self.quotation_types
+                    .borrow_mut()
+                    .insert(id, quot_type.clone());
                 current_stack.push(quot_type)
             }
             Type::Closure {
@@ -1315,11 +1314,15 @@ impl TypeChecker {
                 // The capture COUNT comes from analyze_captures (based on
                 // body vs expected input comparison), but the capture TYPES
                 // come from the caller's stack — not from the body's inference.
-                // This is critical: the body's type variables may have been
-                // unified to Int/Float by the body's operations, even when
-                // the actual stack value is a Variant or other type. Using
-                // the caller's actual types ensures codegen emits the correct
-                // getter for the runtime Value type. (Variant capture fix)
+                //
+                // We intentionally do NOT call unify_types on the popped types.
+                // The body's inference may have constrained a type variable to
+                // Int/Float via its operations (e.g., i.+), even when the actual
+                // stack value is a Variant. unify_types(Var("V$nn"), Int) would
+                // succeed and propagate the wrong type to codegen, which would
+                // then emit env_get_int for a Variant value — a runtime crash.
+                // Using the caller's actual types directly ensures codegen emits
+                // the correct getter for the runtime Value type.
                 let mut stack = current_stack.clone();
                 let mut actual_captures: Vec<Type> = Vec::new();
                 for _ in (0..captures.len()).rev() {
