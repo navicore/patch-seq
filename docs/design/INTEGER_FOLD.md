@@ -75,9 +75,14 @@ auto-captured from the stack above the quotation.
 
 ## Checkpoints
 
-1. `5 0 [ i.+ ] integer-fold` → 10 (0+1+2+3+4)
-2. `0 99 [ drop ] integer-fold` → 99 (no-op, returns initial acc)
-3. Shamir `lagrange-outer-loop` rewritten as `integer-fold`
-4. At least 3 other sss.seq loops rewritten
-5. `just ci` clean
-6. 1,000,000 iterations doesn't stack-overflow (TCO)
+1. `5 0 [ i.+ ] integer-fold` → 10 (0+1+2+3+4) ✓
+2. `0 99 [ drop ] integer-fold` → 99 (no-op, returns initial acc) ✓
+3. `just ci` clean ✓
+4. `1000 0 [ i.+ ] integer-fold` → 499500 (TCO + correctness) ✓
+5. 5! via `5 1 [ 1 i.+ i.* ] integer-fold` → 120 ✓
+
+**Blocked on Variant capture** (codegen enhancement, not this PR):
+
+6. Shamir `lagrange-outer-loop` rewritten as `integer-fold` — needs
+   List auto-capture into the fold quotation
+7. At least 3 other sss.seq loops rewritten — same blocker
