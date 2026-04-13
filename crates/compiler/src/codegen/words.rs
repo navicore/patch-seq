@@ -399,28 +399,18 @@ impl CodeGen {
                 "patch_seq_push_quotation",
                 "i64",
             ),
-            Type::Closure { .. } => {
-                return Err(CodeGenError::Logic(
-                    "Closure captures are not yet supported. \
-                     Closures capturing other closures require additional implementation. \
-                     Supported capture types: Int, Bool, Float, String, Quotation."
-                        .to_string(),
-                ));
-            }
-            Type::Var(name) if name.starts_with("Variant") => {
-                return Err(CodeGenError::Logic(
-                    "Variant captures are not yet supported. \
-                     Capturing Variants in closures requires additional implementation. \
-                     Supported capture types: Int, Bool, Float, String, Quotation."
-                        .to_string(),
-                ));
-            }
+            // All other types (Variant, Map, Union, Symbol, Channel, type
+            // variables that resolved to non-primitive types) use the generic
+            // combined get+push that works for any Value. This avoids passing
+            // Value by value through the FFI boundary.
             _ => {
-                return Err(CodeGenError::Logic(format!(
-                    "Unsupported capture type: {:?}. \
-                     Supported capture types: Int, Bool, Float, String, Quotation.",
-                    capture_type
-                )));
+                let new_stack_var = self.fresh_temp();
+                writeln!(
+                    &mut self.output,
+                    "  %{} = call ptr @patch_seq_env_push_value(ptr %{}, ptr %env_data, i64 %env_len, i32 {})",
+                    new_stack_var, stack_var, index
+                )?;
+                return Ok(new_stack_var);
             }
         };
 

@@ -281,6 +281,49 @@ pub unsafe extern "C" fn patch_seq_env_push_string(
     }
 }
 
+/// Push any value from the closure environment onto the stack.
+///
+/// This is the generic capture-push function for types that don't have
+/// specialized getters (Variant, Map, Union, Symbol, Channel). It clones
+/// the Value from the env and pushes it directly, avoiding passing Value
+/// by value through the FFI boundary (which crashes on Linux for some types).
+///
+/// # Safety
+/// - `stack` must be a valid stack pointer
+/// - `env_data` must be a valid pointer to a Value array
+/// - `env_len` must match the actual array length
+/// - `index` must be in bounds [0, env_len)
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn patch_seq_env_push_value(
+    stack: Stack,
+    env_data: *const Value,
+    env_len: usize,
+    index: i32,
+) -> Stack {
+    if env_data.is_null() {
+        panic!("env_push_value: null environment pointer");
+    }
+
+    if index < 0 {
+        panic!("env_push_value: index cannot be negative: {}", index);
+    }
+
+    let idx = index as usize;
+
+    if idx >= env_len {
+        panic!(
+            "env_push_value: index {} out of bounds for environment of size {}",
+            index, env_len
+        );
+    }
+
+    // Clone the value from the environment and push onto the stack.
+    // This works for any Value variant (Variant, Map, Symbol, Channel, etc.)
+    // The clone is O(1) for Arc-wrapped types (Variant, Map) — just a refcount bump.
+    let value = unsafe { (*env_data.add(idx)).clone() };
+    unsafe { push(stack, value) }
+}
+
 /// Get a Bool value from the closure environment
 ///
 /// Returns i64 (0 for false, 1 for true) to match LLVM IR representation.
@@ -507,6 +550,7 @@ pub use patch_seq_env_get_int as env_get_int;
 pub use patch_seq_env_get_quotation as env_get_quotation;
 pub use patch_seq_env_get_string as env_get_string;
 pub use patch_seq_env_push_string as env_push_string;
+pub use patch_seq_env_push_value as env_push_value;
 pub use patch_seq_env_set as env_set;
 pub use patch_seq_make_closure as make_closure;
 pub use patch_seq_push_closure as push_closure;

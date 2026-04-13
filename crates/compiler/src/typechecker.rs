@@ -1308,26 +1308,41 @@ impl TypeChecker {
                 // Stateless - no captures, just push quotation onto stack
                 current_stack.push(quot_type)
             }
-            Type::Closure { captures, .. } => {
-                // Pop captured values from stack, then push closure.
-                // Captures are bottom-to-top, but we pop top-down from the
-                // stack, so iterate in reverse to match positions correctly.
-                // Verify each popped type unifies with the expected capture
-                // type — this catches type mismatches at the capture site
-                // rather than letting them through to runtime. (Issue #395)
+            Type::Closure {
+                captures, effect, ..
+            } => {
+                // Pop captured values from the caller's stack.
+                // The capture COUNT comes from analyze_captures (based on
+                // body vs expected input comparison), but the capture TYPES
+                // come from the caller's stack — not from the body's inference.
+                // This is critical: the body's type variables may have been
+                // unified to Int/Float by the body's operations, even when
+                // the actual stack value is a Variant or other type. Using
+                // the caller's actual types ensures codegen emits the correct
+                // getter for the runtime Value type. (Variant capture fix)
                 let mut stack = current_stack.clone();
-                for (i, expected_type) in captures.iter().enumerate().rev() {
+                let mut actual_captures: Vec<Type> = Vec::new();
+                for _ in (0..captures.len()).rev() {
                     let (new_stack, actual_type) = self.pop_type(&stack, "closure capture")?;
-                    unify_types(&actual_type, expected_type).map_err(|e| {
-                        format!(
-                            "closure capture type mismatch at capture {} \
-                             (0 = bottommost): expected {}, got {}: {}",
-                            i, expected_type, actual_type, e
-                        )
-                    })?;
+                    actual_captures.push(actual_type);
                     stack = new_stack;
                 }
-                stack.push(quot_type)
+                // actual_captures is in pop order (top-down), reverse to
+                // get bottom-to-top (matching calculate_captures convention)
+                actual_captures.reverse();
+
+                // Rebuild the closure type with the actual capture types
+                let corrected_quot_type = Type::Closure {
+                    effect: effect.clone(),
+                    captures: actual_captures,
+                };
+
+                // Update the type map so codegen sees the corrected types
+                self.quotation_types
+                    .borrow_mut()
+                    .insert(id, corrected_quot_type.clone());
+
+                stack.push(corrected_quot_type)
             }
             _ => unreachable!("analyze_captures only returns Quotation or Closure"),
         };
