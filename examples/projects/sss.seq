@@ -9,21 +9,32 @@
 # has not been audited and should not be used in real applications.
 # Use a vetted SSS library written in a language with mature crypto
 # tooling.
-#
-# Style notes:
-#   - `eval-poly` and `lagrange-basis` use `list.fold` with auto-captured
-#     values (Issue #395) — the idiomatic Seq pattern for reduction with
-#     context.
-#   - Display helpers use `list.each` and `each-integer`.
-#   - Several loops (split-byte, select-shares, reconstruct, collect-ys,
-#     the Lagrange outer sum) still use manual recursion because they need
-#     multiple values in scope simultaneously. Multi-value capture is a
-#     potential future language enhancement.
 # ============================================================================
 #
 # Implements SSS over GF(256), the same finite field used by AES.
 # A secret is split into N shares such that any K can reconstruct it,
 # but K-1 shares reveal absolutely nothing (information-theoretic security).
+#
+# ----------------------------------------------------------------------------
+# Language feature coverage
+# ----------------------------------------------------------------------------
+# Uses auto-captured closures with Variant/Int values to collapse what would
+# otherwise be manual-recursive helpers into concise combinator calls:
+#   - eval-poly, lagrange-basis, lagrange-at-zero — list.fold with Int/Variant
+#     auto-capture
+#   - select-shares, collect-share-ys, reconstruct-bytes — list.fold with
+#     captured Variant
+#   - split-bytes — list.fold with two captured Ints (k, n)
+#   - print-all-shares — each-integer with captured Variant
+#
+# Several loops stay manual-recursive because the language intentionally
+# excludes them from the combinator repertoire:
+#   - gf256-mul-loop, gf256-inv-loop — early-exit Int arithmetic
+#   - make-random-poly-loop, split-byte-loop — accumulator is a List, but
+#     integer-fold's acc is Int-only (stdlib limit, not a language limit)
+#   - str-to-bytes-loop — string.char-at needs a concrete String type at
+#     body-inference time, which captured type variables don't provide
+#   - verify-eq-loop — early-exit on mismatch
 # ============================================================================
 
 include std:list
@@ -32,30 +43,20 @@ include std:loops
 # ============================================================================
 #                       GF(256) Finite Field Arithmetic
 # ============================================================================
-#
-# GF(256) = GF(2)[x] / (x^8 + x^4 + x^3 + x + 1)
-#
-# Each element is a byte (0..255). Addition is XOR. Every nonzero
-# element has a multiplicative inverse — essential for Lagrange interpolation.
 
 : gf256-add ( Int Int -- Int )  bxor ;
 : gf256-sub ( Int Int -- Int )  bxor ;
 
-# Peasant multiplication: shift-and-XOR with polynomial reduction.
-# Stack: ( a b result -- result )
 : gf256-mul-loop ( Int Int Int -- Int )
   over 0 i.= if
     nip nip
   else
-    # If low bit of b is set, XOR a into result
     over 1 band 0 i.<> if
       >aux over aux> bxor
     then
-    # Shift a left; reduce if it overflows a byte
     rot 1 shl
     dup 0x100 band 0 i.<> if 0x11B bxor then
     rot rot
-    # Shift b right
     swap 1 shr swap
     gf256-mul-loop
   then
@@ -63,21 +64,6 @@ include std:loops
 
 : gf256-mul ( Int Int -- Int )  0 gf256-mul-loop ;
 
-# Inverse via Fermat: a^(-1) = a^254 in GF(256).
-# The multiplicative group has order 255, so a^255 = 1, hence a^254 = a^(-1).
-#
-# The loop body is `result = result² × a`, starting with result = a.
-# After n iterations the exponent is (2^(n+1) - 1):
-#   iter 0: a → a² × a = a^3       (exponent 2^1 + 1 = 3)
-#   iter 1: a^3 → a^6 × a = a^7    (exponent 2^2 + 3 = 7)
-#   ...
-#   iter 5: a^63 → a^126 × a = a^127
-# Then the final square in gf256-inv gives a^254.
-#
-# Precondition: a must be nonzero. gf256-inv(0) silently returns 0,
-# which would produce garbage in Lagrange interpolation. This can only
-# happen if two shares have the same x-coordinate (a bug in split).
-# Stack: ( a result count -- result )
 : gf256-inv-loop ( Int Int Int -- Int )
   dup 0 i.<= if
     drop nip
@@ -100,39 +86,20 @@ include std:loops
 # ============================================================================
 #                         Polynomial Evaluation
 # ============================================================================
-# Horner's method: p(x) = c0 + x*(c1 + x*(c2 + ...))
-#
-# Coefficients are stored low-to-high [c0, c1, ...], so we reverse for
-# Horner left-to-right processing. The evaluation point `x` is auto-captured
-# into the fold quotation, and aux stashes it during each step.
+# Horner's method via list.fold with auto-captured evaluation point.
 
 : eval-poly ( List Int -- Int )
-  swap list.reverse swap        # ( reversed_coeffs x )
-  >aux                          # stash x in word-level aux
-  0                             # initial accumulator
-  aux>                          # retrieve x: ( reversed_coeffs 0 x )
+  swap list.reverse swap
+  >aux 0 aux>
   [
-    # Fold body: ( acc coeff x ) — x on top (auto-captured)
-    >aux                        # stash x in quotation-level aux
-    swap                        # ( coeff acc )
-    aux> gf256-mul              # ( coeff acc*x )
-    gf256-add                   # ( coeff + acc*x )
+    >aux swap aux> gf256-mul gf256-add
   ] list.fold
 ;
 
 # ============================================================================
 #                      Random Polynomial Generation
 # ============================================================================
-#
-# The polynomial has the form p(x) = secret + c1*x + c2*x^2 + ... + c_{k-1}*x^{k-1}
-# with secret as the constant term. The leading coefficient c_{k-1} MUST be
-# nonzero — otherwise the effective polynomial degree drops below k-1, which
-# means fewer than k shares would suffice to reconstruct the secret. For k=2
-# specifically, a zero leading coefficient would make every share equal the
-# secret. Middle coefficients (c1..c_{k-2}) can be anything including zero.
 
-# Generate `remaining` random bytes from [0, 256) and append to coeffs.
-# Stack: ( coeffs remaining -- coeffs' )
 : make-random-poly-loop ( List Int -- List )
   dup 0 i.<= if
     drop
@@ -143,17 +110,14 @@ include std:loops
   then
 ;
 
-# Build a degree-(k-1) polynomial with `secret_byte` as the constant term.
-# Stack: ( secret_byte k -- coeffs )
 : make-random-poly ( Int Int -- List )
-  swap list-of swap lv          # [secret_byte]
-  swap                           # [secret_byte] k
+  swap list-of swap lv
+  swap
   dup 1 i.<= if
-    drop                         # k=1: just [secret_byte], no randomization
+    drop
   else
-    2 i.-                        # k-2 middle coefficients (may be zero)
+    2 i.-
     make-random-poly-loop
-    # Leading coefficient sampled from [1, 256) — must be nonzero.
     1 256 crypto.random-int lv
   then
 ;
@@ -161,9 +125,7 @@ include std:loops
 # ============================================================================
 #                        Splitting (Single Byte)
 # ============================================================================
-# Each point is packed as (x << 8) | y.
 
-# Stack: ( coeffs n x points -- points' )
 : split-byte-loop ( List Int Int List -- List )
   over 3 pick i.> if
     nip nip nip
@@ -184,90 +146,67 @@ include std:loops
 # ============================================================================
 #                       Lagrange Interpolation
 # ============================================================================
-# p(0) = sum_i  y_i * L_i(0)
-# L_i(0) = product_{j!=i}  x_j / (x_i XOR x_j)
-#
-# The basis product fold uses auto-capture: x_i is captured into the fold
-# quotation, eliminating the old bit-packing workaround.
 
-# Fold step for basis product.
-# Stack: ( acc x_j x_i ) — x_i on top (auto-captured)
+# Basis product fold step — x_i auto-captured.
 : lagrange-basis-fold-step ( Int Int Int -- Int )
-  >aux                            # stash x_i, stack: ( acc x_j )
-  dup aux> dup >aux               # ( acc x_j x_i x_i ) ... peek x_i
+  >aux
+  dup aux> dup >aux
   i.= if
-    drop                          # skip j == i: ( acc )
+    drop
   else
-    dup                           # ( acc x_j x_j )
-    aux> dup >aux                 # ( acc x_j x_j x_i )
-    bxor                          # ( acc x_j denom ) where denom = x_j XOR x_i
-    gf256-div                     # ( acc x_j/denom )
-    gf256-mul                     # ( acc * x_j/denom )
+    dup
+    aux> dup >aux
+    bxor
+    gf256-div
+    gf256-mul
   then
-  aux> drop                       # clean up stashed x_i
+  aux> drop
 ;
 
 : lagrange-basis ( List Int -- Int )
-  swap                            # ( x_i xs )
-  1                               # initial basis = 1
-  rot                             # ( xs 1 x_i )
+  swap 1 rot
   [ lagrange-basis-fold-step ] list.fold
 ;
 
-# Outer loop: sum y_i * L_i(0).
-# Needs xs and ys lists simultaneously — manual recursion required.
-# Stack: ( xs ys sum idx -- result )
-: lagrange-outer-loop ( List List Int Int -- Int )
-  2 pick list.length over i.<= if
-    drop nip nip
-  else
-    2 pick over list.get drop
-    4 pick 2 pick list.get drop
-    5 pick swap lagrange-basis
-    gf256-mul
-    rot gf256-add swap
-    1 i.+ lagrange-outer-loop
-  then
-;
-
+# Sum over points of y_i * basis_i(0), capturing xs for basis calculation.
+# Points encode (x << 8) | y, so unpack inside the fold body.
 : lagrange-at-zero ( List -- Int )
-  dup [ 8 shr ] list.map
-  swap [ 0xff band ] list.map
-  0 0 lagrange-outer-loop
+  dup [ 8 shr ] list.map         # ( points xs ) — xs on top
+  0 swap                          # ( points 0 xs ) — xs captured on top
+  [
+    # Body: ( acc point xs ) — xs on top (auto-captured)
+    >aux                          # stash xs
+    dup 8 shr                     # ( acc point x )
+    swap 0xff band                # ( acc x y )
+    aux> dup >aux                 # ( acc x y xs ) — keep copy in aux
+    rot                           # ( acc y xs x )
+    lagrange-basis                # ( acc y basis )
+    gf256-mul                     # ( acc y*basis )
+    gf256-add                     # ( acc' )
+    aux> drop                     # drop stashed xs
+  ] list.fold
 ;
 
 # ============================================================================
 #                          Select Shares
 # ============================================================================
-# Pick specific shares from a points list by index.
-# Needs points and indices lists simultaneously — manual recursion.
-# Stack: ( points indices idx result -- result )
-: select-loop ( List List Int List -- List )
-  over 3 pick list.length i.>= if
-    nip nip nip
-  else
-    2 pick 2 pick list.get drop
-    4 pick swap list.get drop
-    lv
-    swap 1 i.+ swap
-    select-loop
-  then
-;
+# list.fold over indices, capturing points.
 
 : select-shares ( List List -- List )
-  0 list-of select-loop
+  swap list-of swap
+  [
+    >aux
+    aux> dup >aux
+    swap list.get drop
+    lv
+    aux> drop
+  ] list.fold
 ;
 
 # ============================================================================
 #                      Multi-Byte Split / Reconstruct
 # ============================================================================
-# Strategy: split each byte of the secret independently.
-# split-bytes returns a list of point-lists (one per byte position).
-# To reconstruct, select the same share indices from each byte's list
-# and interpolate each one.
 
-# Convert string to list of byte values (ASCII codepoints).
-# Stack: ( str idx result -- result )
 : str-to-bytes-loop ( String Int List -- List )
   over 3 pick string.length i.>= if
     nip nip
@@ -283,60 +222,44 @@ include std:loops
   0 list-of str-to-bytes-loop
 ;
 
-# Split all bytes into per-byte point lists.
-# Stack: ( bytes k n idx result -- result )
-: split-bytes-loop ( List Int Int Int List -- List )
-  1 pick 5 pick list.length i.>= if
-    nip nip nip nip
-  else
-    4 pick 2 pick list.get drop
-    4 pick 4 pick split-byte
-    lv
-    swap 1 i.+ swap
-    split-bytes-loop
-  then
-;
-
+# Fold over bytes, capturing k and n. Body calls split-byte on each byte.
 : split-bytes ( List Int Int -- List )
-  0 list-of split-bytes-loop
+  # ( bytes k n ) -> ( bytes [] k n ) so k,n are captured above acc.
+  # Captures appear in the body in reverse order, so body sees ( acc byte n k ).
+  list-of rot rot
+  [
+    # Body: ( acc byte n k ) — k on top (last-captured).
+    swap split-byte lv   # reorder to ( byte k n ) for split-byte
+  ] list.fold
 ;
 
-# Reconstruct all bytes from per-byte point lists.
-# Stack: ( all_points indices idx result -- result )
-: reconstruct-loop ( List List Int List -- List )
-  1 pick 4 pick list.length i.>= if
-    nip nip nip
-  else
-    3 pick 2 pick list.get drop
-    3 pick select-shares
-    lagrange-at-zero
-    lv
-    swap 1 i.+ swap
-    reconstruct-loop
-  then
-;
-
+# Reconstruct via list.fold over all_points, capturing share-indices.
+# Stack setup: ( all_points share_indices ) -> ( all_points [] share_indices )
+# so fold iterates over all_points and auto-captures share_indices on top.
 : reconstruct-bytes ( List List -- List )
-  0 list-of reconstruct-loop
+  list-of swap
+  [
+    # Body: ( acc byte_points share_indices ) — share_indices on top (captured)
+    >aux              # stash share_indices
+    aux> dup >aux     # restore + keep copy in aux
+    select-shares     # ( acc selected )
+    lagrange-at-zero  # ( acc recovered-byte )
+    lv                # append to acc
+    aux> drop         # drop the stashed copy
+  ] list.fold
 ;
 
-# Collect y-values for one share across all bytes.
-# Stack: ( all_points share_idx byte_idx result -- result )
-: collect-ys-loop ( List Int Int List -- List )
-  1 pick 4 pick list.length i.>= if
-    nip nip nip
-  else
-    3 pick 2 pick list.get drop
-    3 pick list.get drop
+# Collect y-values via list.fold over all_points, capturing share_idx.
+: collect-share-ys ( List Int -- List )
+  list-of swap
+  [
+    >aux
+    aux> dup >aux
+    list.get drop
     0xff band
     lv
-    swap 1 i.+ swap
-    collect-ys-loop
-  then
-;
-
-: collect-share-ys ( List Int -- List )
-  0 list-of collect-ys-loop
+    aux> drop
+  ] list.fold
 ;
 
 # ============================================================================
@@ -358,50 +281,22 @@ include std:loops
   [ print-point ] list.each
 ;
 
-# Print comma-separated list of ints.
-# Uses manual recursion because the comma-before-all-but-first pattern
-# needs both the list and an index, and the index-conditional logic
-# makes each-integer awkward here.
-: print-ints-loop ( List Int -- )
-  over list.length over i.<= if
-    drop drop
-  else
-    dup 0 i.> if ", " io.write then
-    over over list.get drop int->string io.write
-    1 i.+ print-ints-loop
-  then
-;
-
-: print-ints ( List -- )
-  dup 0 print-ints-loop drop
-;
-
-# Print one share's y-values across all bytes.
 : print-share ( List Int -- )
   dup 1 i.+ int->string "  Share " swap string.concat ": [" string.concat io.write
   collect-share-ys
-  print-ints
+  [ int->string ] list.map ", " string.join io.write
   "]" io.write-line
 ;
 
-# Print all n shares.
-# Stack: ( all_points n share_idx -- )
-: print-all-shares-loop ( List Int Int -- )
-  2dup i.<= if
-    drop drop drop
-  else
-    2 pick over print-share
-    1 i.+ print-all-shares-loop
-  then
-;
-
+# Iterate 0..n-1 via each-integer, capturing all_points as closure state.
 : print-all-shares ( List Int -- )
-  0 print-all-shares-loop
+  swap                               # ( n all_points )
+  [
+    # Body: ( idx all_points ) — all_points on top (auto-captured)
+    swap print-share
+  ] each-integer
 ;
 
-# Element-wise list equality check.
-# Precondition: actual.length >= expected.length.
-# Stack: ( actual expected idx -- bool )
 : verify-eq-loop ( List List Int -- Bool )
   1 pick list.length over i.<= if
     drop drop drop true
@@ -428,14 +323,12 @@ include std:loops
   42 dup int->string "Secret byte: " show
   "" io.write-line
 
-  # Split 42 into 5 shares, threshold 3
   3 5 split-byte
 
   "Split into 5 shares (3-of-5 scheme):" io.write-line
   dup print-points
   "" io.write-line
 
-  # Reconstruct with indices 0, 2, 4 (shares x=1, x=3, x=5)
   "Reconstructing from shares x=1, x=3, x=5..." io.write-line
   dup list-of 0 lv 2 lv 4 lv select-shares
   lagrange-at-zero
@@ -447,7 +340,6 @@ include std:loops
   then
   "" io.write-line
 
-  # Different subset: indices 1, 3, 4 (shares x=2, x=4, x=5)
   "Reconstructing from shares x=2, x=4, x=5..." io.write-line
   dup list-of 1 lv 3 lv 4 lv select-shares
   lagrange-at-zero
@@ -459,7 +351,6 @@ include std:loops
   then
   "" io.write-line
 
-  # Too few shares
   "With only 2 shares (below threshold of 3):" io.write-line
   list-of 0 lv 1 lv select-shares
   lagrange-at-zero
@@ -467,7 +358,6 @@ include std:loops
   "This is garbage — 2 shares reveal nothing!" io.write-line
   "" io.write-line
 
-  # ---- Multi-byte demo ----
   "--- Multi-Byte Demo ---" io.write-line
   "Secret: \"Hello\"" io.write-line
   "Hello" str-to-bytes
@@ -475,20 +365,17 @@ include std:loops
   "]" io.write-line
   "" io.write-line
 
-  # Split each byte: 3-of-5 scheme
   3 5 split-bytes
   "Each byte split into 5 shares (3-of-5):" io.write-line
   dup 5 print-all-shares
   "" io.write-line
 
-  # Reconstruct with shares 0, 2, 4 (shares 1, 3, 5)
   "Reconstructing from shares 1, 3, 5..." io.write-line
   dup list-of 0 lv 2 lv 4 lv reconstruct-bytes
   "Recovered: [" io.write
   dup [ int->string ] list.map ", " string.join io.write
   "]" io.write-line
 
-  # Verify element-wise: should be [72, 101, 108, 108, 111]
   list-of 72 lv 101 lv 108 lv 108 lv 111 lv
   0 verify-eq-loop
   if
@@ -496,7 +383,7 @@ include std:loops
   else
     "MISMATCH!" io.write-line
   then
-  drop   # drop the all_points list
+  drop
   "" io.write-line
 
   "=== Hardware Sled Analogy ===" io.write-line
