@@ -39,7 +39,7 @@ use aes_gcm::{
 use base64::{Engine, engine::general_purpose::STANDARD};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use hmac::{Hmac, Mac};
-use rand::thread_rng;
+use rand::{RngCore, rng};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
@@ -176,7 +176,7 @@ pub unsafe extern "C" fn patch_seq_random_bytes(stack: Stack) -> Stack {
             }
 
             let mut bytes = vec![0u8; n as usize];
-            thread_rng().fill_bytes(&mut bytes);
+            rng().fill_bytes(&mut bytes);
             let hex_str = hex::encode(&bytes);
             unsafe { push(stack, Value::String(global_string(hex_str))) }
         }
@@ -256,7 +256,7 @@ fn random_int_range(min: i64, max: i64) -> i64 {
     loop {
         // Generate random u64 using fill_bytes (same CSPRNG as random_bytes)
         let mut bytes = [0u8; 8];
-        thread_rng().fill_bytes(&mut bytes);
+        rng().fill_bytes(&mut bytes);
         let val = u64::from_le_bytes(bytes);
 
         if val < threshold {
