@@ -55,6 +55,18 @@ pub struct Parser {
     known_unions: std::collections::HashSet<String>,
 }
 
+/// Prepend "at line N: " to a parser error so the LSP can surface it at the
+/// correct source line. If the message already starts with "at line " (from a
+/// nested sub-parser that annotated with more specific info) we leave it as-is
+/// to avoid double-wrapping.
+fn annotate_error_with_line(msg: String, tok: Option<&Token>) -> String {
+    if msg.starts_with("at line ") {
+        return msg;
+    }
+    let line = tok.map(|t| t.line).unwrap_or(0);
+    format!("at line {}: {}", line + 1, msg)
+}
+
 impl Parser {
     pub fn new(source: &str) -> Self {
         let tokens = tokenize(source);
@@ -93,22 +105,26 @@ impl Parser {
                 break;
             }
 
-            // Check for include statement
-            if self.check("include") {
-                let include = self.parse_include()?;
-                program.includes.push(include);
-                continue;
-            }
+            // Dispatch to the appropriate sub-parser. If the sub-parser returns
+            // an error, annotate it with the current token's line so the LSP
+            // can surface the diagnostic at the offending location rather than
+            // defaulting to line 1.
+            let result = if self.check("include") {
+                self.parse_include().map(|inc| program.includes.push(inc))
+            } else if self.check("union") {
+                self.parse_union_def().map(|u| program.unions.push(u))
+            } else {
+                self.parse_word_def().map(|w| program.words.push(w))
+            };
 
-            // Check for union definition
-            if self.check("union") {
-                let union_def = self.parse_union_def()?;
-                program.unions.push(union_def);
-                continue;
+            if let Err(msg) = result {
+                // Prefer the token we were looking at when the error fired.
+                // If we were already at EOF, fall back to the final token's line
+                // so the diagnostic lands near the unterminated construct
+                // instead of on line 1.
+                let loc_token = self.current_token().or_else(|| self.tokens.last());
+                return Err(annotate_error_with_line(msg, loc_token));
             }
-
-            let word = self.parse_word_def()?;
-            program.words.push(word);
         }
 
         Ok(program)
