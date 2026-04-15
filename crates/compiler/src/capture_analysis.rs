@@ -34,16 +34,20 @@ use crate::types::{Effect, StackType, Type};
 ///
 /// # Capture Ordering
 ///
-/// Captures are returned bottom-to-top (deepest value first).
-/// This matches how `push_closure` pops from the stack:
+/// Captures are returned bottom-to-top (deepest value first), matching the
+/// runtime's env layout and the order the closure body pushes them:
 ///
 /// ```text
 /// Stack at creation: ( ...rest bottom top )
-/// push_closure pops top-down: pop top, pop bottom
-/// Stores as: env[0]=top, env[1]=bottom (reversed)
-/// Closure function pushes: push env[0], push env[1]
-/// Result: bottom is deeper, top is shallower (correct order)
+/// push_closure pops top-down, then reverses:
+///   env[0] = bottom (caller's deepest capture)
+///   env[N-1] = top   (caller's shallowest capture)
+/// Closure function pushes env[0], env[1], ..., env[N-1] in order, so
+/// the body stack looks like ( ...rest bottom top ) — identical to the
+/// caller's visual order.
 /// ```
+///
+/// Single captures are unaffected (a one-element vector reversed is itself).
 ///
 /// # Errors
 ///

@@ -225,11 +225,12 @@ include std:loops
 # Fold over bytes, capturing k and n. Body calls split-byte on each byte.
 : split-bytes ( List Int Int -- List )
   # ( bytes k n ) -> ( bytes [] k n ) so k,n are captured above acc.
-  # Captures appear in the body in reverse order, so body sees ( acc byte n k ).
+  # Captures preserve caller order, so the body sees ( acc byte k n ) —
+  # already in the order split-byte expects.
   list-of rot rot
   [
-    # Body: ( acc byte n k ) — k on top (last-captured).
-    swap split-byte lv   # reorder to ( byte k n ) for split-byte
+    # Body: ( acc byte k n ) — already in split-byte's argument order.
+    split-byte lv
   ] list.fold
 ;
 

@@ -119,6 +119,52 @@ include std:map
 # Horner polynomial evaluation via fold with capture
 # --------------------------------------------------------------------------
 
+# --------------------------------------------------------------------------
+# Multi-value capture ordering
+# --------------------------------------------------------------------------
+
+# Captures should appear in the body's stack in the SAME order as on the
+# caller's stack: whatever was pushed last before the quotation should be on
+# top inside the body. Older releases reversed the order — these tests pin
+# the corrected semantics.
+
+: test-fold-capture-two-ints ( -- )
+  # Caller pushes cap_below (1) then cap_top (2). Body should see 2 on top.
+  # Position-encode by computing cap_below*10 + cap_top each iteration.
+  list-of 10 lv 20 lv 30 lv   # 3 elements to fold over (values ignored)
+  0                            # acc
+  1                            # cap_below (deeper capture)
+  2                            # cap_top  (shallower capture, on top)
+  [
+    # Body: ( acc elem cap_below cap_top ) — cap_top on top
+    swap 10 i.* i.+             # cap_below*10 + cap_top = 12 if correct
+    nip                         # drop elem, keep position-encoded value
+    i.+                         # accumulate
+  ] list.fold
+  36 test.assert-eq             # 12 * 3 iterations = 36 when order is correct
+;
+
+: test-fold-capture-int-and-variant ( -- )
+  # Heterogeneous captures: a list (Variant) captured below, an Int captured
+  # on top. Body uses the Int to index into the list. If capture order were
+  # broken, the Int and list would swap positions — `list.get` on an Int
+  # would crash or return garbage.
+  list-of 0 lv 1 lv 2 lv              # 3 elements to fold over (values ignored)
+  0                                    # acc
+  list-of 100 lv 200 lv 300 lv         # list capture (deeper)
+  1                                     # int capture (on top, used as index)
+  [
+    # Body: ( acc elem list_cap int_cap ) — int_cap on top
+    >aux                                # stash int_cap
+    aux> dup >aux                       # ( acc elem list_cap int_cap )
+    list.get drop                       # list_cap[int_cap] = 200
+    nip                                 # drop elem
+    i.+                                 # acc += 200
+    aux> drop                           # drop stashed int_cap
+  ] list.fold
+  600 test.assert-eq                    # 200 * 3 iterations = 600
+;
+
 : test-horner-poly ( -- )
   # Tests the auto-capture mechanism with a Horner-style fold using regular
   # integer arithmetic. The actual `eval-poly` word in sss.seq uses GF(256)
