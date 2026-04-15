@@ -17,10 +17,11 @@
 //! - **Float** (via `env_get_float`) - returns f64
 //! - **String** (via `env_get_string`)
 //! - **Quotation** (via `env_get_quotation`) - returns function pointer as i64
+//! - **Variant / Map and other heterogeneous values** (via the generic
+//!   `env_push_value` path) - shipped in PR #402.
 //!
-//! Types to be added in future PR:
+//! Types still to be added:
 //! - Closure (nested closures with their own environments)
-//! - Variant (tagged unions)
 //!
 //! See <https://github.com/navicore/patch-seq> for roadmap.
 
@@ -504,11 +505,11 @@ pub unsafe extern "C" fn patch_seq_make_closure(fn_ptr: u64, env: *mut [Value]) 
 
 /// Create closure from function pointer and stack values (all-in-one helper)
 ///
-/// Pops `capture_count` values from stack (top-down order), creates environment,
-/// makes closure, and pushes it onto the stack.
-///
-/// This is a convenience function for LLVM codegen that handles the entire
-/// closure creation process in one call. Uses Arc for TCO support.
+/// Pops `capture_count` values from stack and creates a closure environment
+/// indexed bottom-to-top: env[0] is the caller's deepest capture,
+/// env[N-1] is the caller's shallowest (the value that was on top just
+/// before this call). This matches the typechecker's capture-type vector
+/// and preserves the caller's visual stack order inside the closure body.
 ///
 /// # Safety
 /// - fn_ptr must be a valid function pointer
@@ -532,13 +533,17 @@ pub unsafe extern "C" fn patch_seq_push_closure(
 
     let count = capture_count as usize;
 
-    // Pop values from stack (captures are in top-down order)
+    // Pop values from stack top-down, then reverse so env is bottom-to-top.
+    // Index 0 corresponds to the deepest caller capture; the codegen pushes
+    // env[0..N-1] in order at closure entry, leaving the caller's shallowest
+    // capture on top of the body's stack — matching the caller's visual order.
     let mut captures: Vec<Value> = Vec::with_capacity(count);
     for _ in 0..count {
         let (new_stack, value) = unsafe { pop(stack) };
         captures.push(value);
         stack = new_stack;
     }
+    captures.reverse();
 
     // Create closure value with Arc for TCO support
     let closure = Value::Closure {
@@ -649,13 +654,17 @@ mod tests {
         // Pop the closure
         let (_stack, closure_value) = unsafe { pop(stack) };
 
-        // Verify it's a closure with correct captures
+        // Verify it's a closure with correct captures.
+        // Env is stored bottom-to-top: env[0] is the caller's deepest capture
+        // (pushed first — Int(10)), env[N-1] is the shallowest (Int(5)).
+        // This matches the typechecker's capture-type ordering and preserves
+        // the caller's visual stack order inside the closure body.
         match closure_value {
             Value::Closure { fn_ptr: fp, env } => {
                 assert_eq!(fp, fn_ptr as usize);
                 assert_eq!(env.len(), 2);
-                assert_eq!(env[0], Value::Int(5)); // Top of stack
-                assert_eq!(env[1], Value::Int(10)); // Second from top
+                assert_eq!(env[0], Value::Int(10)); // deepest caller capture
+                assert_eq!(env[1], Value::Int(5)); // shallowest (was on top)
             }
             _ => panic!("Expected Closure value, got {:?}", closure_value),
         }
