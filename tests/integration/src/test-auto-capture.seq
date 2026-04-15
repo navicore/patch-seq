@@ -144,6 +144,30 @@ include std:map
   36 test.assert-eq             # 12 * 3 iterations = 36 when order is correct
 ;
 
+: test-fold-capture-three-ints ( -- )
+  # Three captures: cap_a (deepest) = 1, cap_b = 2, cap_c (top) = 3.
+  # Position-encode as cap_a*100 + cap_b*10 + cap_c so the result depends
+  # on the exact permutation — not just a full reversal. Correct order
+  # yields 123 per iteration; any other permutation of (1,2,3) yields a
+  # different 3-digit integer (132, 213, 231, 312, 321).
+  list-of 10 lv 20 lv 30 lv 40 lv   # 4 elements to fold over (values ignored)
+  0                                   # acc
+  1                                   # cap_a (deepest)
+  2                                   # cap_b
+  3                                   # cap_c (on top)
+  [
+    # Body: ( acc elem cap_a cap_b cap_c ) — cap_c on top.
+    >aux                              # ( acc elem cap_a cap_b ) aux=[cap_c]
+    10 i.*                            # ( acc elem cap_a cap_b*10 )
+    swap 100 i.*                      # ( acc elem cap_b*10 cap_a*100 )
+    i.+                               # ( acc elem cap_a*100+cap_b*10 )
+    aux> i.+                          # ( acc elem total )
+    nip                               # ( acc total )
+    i.+                               # ( acc+total )
+  ] list.fold
+  492 test.assert-eq                  # 123 * 4 iterations = 492
+;
+
 : test-fold-capture-int-and-variant ( -- )
   # Heterogeneous captures: a list (Variant) captured below, an Int captured
   # on top. Body uses the Int to index into the list. If capture order were
@@ -156,7 +180,7 @@ include std:map
   [
     # Body: ( acc elem list_cap int_cap ) — int_cap on top
     >aux                                # stash int_cap
-    aux> dup >aux                       # ( acc elem list_cap int_cap )
+    aux> dup >aux                       # peek: restore int_cap, keep copy in aux
     list.get drop                       # list_cap[int_cap] = 200
     nip                                 # drop elem
     i.+                                 # acc += 200

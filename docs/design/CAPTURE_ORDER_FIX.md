@@ -71,8 +71,8 @@ line of runtime + a deleted comment:
 - *Latent type/value index mismatch* for mixed-type multi-captures — the
   crash that hasn't happened yet because nobody's mixed types in a
   multi-capture.
-- *"Captures arrive reversed" mental-model rule* — deleted from
-  `feedback_capture_order` memory.
+- *"Captures arrive reversed" mental-model rule* — removed from docs and
+  migration notes; `MIGRATION_5.5.md` replaces it.
 
 ## Checkpoints
 
@@ -91,10 +91,8 @@ line of runtime + a deleted comment:
    `split-byte` argument order goes away; body becomes just
    `split-byte lv`. Output matches.
 6. **`just ci` clean.**
-7. **Memory updated:** delete or rewrite
-   `memory/feedback_capture_order.md` — rule no longer applies.
-8. **Migration note:** `MIGRATION_5.5.md` with a one-paragraph description
-   and a `sed`-style before/after for the common case.
+7. **Migration note:** `MIGRATION_5.5.md` with a one-paragraph description
+   and a before/after snippet for the common case.
 
 ## Implementation Order
 

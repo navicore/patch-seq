@@ -17,10 +17,11 @@
 //! - **Float** (via `env_get_float`) - returns f64
 //! - **String** (via `env_get_string`)
 //! - **Quotation** (via `env_get_quotation`) - returns function pointer as i64
+//! - **Variant / Map and other heterogeneous values** (via the generic
+//!   `env_push_value` path) - shipped in PR #402.
 //!
-//! Types to be added in future PR:
+//! Types still to be added:
 //! - Closure (nested closures with their own environments)
-//! - Variant (tagged unions)
 //!
 //! See <https://github.com/navicore/patch-seq> for roadmap.
 
