@@ -96,9 +96,7 @@ pub unsafe extern "C" fn patch_seq_f_divide(stack: Stack) -> Stack {
 pub unsafe extern "C" fn patch_seq_f_eq(stack: Stack) -> Stack {
     let (rest, a, b) = unsafe { pop_two(stack, "f.=") };
     match (a, b) {
-        (Value::Float(x), Value::Float(y)) => unsafe {
-            push(rest, Value::Bool(x == y))
-        },
+        (Value::Float(x), Value::Float(y)) => unsafe { push(rest, Value::Bool(x == y)) },
         _ => panic!("f.=: expected two Floats on stack"),
     }
 }
@@ -111,9 +109,7 @@ pub unsafe extern "C" fn patch_seq_f_eq(stack: Stack) -> Stack {
 pub unsafe extern "C" fn patch_seq_f_lt(stack: Stack) -> Stack {
     let (rest, a, b) = unsafe { pop_two(stack, "f.<") };
     match (a, b) {
-        (Value::Float(x), Value::Float(y)) => unsafe {
-            push(rest, Value::Bool(x < y))
-        },
+        (Value::Float(x), Value::Float(y)) => unsafe { push(rest, Value::Bool(x < y)) },
         _ => panic!("f.<: expected two Floats on stack"),
     }
 }
@@ -126,9 +122,7 @@ pub unsafe extern "C" fn patch_seq_f_lt(stack: Stack) -> Stack {
 pub unsafe extern "C" fn patch_seq_f_gt(stack: Stack) -> Stack {
     let (rest, a, b) = unsafe { pop_two(stack, "f.>") };
     match (a, b) {
-        (Value::Float(x), Value::Float(y)) => unsafe {
-            push(rest, Value::Bool(x > y))
-        },
+        (Value::Float(x), Value::Float(y)) => unsafe { push(rest, Value::Bool(x > y)) },
         _ => panic!("f.>: expected two Floats on stack"),
     }
 }
@@ -141,9 +135,7 @@ pub unsafe extern "C" fn patch_seq_f_gt(stack: Stack) -> Stack {
 pub unsafe extern "C" fn patch_seq_f_lte(stack: Stack) -> Stack {
     let (rest, a, b) = unsafe { pop_two(stack, "f.<=") };
     match (a, b) {
-        (Value::Float(x), Value::Float(y)) => unsafe {
-            push(rest, Value::Bool(x <= y))
-        },
+        (Value::Float(x), Value::Float(y)) => unsafe { push(rest, Value::Bool(x <= y)) },
         _ => panic!("f.<=: expected two Floats on stack"),
     }
 }
@@ -156,9 +148,7 @@ pub unsafe extern "C" fn patch_seq_f_lte(stack: Stack) -> Stack {
 pub unsafe extern "C" fn patch_seq_f_gte(stack: Stack) -> Stack {
     let (rest, a, b) = unsafe { pop_two(stack, "f.>=") };
     match (a, b) {
-        (Value::Float(x), Value::Float(y)) => unsafe {
-            push(rest, Value::Bool(x >= y))
-        },
+        (Value::Float(x), Value::Float(y)) => unsafe { push(rest, Value::Bool(x >= y)) },
         _ => panic!("f.>=: expected two Floats on stack"),
     }
 }
@@ -171,9 +161,7 @@ pub unsafe extern "C" fn patch_seq_f_gte(stack: Stack) -> Stack {
 pub unsafe extern "C" fn patch_seq_f_neq(stack: Stack) -> Stack {
     let (rest, a, b) = unsafe { pop_two(stack, "f.<>") };
     match (a, b) {
-        (Value::Float(x), Value::Float(y)) => unsafe {
-            push(rest, Value::Bool(x != y))
-        },
+        (Value::Float(x), Value::Float(y)) => unsafe { push(rest, Value::Bool(x != y)) },
         _ => panic!("f.<>: expected two Floats on stack"),
     }
 }
