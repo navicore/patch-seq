@@ -48,7 +48,7 @@ impl CodeGen {
         )
     }
 
-    /// Generate LLVM IR for entire program with custom configuration
+    /// Generate LLVM IR for entire program with custom configuration.
     ///
     /// This allows external projects to extend the compiler with additional
     /// builtins that will be declared and callable from Seq code.
@@ -59,89 +59,20 @@ impl CodeGen {
         statement_types: HashMap<(String, usize), Type>,
         config: &CompilerConfig,
     ) -> Result<String, CodeGenError> {
-        // Store type map for use during code generation
-        self.type_map = type_map;
-        self.statement_types = statement_types;
-        // resolved_sugar is set separately via set_resolved_sugar()
+        self.prepare_program_state(program, type_map, statement_types, config)?;
+        self.generate_words_and_main(program)?;
 
-        // Store union definitions for pattern matching
-        self.unions = program.unions.clone();
-
-        // Build external builtins map from config
-        self.external_builtins = config
-            .external_builtins
-            .iter()
-            .map(|b| (b.seq_name.clone(), b.symbol.clone()))
-            .collect();
-
-        // Flow instrumentation config
-        self.instrument = config.instrument;
-        if self.instrument {
-            for (id, word) in program.words.iter().enumerate() {
-                self.word_instrument_ids.insert(word.name.clone(), id);
-            }
-        }
-
-        // Verify we have a main word and detect its return shape (Issue #355)
-        let main_word = program
-            .find_word("main")
-            .ok_or_else(|| CodeGenError::Logic("No main word defined".to_string()))?;
-        self.main_returns_int = main_returns_int_effect(main_word);
-
-        // Generate all user-defined words
-        for word in &program.words {
-            self.codegen_word(word)?;
-        }
-
-        // Generate main function
-        self.codegen_main()?;
-
-        // Assemble final IR
         let mut ir = String::new();
-
-        // Target and type declarations
-        writeln!(&mut ir, "; ModuleID = 'main'")?;
-        writeln!(&mut ir, "target triple = \"{}\"", get_target_triple())?;
-        writeln!(&mut ir)?;
-
-        // Value type definition (8-byte tagged pointer)
-        self.emit_value_type_def(&mut ir)?;
-
-        // String and symbol constants
-        self.emit_string_and_symbol_globals(&mut ir)?;
-
-        // Instrumentation globals (when --instrument)
-        if self.instrument {
-            self.emit_instrumentation_globals(&mut ir)?;
-        }
-
-        // Runtime function declarations
+        self.emit_ir_header(&mut ir)?;
+        self.emit_ir_type_and_globals(&mut ir)?;
         emit_runtime_decls(&mut ir)?;
-
-        // External builtin declarations (from config)
-        if !self.external_builtins.is_empty() {
-            writeln!(&mut ir, "; External builtin declarations")?;
-            for symbol in self.external_builtins.values() {
-                // All external builtins follow the standard stack convention: ptr -> ptr
-                writeln!(&mut ir, "declare ptr @{}(ptr)", symbol)?;
-            }
-            writeln!(&mut ir)?;
-        }
-
-        // Quotation functions (generated from quotation literals)
-        if !self.quotation_functions.is_empty() {
-            writeln!(&mut ir, "; Quotation functions")?;
-            ir.push_str(&self.quotation_functions);
-            writeln!(&mut ir)?;
-        }
-
-        // User-defined words and main
+        self.emit_external_builtins(&mut ir)?;
+        self.emit_quotation_functions(&mut ir)?;
         ir.push_str(&self.output);
-
         Ok(ir)
     }
 
-    /// Generate LLVM IR for entire program with FFI support
+    /// Generate LLVM IR for entire program with FFI support.
     ///
     /// This is the main entry point for compiling programs that use FFI.
     pub fn codegen_program_with_ffi(
@@ -152,27 +83,47 @@ impl CodeGen {
         config: &CompilerConfig,
         ffi_bindings: &FfiBindings,
     ) -> Result<String, CodeGenError> {
-        // Store FFI bindings
         self.ffi_bindings = ffi_bindings.clone();
-
-        // Generate FFI wrapper functions
         self.generate_ffi_wrappers()?;
 
-        // Store type map for use during code generation
+        self.prepare_program_state(program, type_map, statement_types, config)?;
+        self.generate_words_and_main(program)?;
+
+        let mut ir = String::new();
+        self.emit_ir_header(&mut ir)?;
+        self.emit_ir_type_and_globals(&mut ir)?;
+        emit_runtime_decls(&mut ir)?;
+        self.emit_ffi_c_declarations(&mut ir)?;
+        self.emit_external_builtins(&mut ir)?;
+        self.emit_ffi_wrappers_section(&mut ir)?;
+        self.emit_quotation_functions(&mut ir)?;
+        ir.push_str(&self.output);
+        Ok(ir)
+    }
+
+    // =========================================================================
+    // Shared program-generation helpers
+    // =========================================================================
+
+    /// Copy typechecker outputs and config-derived state onto the CodeGen,
+    /// and sanity-check the presence/shape of `main`.
+    fn prepare_program_state(
+        &mut self,
+        program: &Program,
+        type_map: HashMap<usize, Type>,
+        statement_types: HashMap<(String, usize), Type>,
+        config: &CompilerConfig,
+    ) -> Result<(), CodeGenError> {
         self.type_map = type_map;
         self.statement_types = statement_types;
-
-        // Store union definitions for pattern matching
+        // resolved_sugar is set separately via set_resolved_sugar()
         self.unions = program.unions.clone();
-
-        // Build external builtins map from config
         self.external_builtins = config
             .external_builtins
             .iter()
             .map(|b| (b.seq_name.clone(), b.symbol.clone()))
             .collect();
 
-        // Flow instrumentation config
         self.instrument = config.instrument;
         if self.instrument {
             for (id, word) in program.words.iter().enumerate() {
@@ -180,110 +131,101 @@ impl CodeGen {
             }
         }
 
-        // Verify we have a main word and detect its return shape (Issue #355)
+        // Issue #355: detect `main ( -- Int )` so seq_main writes the top-of-
+        // stack int into the exit-code global before tearing down.
         let main_word = program
             .find_word("main")
             .ok_or_else(|| CodeGenError::Logic("No main word defined".to_string()))?;
         self.main_returns_int = main_returns_int_effect(main_word);
 
-        // Generate all user-defined words
+        Ok(())
+    }
+
+    /// Generate code for every user-defined word, then emit `main`.
+    fn generate_words_and_main(&mut self, program: &Program) -> Result<(), CodeGenError> {
         for word in &program.words {
             self.codegen_word(word)?;
         }
+        self.codegen_main()
+    }
 
-        // Generate main function
-        self.codegen_main()?;
+    /// Module ID and target triple — the first lines of the IR file.
+    fn emit_ir_header(&self, ir: &mut String) -> Result<(), CodeGenError> {
+        writeln!(ir, "; ModuleID = 'main'")?;
+        writeln!(ir, "target triple = \"{}\"", get_target_triple())?;
+        writeln!(ir)?;
+        Ok(())
+    }
 
-        // Assemble final IR
-        let mut ir = String::new();
-
-        // Target and type declarations
-        writeln!(&mut ir, "; ModuleID = 'main'")?;
-        writeln!(&mut ir, "target triple = \"{}\"", get_target_triple())?;
-        writeln!(&mut ir)?;
-
-        // Value type definition (8-byte tagged pointer)
-        self.emit_value_type_def(&mut ir)?;
-
-        // String and symbol constants
-        self.emit_string_and_symbol_globals(&mut ir)?;
-
-        // Instrumentation globals (when --instrument)
+    /// Value type definition, string/symbol globals, and instrumentation
+    /// globals when `--instrument` is enabled.
+    fn emit_ir_type_and_globals(&self, ir: &mut String) -> Result<(), CodeGenError> {
+        self.emit_value_type_def(ir)?;
+        self.emit_string_and_symbol_globals(ir)?;
         if self.instrument {
-            self.emit_instrumentation_globals(&mut ir)?;
+            self.emit_instrumentation_globals(ir)?;
         }
-
-        // Runtime function declarations (same as codegen_program_with_config)
-        self.emit_runtime_declarations(&mut ir)?;
-
-        // FFI C function declarations
-        if !self.ffi_bindings.functions.is_empty() {
-            writeln!(&mut ir, "; FFI C function declarations")?;
-            writeln!(&mut ir, "declare ptr @malloc(i64)")?;
-            writeln!(&mut ir, "declare void @free(ptr)")?;
-            writeln!(&mut ir, "declare i64 @strlen(ptr)")?;
-            writeln!(&mut ir, "declare ptr @memcpy(ptr, ptr, i64)")?;
-            // Declare FFI string helpers from runtime
-            writeln!(
-                &mut ir,
-                "declare ptr @patch_seq_string_to_cstring(ptr, ptr)"
-            )?;
-            writeln!(
-                &mut ir,
-                "declare ptr @patch_seq_cstring_to_string(ptr, ptr)"
-            )?;
-            for func in self.ffi_bindings.functions.values() {
-                let c_ret_type = ffi_return_type(&func.return_spec);
-                let c_args = ffi_c_args(&func.args);
-                writeln!(
-                    &mut ir,
-                    "declare {} @{}({})",
-                    c_ret_type, func.c_name, c_args
-                )?;
-            }
-            writeln!(&mut ir)?;
-        }
-
-        // External builtin declarations (from config)
-        if !self.external_builtins.is_empty() {
-            writeln!(&mut ir, "; External builtin declarations")?;
-            for symbol in self.external_builtins.values() {
-                writeln!(&mut ir, "declare ptr @{}(ptr)", symbol)?;
-            }
-            writeln!(&mut ir)?;
-        }
-
-        // FFI wrapper functions
-        if !self.ffi_wrapper_code.is_empty() {
-            writeln!(&mut ir, "; FFI wrapper functions")?;
-            ir.push_str(&self.ffi_wrapper_code);
-            writeln!(&mut ir)?;
-        }
-
-        // Quotation functions
-        if !self.quotation_functions.is_empty() {
-            writeln!(&mut ir, "; Quotation functions")?;
-            ir.push_str(&self.quotation_functions);
-            writeln!(&mut ir)?;
-        }
-
-        // User-defined words and main
-        ir.push_str(&self.output);
-
-        Ok(ir)
+        Ok(())
     }
 
-    /// Emit runtime function declarations
-    pub(super) fn emit_runtime_declarations(&self, ir: &mut String) -> Result<(), CodeGenError> {
-        emit_runtime_decls(ir)
+    fn emit_external_builtins(&self, ir: &mut String) -> Result<(), CodeGenError> {
+        if self.external_builtins.is_empty() {
+            return Ok(());
+        }
+        writeln!(ir, "; External builtin declarations")?;
+        // All external builtins follow the standard stack convention: ptr -> ptr
+        for symbol in self.external_builtins.values() {
+            writeln!(ir, "declare ptr @{}(ptr)", symbol)?;
+        }
+        writeln!(ir)?;
+        Ok(())
     }
 
-    /// Emit instrumentation globals for --instrument mode
-    ///
-    /// Generates:
-    /// - @seq_word_counters: array of i64 counters (one per word)
-    /// - @seq_word_name_K: per-word C string constants
-    /// - @seq_word_names: array of pointers to name strings
+    fn emit_quotation_functions(&self, ir: &mut String) -> Result<(), CodeGenError> {
+        if self.quotation_functions.is_empty() {
+            return Ok(());
+        }
+        writeln!(ir, "; Quotation functions")?;
+        ir.push_str(&self.quotation_functions);
+        writeln!(ir)?;
+        Ok(())
+    }
+
+    fn emit_ffi_c_declarations(&self, ir: &mut String) -> Result<(), CodeGenError> {
+        if self.ffi_bindings.functions.is_empty() {
+            return Ok(());
+        }
+        writeln!(ir, "; FFI C function declarations")?;
+        writeln!(ir, "declare ptr @malloc(i64)")?;
+        writeln!(ir, "declare void @free(ptr)")?;
+        writeln!(ir, "declare i64 @strlen(ptr)")?;
+        writeln!(ir, "declare ptr @memcpy(ptr, ptr, i64)")?;
+        // FFI string helpers from runtime
+        writeln!(ir, "declare ptr @patch_seq_string_to_cstring(ptr, ptr)")?;
+        writeln!(ir, "declare ptr @patch_seq_cstring_to_string(ptr, ptr)")?;
+        for func in self.ffi_bindings.functions.values() {
+            let c_ret_type = ffi_return_type(&func.return_spec);
+            let c_args = ffi_c_args(&func.args);
+            writeln!(ir, "declare {} @{}({})", c_ret_type, func.c_name, c_args)?;
+        }
+        writeln!(ir)?;
+        Ok(())
+    }
+
+    fn emit_ffi_wrappers_section(&self, ir: &mut String) -> Result<(), CodeGenError> {
+        if self.ffi_wrapper_code.is_empty() {
+            return Ok(());
+        }
+        writeln!(ir, "; FFI wrapper functions")?;
+        ir.push_str(&self.ffi_wrapper_code);
+        writeln!(ir)?;
+        Ok(())
+    }
+
+    /// Emit instrumentation globals for `--instrument` mode:
+    /// - `@seq_word_counters`: array of i64 counters (one per word)
+    /// - `@seq_word_name_K`: per-word C string constants
+    /// - `@seq_word_names`: array of pointers to name strings
     fn emit_instrumentation_globals(&self, ir: &mut String) -> Result<(), CodeGenError> {
         let n = self.word_instrument_ids.len();
         if n == 0 {
@@ -292,14 +234,13 @@ impl CodeGen {
 
         writeln!(ir, "; Instrumentation globals (--instrument)")?;
 
-        // Counter array: [N x i64] zeroinitializer
         writeln!(
             ir,
             "@seq_word_counters = global [{} x i64] zeroinitializer",
             n
         )?;
 
-        // Build sorted list of (id, name) for deterministic output
+        // Sort by id for deterministic output
         let mut words: Vec<(usize, &str)> = self
             .word_instrument_ids
             .iter()
@@ -307,7 +248,6 @@ impl CodeGen {
             .collect();
         words.sort_by_key(|&(id, _)| id);
 
-        // Per-word name string constants
         for &(id, name) in &words {
             let name_bytes = name.as_bytes();
             let len = name_bytes.len() + 1; // +1 for null terminator
@@ -322,7 +262,6 @@ impl CodeGen {
             )?;
         }
 
-        // Name pointer table
         let ptrs: Vec<String> = words
             .iter()
             .map(|&(id, _name)| format!("ptr @seq_word_name_{}", id))
