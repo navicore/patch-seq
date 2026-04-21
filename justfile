@@ -71,9 +71,12 @@ build-examples: build
     ls -lh target/examples/
 
 # Run all Rust unit tests
+# seq-repl tests spawn seq-lsp subprocesses and deadlock under parallel cargo
+# test threads, so run that crate serially and the rest in parallel.
 test:
     @echo "Running Rust unit tests..."
-    cargo test --locked --workspace --all-targets
+    cargo test --locked --workspace --all-targets --exclude seq-repl
+    cargo test --locked -p seq-repl --all-targets -- --test-threads=1
 
 # Run clippy on all workspace members
 lint:
