@@ -37,23 +37,24 @@ impl CodeGen {
             return Ok(result);
         }
 
-        // Check if this would be a tail call position for a user-defined word.
-        // If so, skip specialized dispatch - we need the tail call path to emit
-        // musttail + ret for proper TCO. Specialized dispatch returns a value
-        // without emitting a terminator, which would leave the basic block
-        // without a terminator if codegen_branch expects one (Issue #338).
-        let is_seq_word = !BUILTIN_SYMBOLS.contains_key(name)
-            && !self.external_builtins.contains_key(name)
-            && !self.ffi_bindings.is_ffi_function(name);
-        let would_tail_call = position == TailPosition::Tail
+        let (function_name, is_seq_word) = self.resolve_call_target(name);
+
+        // Tail-call eligibility: only user-defined Seq words, in tail
+        // position, outside the C-convention contexts (main, quotations,
+        // closures). Computed once and reused for both the
+        // skip-specialized-dispatch decision and the final call emission
+        // (Issue #338: specialized dispatch doesn't emit a terminator, which
+        // breaks codegen_branch when it expects a tail-call ret).
+        let can_tail_call = position == TailPosition::Tail
             && !self.inside_closure
             && !self.inside_main
             && !self.inside_quotation
             && is_seq_word;
 
-        // Try dispatch to specialized version if virtual stack has matching types,
-        // but only if we're NOT in tail position (tail calls need musttail + ret)
-        if !would_tail_call && let Some(result) = self.try_specialized_dispatch(stack_var, name)? {
+        // Try dispatch to specialized version if virtual stack has matching
+        // types, but only if we're NOT in tail position (tail calls need
+        // musttail + ret).
+        if !can_tail_call && let Some(result) = self.try_specialized_dispatch(stack_var, name)? {
             return Ok(result);
         }
 
@@ -63,8 +64,8 @@ impl CodeGen {
 
         let result_var = self.fresh_temp();
 
-        // Phase 2 TCO: Special handling for `call` in tail position
-        // Not available in main/quotation (C convention can't musttail to tailcc)
+        // Phase 2 TCO: Special handling for `call` in tail position.
+        // Not available in main/quotation (C convention can't musttail to tailcc).
         if name == "call"
             && position == TailPosition::Tail
             && !self.inside_closure
@@ -74,25 +75,6 @@ impl CodeGen {
             return self.codegen_tail_call_quotation(stack_var, &result_var);
         }
 
-        // Map source-level word names to runtime function names
-        let (function_name, is_seq_word) = if let Some(&symbol) = BUILTIN_SYMBOLS.get(name) {
-            (symbol.to_string(), false)
-        } else if let Some(symbol) = self.external_builtins.get(name) {
-            (symbol.clone(), false)
-        } else if self.ffi_bindings.is_ffi_function(name) {
-            // FFI wrapper function
-            (format!("seq_ffi_{}", mangle_name(name)), false)
-        } else {
-            (format!("seq_{}", mangle_name(name)), true)
-        };
-
-        // Emit tail call for user-defined words in tail position
-        // Not available in main/quotation (C convention can't musttail to tailcc)
-        let can_tail_call = position == TailPosition::Tail
-            && !self.inside_closure
-            && !self.inside_main
-            && !self.inside_quotation
-            && is_seq_word;
         if can_tail_call {
             // Yield check before tail call to prevent starvation in tight loops
             writeln!(&mut self.output, "  call void @patch_seq_maybe_yield()")?;
@@ -118,6 +100,21 @@ impl CodeGen {
             )?;
         }
         Ok(result_var)
+    }
+
+    /// Map a Seq word name to its LLVM symbol and whether it's a user-defined
+    /// Seq word (vs. builtin, external builtin, or FFI wrapper).
+    fn resolve_call_target(&self, name: &str) -> (String, bool) {
+        if let Some(&symbol) = BUILTIN_SYMBOLS.get(name) {
+            (symbol.to_string(), false)
+        } else if let Some(symbol) = self.external_builtins.get(name) {
+            (symbol.clone(), false)
+        } else if self.ffi_bindings.is_ffi_function(name) {
+            // FFI wrapper function
+            (format!("seq_ffi_{}", mangle_name(name)), false)
+        } else {
+            (format!("seq_{}", mangle_name(name)), true)
+        }
     }
 
     /// Try to dispatch to a specialized version of a word
@@ -347,7 +344,6 @@ impl CodeGen {
         result
     }
 
-    /// Internal implementation of codegen_statements
     pub(super) fn codegen_statements_inner(
         &mut self,
         statements: &[Statement],
@@ -432,7 +428,9 @@ impl CodeGen {
         }
     }
 
-    /// Generate main function that calls user's main word
+    /// Generate the C `main` that the linker invokes. Depending on
+    /// `pure_inline_test`, either runs the Seq code directly or spawns it
+    /// as the first strand on the scheduler.
     pub(super) fn codegen_main(&mut self) -> Result<(), CodeGenError> {
         writeln!(
             &mut self.output,
@@ -441,105 +439,106 @@ impl CodeGen {
         writeln!(&mut self.output, "entry:")?;
 
         if self.pure_inline_test {
-            // Pure inline test mode: no scheduler, just run the code directly
-            // and return the top of stack as exit code.
-            //
-            // This mode is for testing pure integer programs that use only
-            // inlined operations (push_int, arithmetic, stack ops).
-
-            // Allocate tagged stack
-            writeln!(
-                &mut self.output,
-                "  %tagged_stack = call ptr @seq_stack_new_default()"
-            )?;
-            writeln!(
-                &mut self.output,
-                "  %stack_base = call ptr @seq_stack_base(ptr %tagged_stack)"
-            )?;
-
-            // Call seq_main which returns the final stack pointer
-            writeln!(
-                &mut self.output,
-                "  %final_sp = call ptr @seq_main(ptr %stack_base)"
-            )?;
-
-            // Read top of stack value (exit code)
-            let top_ptr = self.emit_stack_gep("final_sp", -1)?;
-            let result = self.emit_load_int_payload(&top_ptr)?;
-
-            // Free the stack
-            writeln!(
-                &mut self.output,
-                "  call void @seq_stack_free(ptr %tagged_stack)"
-            )?;
-
-            // Return result as exit code (truncate to i32)
-            writeln!(
-                &mut self.output,
-                "  %exit_code = trunc i64 %{} to i32",
-                result
-            )?;
-            writeln!(&mut self.output, "  ret i32 %exit_code")?;
+            self.codegen_main_pure_inline()?;
         } else {
-            // Normal mode: use scheduler for concurrency support
-
-            // Initialize command-line arguments (before scheduler so args are available)
-            writeln!(
-                &mut self.output,
-                "  call void @patch_seq_args_init(i32 %argc, ptr %argv)"
-            )?;
-
-            // Initialize scheduler
-            writeln!(&mut self.output, "  call void @patch_seq_scheduler_init()")?;
-
-            // Register instrumentation data with report system (--instrument)
-            if self.instrument {
-                let n = self.word_instrument_ids.len();
-                writeln!(
-                    &mut self.output,
-                    "  call void @patch_seq_report_init(ptr @seq_word_counters, ptr @seq_word_names, i64 {})",
-                    n
-                )?;
-            }
-
-            // Spawn user's main function as the first strand
-            // This ensures all code runs in coroutine context for non-blocking I/O
-            writeln!(
-                &mut self.output,
-                "  %0 = call i64 @patch_seq_strand_spawn(ptr @seq_main, ptr null)"
-            )?;
-
-            // Wait for all spawned strands to complete (including main)
-            writeln!(
-                &mut self.output,
-                "  %1 = call ptr @patch_seq_scheduler_run()"
-            )?;
-
-            // Emit at-exit report (no-op unless SEQ_REPORT is set at runtime)
-            writeln!(&mut self.output, "  call void @patch_seq_report()")?;
-
-            // Read the exit code that seq_main wrote (Issue #355).
-            // Defaults to 0 for void main (never written) or for any
-            // program that didn't reach the exit code write path.
-            let exit_code_var = self.fresh_temp();
-            writeln!(
-                &mut self.output,
-                "  %{} = call i64 @patch_seq_get_exit_code()",
-                exit_code_var
-            )?;
-            // Truncate to i32 — Unix exit codes are limited to the low 8
-            // bits on Linux; other platforms vary. We pass through whatever
-            // the user returned and let the OS apply its convention.
-            let exit_code_i32 = self.fresh_temp();
-            writeln!(
-                &mut self.output,
-                "  %{} = trunc i64 %{} to i32",
-                exit_code_i32, exit_code_var
-            )?;
-            writeln!(&mut self.output, "  ret i32 %{}", exit_code_i32)?;
+            self.codegen_main_scheduled()?;
         }
-        writeln!(&mut self.output, "}}")?;
 
+        writeln!(&mut self.output, "}}")?;
+        Ok(())
+    }
+
+    /// Pure-inline-test main: no scheduler, no args, no report hook. Runs
+    /// `seq_main` on a fresh tagged stack and returns the top-of-stack int
+    /// as the process exit code. Only valid for programs that use inlined
+    /// operations exclusively (integer arithmetic, stack ops) — there is
+    /// no runtime coroutine context for non-blocking I/O.
+    fn codegen_main_pure_inline(&mut self) -> Result<(), CodeGenError> {
+        writeln!(
+            &mut self.output,
+            "  %tagged_stack = call ptr @seq_stack_new_default()"
+        )?;
+        writeln!(
+            &mut self.output,
+            "  %stack_base = call ptr @seq_stack_base(ptr %tagged_stack)"
+        )?;
+
+        writeln!(
+            &mut self.output,
+            "  %final_sp = call ptr @seq_main(ptr %stack_base)"
+        )?;
+
+        let top_ptr = self.emit_stack_gep("final_sp", -1)?;
+        let result = self.emit_load_int_payload(&top_ptr)?;
+
+        writeln!(
+            &mut self.output,
+            "  call void @seq_stack_free(ptr %tagged_stack)"
+        )?;
+
+        writeln!(
+            &mut self.output,
+            "  %exit_code = trunc i64 %{} to i32",
+            result
+        )?;
+        writeln!(&mut self.output, "  ret i32 %exit_code")?;
+        Ok(())
+    }
+
+    /// Normal scheduled main: initialises argv, starts the scheduler, spawns
+    /// `seq_main` as the first strand, waits for completion, runs the at-
+    /// exit report hook, and returns whatever Seq wrote to the exit-code
+    /// global (Issue #355 — defaults to 0 for void main).
+    fn codegen_main_scheduled(&mut self) -> Result<(), CodeGenError> {
+        // Initialize command-line arguments before scheduler so args are
+        // available to any strand that spawns early.
+        writeln!(
+            &mut self.output,
+            "  call void @patch_seq_args_init(i32 %argc, ptr %argv)"
+        )?;
+
+        writeln!(&mut self.output, "  call void @patch_seq_scheduler_init()")?;
+
+        // --instrument: register per-word counters and name pointers with the report system.
+        if self.instrument {
+            let n = self.word_instrument_ids.len();
+            writeln!(
+                &mut self.output,
+                "  call void @patch_seq_report_init(ptr @seq_word_counters, ptr @seq_word_names, i64 {})",
+                n
+            )?;
+        }
+
+        // Spawn user's main as the first strand so everything runs in
+        // coroutine context (required for non-blocking I/O).
+        writeln!(
+            &mut self.output,
+            "  %0 = call i64 @patch_seq_strand_spawn(ptr @seq_main, ptr null)"
+        )?;
+        writeln!(
+            &mut self.output,
+            "  %1 = call ptr @patch_seq_scheduler_run()"
+        )?;
+
+        // At-exit report hook (no-op unless SEQ_REPORT is set at runtime).
+        writeln!(&mut self.output, "  call void @patch_seq_report()")?;
+
+        // Truncate to i32 — Unix exit codes are limited to the low 8 bits
+        // on Linux; other platforms vary. We pass through whatever the
+        // user returned and let the OS apply its convention.
+        let exit_code_var = self.fresh_temp();
+        writeln!(
+            &mut self.output,
+            "  %{} = call i64 @patch_seq_get_exit_code()",
+            exit_code_var
+        )?;
+        let exit_code_i32 = self.fresh_temp();
+        writeln!(
+            &mut self.output,
+            "  %{} = trunc i64 %{} to i32",
+            exit_code_i32, exit_code_var
+        )?;
+        writeln!(&mut self.output, "  ret i32 %{}", exit_code_i32)?;
         Ok(())
     }
 }
