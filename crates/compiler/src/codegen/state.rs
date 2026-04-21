@@ -99,6 +99,18 @@ pub(super) struct QuotationFunctions {
     pub impl_: String,
 }
 
+/// Snapshot of the enclosing function's mutable codegen state while a nested
+/// quotation or closure is being generated. Returned by
+/// `enter_quotation_scope` and consumed by `exit_quotation_scope`, which
+/// commits the nested IR to `quotation_functions` and restores these fields.
+pub(super) struct QuotationScope {
+    pub output: String,
+    pub virtual_stack: Vec<VirtualValue>,
+    pub word_name: Option<String>,
+    pub aux_slots: Vec<String>,
+    pub aux_sp: usize,
+}
+
 /// A value held in an LLVM virtual register instead of memory (Issue #189).
 ///
 /// This optimization keeps recently-pushed values in SSA variables,

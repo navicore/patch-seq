@@ -6,5 +6,6 @@
 
 mod dispatch;
 mod ops;
+mod shuffle;
 
 // Re-export for use by parent module (the functions are pub(in crate::codegen))

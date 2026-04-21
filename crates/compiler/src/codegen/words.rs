@@ -4,8 +4,8 @@
 //! quotations (closures), and tail call optimization.
 
 use super::{
-    BUILTIN_SYMBOLS, BranchResult, CodeGen, CodeGenError, QuotationFunctions, TailPosition,
-    UNREACHABLE_PREDECESSOR, VirtualValue, mangle_name,
+    BUILTIN_SYMBOLS, BranchResult, CodeGen, CodeGenError, QuotationFunctions, QuotationScope,
+    TailPosition, UNREACHABLE_PREDECESSOR, VirtualValue, mangle_name,
 };
 use crate::ast::{Statement, WordDef};
 use crate::types::Type;
@@ -151,189 +151,190 @@ impl CodeGen {
         Ok(())
     }
 
-    /// Generate a quotation function
-    /// Returns wrapper and impl function names for TCO support
+    /// Generate a quotation function.
+    /// Returns wrapper and impl function names for TCO support.
     pub(super) fn codegen_quotation(
         &mut self,
         quot_id: usize,
         body: &[Statement],
         quot_type: &Type,
     ) -> Result<QuotationFunctions, CodeGenError> {
-        // Generate unique function names
         let base_name = format!("seq_quot_{}", self.quot_counter);
         self.quot_counter += 1;
 
-        // Save current output and switch to quotation_functions
-        let saved_output = std::mem::take(&mut self.output);
+        // Each quotation is a standalone LLVM function with its own output
+        // buffer, virtual stack, and aux-slot table. Save the enclosing
+        // scope so everything emitted between here and `exit_quotation_scope`
+        // accumulates into `self.output` in isolation.
+        let scope = self.enter_quotation_scope();
 
-        // Save and clear virtual stack for quotation scope (Issue #189)
-        let saved_virtual_stack = std::mem::take(&mut self.virtual_stack);
-
-        // Clear word context during quotation codegen to prevent
-        // incorrect type lookups (quotations don't have their own type info)
-        let saved_word_name = self.current_word_name.take();
-
-        // Save and clear aux state (Issue #350, #393).
-        // Each quotation gets its own aux slot table — they are independent
-        // LLVM functions with their own stack frames. The fresh slots will
-        // be emitted after `entry:` below if this quotation uses aux.
-        let saved_aux_slots = std::mem::take(&mut self.current_aux_slots);
-        let saved_aux_sp = self.current_aux_sp;
-        self.current_aux_sp = 0;
-
-        // Look up how many aux slots this quotation needs (Issue #393).
-        // Zero for quotations that don't use >aux/aux>.
-        let quot_aux_slot_count = self
+        // Zero for quotations that don't use >aux/aux> (Issue #393).
+        let aux_slot_count = self
             .quotation_aux_slot_counts
             .get(&quot_id)
             .copied()
             .unwrap_or(0);
 
-        // Generate function signature based on type
-        match quot_type {
+        let result = match quot_type {
             Type::Quotation(_) => {
-                // Stateless quotation: generate both wrapper (C) and impl (tailcc)
-                let wrapper_name = base_name.clone();
-                let impl_name = format!("{}_impl", base_name);
-
-                // First, generate the impl function with tailcc convention
-                // This is the actual function body that can be tail-called
-                writeln!(
-                    &mut self.output,
-                    "define tailcc ptr @{}(ptr %stack) {{",
-                    impl_name
-                )?;
-                writeln!(&mut self.output, "entry:")?;
-
-                // Allocate aux stack slots if this quotation uses >aux/aux> (Issue #393).
-                // Each quotation function has its own slots, independent of the
-                // enclosing word and any sibling/nested quotations.
-                self.emit_aux_slots(quot_aux_slot_count)?;
-
-                let mut stack_var = "stack".to_string();
-                let body_len = body.len();
-
-                // Generate code for each statement in the quotation body
-                // Last statement is in tail position (can use musttail)
-                for (i, statement) in body.iter().enumerate() {
-                    let position = if i == body_len - 1 {
-                        TailPosition::Tail
-                    } else {
-                        TailPosition::NonTail
-                    };
-                    stack_var = self.codegen_statement(&stack_var, statement, position)?;
-                }
-
-                // Only emit ret if the last statement wasn't a tail call
-                if body.is_empty()
-                    || !self.will_emit_tail_call(body.last().unwrap(), TailPosition::Tail)
-                {
-                    // Spill any remaining virtual registers before return (Issue #189)
-                    let stack_var = self.spill_virtual_stack(&stack_var)?;
-                    writeln!(&mut self.output, "  ret ptr %{}", stack_var)?;
-                }
-                writeln!(&mut self.output, "}}")?;
-                writeln!(&mut self.output)?;
-
-                // Now generate the wrapper function with C convention
-                // This is a thin wrapper that just calls the impl
-                writeln!(
-                    &mut self.output,
-                    "define ptr @{}(ptr %stack) {{",
-                    wrapper_name
-                )?;
-                writeln!(&mut self.output, "entry:")?;
-                writeln!(
-                    &mut self.output,
-                    "  %result = call tailcc ptr @{}(ptr %stack)",
-                    impl_name
-                )?;
-                writeln!(&mut self.output, "  ret ptr %result")?;
-                writeln!(&mut self.output, "}}")?;
-                writeln!(&mut self.output)?;
-
-                // Move generated functions to quotation_functions
-                self.quotation_functions.push_str(&self.output);
-
-                // Restore original output, word context, virtual stack, and aux state (Issue #189, #350)
-                self.output = saved_output;
-                self.current_word_name = saved_word_name;
-                self.virtual_stack = saved_virtual_stack;
-                self.current_aux_slots = saved_aux_slots;
-                self.current_aux_sp = saved_aux_sp;
-
-                Ok(QuotationFunctions {
-                    wrapper: wrapper_name,
-                    impl_: impl_name,
-                })
+                self.emit_stateless_quotation_fns(&base_name, body, aux_slot_count)
             }
             Type::Closure { captures, .. } => {
-                // Closure: fn(Stack, *const Value, usize) -> Stack
-                // Note: Closures don't use tailcc yet (Phase 3 work)
-                // Mark that we're inside a closure to disable tail calls
-                self.inside_closure = true;
-                writeln!(
-                    &mut self.output,
-                    "define ptr @{}(ptr %stack, ptr %env_data, i64 %env_len) {{",
-                    base_name
-                )?;
-                writeln!(&mut self.output, "entry:")?;
-
-                // Allocate aux stack slots if this closure uses >aux/aux> (Issue #393).
-                self.emit_aux_slots(quot_aux_slot_count)?;
-
-                // Push captured values onto the stack before executing body
-                // Captures are stored bottom-to-top, so push them in order
-                let mut stack_var = "stack".to_string();
-                for (index, capture_type) in captures.iter().enumerate() {
-                    stack_var = self.emit_capture_push(capture_type, index, &stack_var)?;
-                }
-
-                // Generate code for each statement in the quotation body
-                // Last statement is in tail position
-                let body_len = body.len();
-                for (i, statement) in body.iter().enumerate() {
-                    let position = if i == body_len - 1 {
-                        TailPosition::Tail
-                    } else {
-                        TailPosition::NonTail
-                    };
-                    stack_var = self.codegen_statement(&stack_var, statement, position)?;
-                }
-
-                // Only emit ret if the last statement wasn't a tail call
-                if body.is_empty()
-                    || !self.will_emit_tail_call(body.last().unwrap(), TailPosition::Tail)
-                {
-                    // Spill any remaining virtual registers before return (Issue #189)
-                    let stack_var = self.spill_virtual_stack(&stack_var)?;
-                    writeln!(&mut self.output, "  ret ptr %{}", stack_var)?;
-                }
-                writeln!(&mut self.output, "}}")?;
-                writeln!(&mut self.output)?;
-
-                // Move generated function to quotation_functions
-                self.quotation_functions.push_str(&self.output);
-
-                // Restore original output, word context, virtual stack, aux state, and reset closure flag (Issue #189, #350)
-                self.output = saved_output;
-                self.current_word_name = saved_word_name;
-                self.virtual_stack = saved_virtual_stack;
-                self.current_aux_slots = saved_aux_slots;
-                self.current_aux_sp = saved_aux_sp;
-                self.inside_closure = false;
-
-                // For closures, both wrapper and impl are the same (no TCO yet)
-                Ok(QuotationFunctions {
-                    wrapper: base_name.clone(),
-                    impl_: base_name,
-                })
+                self.emit_closure_fn(&base_name, body, captures, aux_slot_count)
             }
             _ => Err(CodeGenError::Logic(format!(
                 "CodeGen: expected Quotation or Closure type, got {:?}",
                 quot_type
             ))),
+        };
+
+        self.exit_quotation_scope(scope);
+        result
+    }
+
+    /// Emit a stateless quotation as a wrapper + impl pair.
+    ///
+    /// - `impl_` is `tailcc` and holds the actual body; it can be a `musttail`
+    ///   target from other user words.
+    /// - `wrapper` is C-convention and calls `impl_`. It's what gets stored
+    ///   in a `Quotation` value so the runtime can invoke it without knowing
+    ///   about `tailcc`.
+    fn emit_stateless_quotation_fns(
+        &mut self,
+        base_name: &str,
+        body: &[Statement],
+        aux_slot_count: usize,
+    ) -> Result<QuotationFunctions, CodeGenError> {
+        let wrapper_name = base_name.to_string();
+        let impl_name = format!("{}_impl", base_name);
+
+        // Impl (tailcc, can be a musttail target)
+        writeln!(
+            &mut self.output,
+            "define tailcc ptr @{}(ptr %stack) {{",
+            impl_name
+        )?;
+        writeln!(&mut self.output, "entry:")?;
+        self.emit_aux_slots(aux_slot_count)?;
+        self.emit_body_with_tail_ret(body, "stack")?;
+        writeln!(&mut self.output, "}}")?;
+        writeln!(&mut self.output)?;
+
+        // Wrapper (C-convention, thin trampoline to impl)
+        writeln!(
+            &mut self.output,
+            "define ptr @{}(ptr %stack) {{",
+            wrapper_name
+        )?;
+        writeln!(&mut self.output, "entry:")?;
+        writeln!(
+            &mut self.output,
+            "  %result = call tailcc ptr @{}(ptr %stack)",
+            impl_name
+        )?;
+        writeln!(&mut self.output, "  ret ptr %result")?;
+        writeln!(&mut self.output, "}}")?;
+        writeln!(&mut self.output)?;
+
+        Ok(QuotationFunctions {
+            wrapper: wrapper_name,
+            impl_: impl_name,
+        })
+    }
+
+    /// Emit a closure function (the quotation variant that captures values
+    /// from its creation site). Closures take `(stack, env_data, env_len)`
+    /// and cannot use `tailcc` / `musttail` yet, so `inside_closure` is set
+    /// to disable tail-call optimisation for statements inside the body.
+    fn emit_closure_fn(
+        &mut self,
+        base_name: &str,
+        body: &[Statement],
+        captures: &[Type],
+        aux_slot_count: usize,
+    ) -> Result<QuotationFunctions, CodeGenError> {
+        self.inside_closure = true;
+
+        writeln!(
+            &mut self.output,
+            "define ptr @{}(ptr %stack, ptr %env_data, i64 %env_len) {{",
+            base_name
+        )?;
+        writeln!(&mut self.output, "entry:")?;
+        self.emit_aux_slots(aux_slot_count)?;
+
+        // Push captured values onto the stack before executing body.
+        // Captures are stored bottom-to-top, so push them in index order.
+        let mut stack_var = "stack".to_string();
+        for (index, capture_type) in captures.iter().enumerate() {
+            stack_var = self.emit_capture_push(capture_type, index, &stack_var)?;
         }
+
+        self.emit_body_with_tail_ret(body, &stack_var)?;
+        writeln!(&mut self.output, "}}")?;
+        writeln!(&mut self.output)?;
+
+        self.inside_closure = false;
+
+        // Closures have no separate impl; wrapper == impl.
+        Ok(QuotationFunctions {
+            wrapper: base_name.to_string(),
+            impl_: base_name.to_string(),
+        })
+    }
+
+    /// Save the enclosing function's mutable codegen state (output buffer,
+    /// virtual stack, current word name, aux-slot table, aux SP) and reset
+    /// the aux SP to 0 so the nested function starts fresh. Call
+    /// `exit_quotation_scope` with the returned guard to commit the nested
+    /// function into `quotation_functions` and restore the enclosing state.
+    fn enter_quotation_scope(&mut self) -> QuotationScope {
+        let scope = QuotationScope {
+            output: std::mem::take(&mut self.output),
+            virtual_stack: std::mem::take(&mut self.virtual_stack),
+            word_name: self.current_word_name.take(),
+            aux_slots: std::mem::take(&mut self.current_aux_slots),
+            aux_sp: self.current_aux_sp,
+        };
+        self.current_aux_sp = 0;
+        scope
+    }
+
+    /// Commit the nested function's emitted IR into `quotation_functions`
+    /// and restore the enclosing codegen scope.
+    fn exit_quotation_scope(&mut self, scope: QuotationScope) {
+        self.quotation_functions.push_str(&self.output);
+        self.output = scope.output;
+        self.virtual_stack = scope.virtual_stack;
+        self.current_word_name = scope.word_name;
+        self.current_aux_slots = scope.aux_slots;
+        self.current_aux_sp = scope.aux_sp;
+    }
+
+    /// Walk a function body, emitting each statement with the last in tail
+    /// position; then, if the final statement didn't already emit a
+    /// terminator (`musttail … ret`), spill the virtual stack and emit a
+    /// plain `ret ptr %<stack>`.
+    fn emit_body_with_tail_ret(
+        &mut self,
+        body: &[Statement],
+        initial_stack: &str,
+    ) -> Result<(), CodeGenError> {
+        let mut stack_var = initial_stack.to_string();
+        let body_len = body.len();
+        for (i, statement) in body.iter().enumerate() {
+            let position = if i == body_len - 1 {
+                TailPosition::Tail
+            } else {
+                TailPosition::NonTail
+            };
+            stack_var = self.codegen_statement(&stack_var, statement, position)?;
+        }
+        if body.is_empty() || !self.will_emit_tail_call(body.last().unwrap(), TailPosition::Tail) {
+            let stack_var = self.spill_virtual_stack(&stack_var)?;
+            writeln!(&mut self.output, "  ret ptr %{}", stack_var)?;
+        }
+        Ok(())
     }
 
     /// Check if a name refers to a runtime builtin (not a user-defined word).

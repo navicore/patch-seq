@@ -95,8 +95,8 @@ pub use state::CodeGen;
 
 // Internal re-exports for submodules
 use state::{
-    BranchResult, MAX_VIRTUAL_STACK, QuotationFunctions, TailPosition, UNREACHABLE_PREDECESSOR,
-    VirtualValue, mangle_name,
+    BranchResult, MAX_VIRTUAL_STACK, QuotationFunctions, QuotationScope, TailPosition,
+    UNREACHABLE_PREDECESSOR, VirtualValue, mangle_name,
 };
 
 #[cfg(test)]
