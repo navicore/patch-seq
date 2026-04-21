@@ -79,17 +79,15 @@ pub unsafe extern "C" fn patch_seq_f_divide(stack: Stack) -> Stack {
 }
 
 // =============================================================================
-// Comparison Operations (return Int 0 or 1)
+// Comparison Operations (return Bool true or false)
 // =============================================================================
 //
-// Note: Float comparisons return Int (0/1) for Forth-style boolean semantics,
-// while integer comparisons in arithmetic.rs return Bool. Both work with
-// conditionals and test.assert since they accept both Int and Bool.
+// Float comparisons return Bool (true/false) to match integer comparison semantics.
 
-/// Float equality: ( Float Float -- Int )
+/// Float equality: ( Float Float -- Bool )
 ///
 /// **Warning:** Direct float equality can be surprising due to IEEE 754
-/// rounding. For example, `0.1 0.2 f.add 0.3 f.=` may return 0.
+/// rounding. For example, `0.1 0.2 f.add 0.3 f.=` may return false.
 /// Consider using epsilon-based comparison for tolerances.
 ///
 /// # Safety
@@ -99,13 +97,13 @@ pub unsafe extern "C" fn patch_seq_f_eq(stack: Stack) -> Stack {
     let (rest, a, b) = unsafe { pop_two(stack, "f.=") };
     match (a, b) {
         (Value::Float(x), Value::Float(y)) => unsafe {
-            push(rest, Value::Int(if x == y { 1 } else { 0 }))
+            push(rest, Value::Bool(x == y))
         },
         _ => panic!("f.=: expected two Floats on stack"),
     }
 }
 
-/// Float less than: ( Float Float -- Int )
+/// Float less than: ( Float Float -- Bool )
 ///
 /// # Safety
 /// Stack must have two Float values on top
@@ -114,13 +112,13 @@ pub unsafe extern "C" fn patch_seq_f_lt(stack: Stack) -> Stack {
     let (rest, a, b) = unsafe { pop_two(stack, "f.<") };
     match (a, b) {
         (Value::Float(x), Value::Float(y)) => unsafe {
-            push(rest, Value::Int(if x < y { 1 } else { 0 }))
+            push(rest, Value::Bool(x < y))
         },
         _ => panic!("f.<: expected two Floats on stack"),
     }
 }
 
-/// Float greater than: ( Float Float -- Int )
+/// Float greater than: ( Float Float -- Bool )
 ///
 /// # Safety
 /// Stack must have two Float values on top
@@ -129,13 +127,13 @@ pub unsafe extern "C" fn patch_seq_f_gt(stack: Stack) -> Stack {
     let (rest, a, b) = unsafe { pop_two(stack, "f.>") };
     match (a, b) {
         (Value::Float(x), Value::Float(y)) => unsafe {
-            push(rest, Value::Int(if x > y { 1 } else { 0 }))
+            push(rest, Value::Bool(x > y))
         },
         _ => panic!("f.>: expected two Floats on stack"),
     }
 }
 
-/// Float less than or equal: ( Float Float -- Int )
+/// Float less than or equal: ( Float Float -- Bool )
 ///
 /// # Safety
 /// Stack must have two Float values on top
@@ -144,13 +142,13 @@ pub unsafe extern "C" fn patch_seq_f_lte(stack: Stack) -> Stack {
     let (rest, a, b) = unsafe { pop_two(stack, "f.<=") };
     match (a, b) {
         (Value::Float(x), Value::Float(y)) => unsafe {
-            push(rest, Value::Int(if x <= y { 1 } else { 0 }))
+            push(rest, Value::Bool(x <= y))
         },
         _ => panic!("f.<=: expected two Floats on stack"),
     }
 }
 
-/// Float greater than or equal: ( Float Float -- Int )
+/// Float greater than or equal: ( Float Float -- Bool )
 ///
 /// # Safety
 /// Stack must have two Float values on top
@@ -159,13 +157,13 @@ pub unsafe extern "C" fn patch_seq_f_gte(stack: Stack) -> Stack {
     let (rest, a, b) = unsafe { pop_two(stack, "f.>=") };
     match (a, b) {
         (Value::Float(x), Value::Float(y)) => unsafe {
-            push(rest, Value::Int(if x >= y { 1 } else { 0 }))
+            push(rest, Value::Bool(x >= y))
         },
         _ => panic!("f.>=: expected two Floats on stack"),
     }
 }
 
-/// Float not equal: ( Float Float -- Int )
+/// Float not equal: ( Float Float -- Bool )
 ///
 /// # Safety
 /// Stack must have two Float values on top
@@ -174,7 +172,7 @@ pub unsafe extern "C" fn patch_seq_f_neq(stack: Stack) -> Stack {
     let (rest, a, b) = unsafe { pop_two(stack, "f.<>") };
     match (a, b) {
         (Value::Float(x), Value::Float(y)) => unsafe {
-            push(rest, Value::Int(if x != y { 1 } else { 0 }))
+            push(rest, Value::Bool(x != y))
         },
         _ => panic!("f.<>: expected two Floats on stack"),
     }
@@ -396,7 +394,7 @@ mod tests {
             let stack = f_eq(stack);
 
             let (_stack, result) = pop(stack);
-            assert_eq!(result, Value::Int(1));
+            assert_eq!(result, Value::Bool(true));
         }
     }
 
@@ -410,7 +408,7 @@ mod tests {
             let stack = f_eq(stack);
 
             let (_stack, result) = pop(stack);
-            assert_eq!(result, Value::Int(0));
+            assert_eq!(result, Value::Bool(false));
         }
     }
 
@@ -424,7 +422,7 @@ mod tests {
             let stack = f_lt(stack);
 
             let (_stack, result) = pop(stack);
-            assert_eq!(result, Value::Int(1)); // 1.5 < 2.5
+            assert_eq!(result, Value::Bool(true)); // 1.5 < 2.5
         }
     }
 
@@ -438,7 +436,7 @@ mod tests {
             let stack = f_gt(stack);
 
             let (_stack, result) = pop(stack);
-            assert_eq!(result, Value::Int(1)); // 2.5 > 1.5
+            assert_eq!(result, Value::Bool(true)); // 2.5 > 1.5
         }
     }
 
@@ -452,7 +450,7 @@ mod tests {
             let stack = f_lte(stack);
 
             let (_stack, result) = pop(stack);
-            assert_eq!(result, Value::Int(1)); // 2.5 <= 2.5
+            assert_eq!(result, Value::Bool(true)); // 2.5 <= 2.5
         }
     }
 
@@ -466,7 +464,7 @@ mod tests {
             let stack = f_gte(stack);
 
             let (_stack, result) = pop(stack);
-            assert_eq!(result, Value::Int(1)); // 2.5 >= 2.5
+            assert_eq!(result, Value::Bool(true)); // 2.5 >= 2.5
         }
     }
 
@@ -480,7 +478,7 @@ mod tests {
             let stack = f_neq(stack);
 
             let (_stack, result) = pop(stack);
-            assert_eq!(result, Value::Int(1)); // 1.0 <> 2.0
+            assert_eq!(result, Value::Bool(true)); // 1.0 <> 2.0
         }
     }
 
