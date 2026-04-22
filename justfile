@@ -207,6 +207,7 @@ install-analysis-tools:
     cargo install cargo-audit
     cargo install cargo-geiger
     cargo install cargo-machete
+    cargo install cargo-modules
     @echo "Installing scc (complexity analyzer)..."
     @if command -v brew >/dev/null 2>&1; then \
         brew install scc; \
@@ -262,6 +263,21 @@ analyze-unused:
     @mkdir -p target/analysis
     @echo "=== Unused Dependencies ==="
     NO_COLOR=1 cargo machete 2>&1 | tee target/analysis/unused.txt
+
+# Quick code stats: LOC, largest files, runtime complexity hotspots, module tree
+# (Prints to stdout — no files written. For deeper reports use `just analyze`.)
+stats:
+    @echo "=== Workspace LOC ==="
+    @scc crates/ --no-cocomo
+    @echo ""
+    @echo "=== Largest Rust source files (top 15) ==="
+    @scc crates/ --by-file --no-cocomo -s lines -i rs | head -20
+    @echo ""
+    @echo "=== Runtime files by complexity (top 10) ==="
+    @scc crates/runtime/src --by-file --no-cocomo -s complexity -i rs | head -15
+    @echo ""
+    @echo "=== seq-runtime module tree ==="
+    @cargo modules structure -p seq-runtime --lib 2>/dev/null || echo "(run 'just install-analysis-tools' to install cargo-modules)"
 
 # Generate documentation
 doc:
