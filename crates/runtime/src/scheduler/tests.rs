@@ -1,5 +1,8 @@
+use super::lifecycle::{DEFAULT_STACK_SIZE, parse_stack_size};
+use super::spawn::free_stack;
+use super::yield_ops::TAIL_CALL_COUNTER;
 use super::*;
-use crate::stack::push;
+use crate::stack::{Stack, push};
 use crate::value::Value;
 use std::sync::atomic::{AtomicU32, Ordering};
 
