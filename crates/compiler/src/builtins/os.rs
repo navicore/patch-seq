@@ -54,7 +54,14 @@ pub(super) fn add_signatures(sigs: &mut HashMap<String, Effect>) {
     builtin!(sigs, "terminal.read-char?", (a -- a Int));
     builtin!(sigs, "terminal.width", (a -- a Int));
     builtin!(sigs, "terminal.height", (a -- a Int));
-    builtin!(sigs, "terminal.flush", (a - -a));
+    // Identity effect ( a -- a ). See note in concurrency.rs on chan.yield.
+    sigs.insert(
+        "terminal.flush".to_string(),
+        Effect::new(
+            StackType::RowVar("a".to_string()),
+            StackType::RowVar("a".to_string()),
+        ),
+    );
 }
 
 pub(super) fn add_docs(docs: &mut HashMap<&'static str, &'static str>) {

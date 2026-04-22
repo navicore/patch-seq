@@ -16,7 +16,16 @@ pub(super) fn add_signatures(sigs: &mut HashMap<String, Effect>) {
     builtin!(sigs, "chan.send", (a T Channel -- a Bool)); // returns success flag
     builtin!(sigs, "chan.receive", (a Channel -- a T Bool)); // returns value and success flag
     builtin!(sigs, "chan.close", (a Channel -- a));
-    builtin!(sigs, "chan.yield", (a - -a));
+    // Identity effect ( a -- a ). Spelled out because the `builtin!` macro's
+    // (a -- a) arm round-trips through rustfmt as (a - -a), which is
+    // surprising to read.
+    sigs.insert(
+        "chan.yield".to_string(),
+        Effect::new(
+            StackType::RowVar("a".to_string()),
+            StackType::RowVar("a".to_string()),
+        ),
+    );
 
     // =========================================================================
     // Strand / Weave (co-located with their docs)

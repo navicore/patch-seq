@@ -12,7 +12,14 @@ pub(super) fn add_signatures(sigs: &mut HashMap<String, Effect>) {
     // =========================================================================
 
     builtin!(sigs, "test.init", (a String -- a));
-    builtin!(sigs, "test.finish", (a - -a));
+    // Identity effect ( a -- a ). See note in concurrency.rs on chan.yield.
+    sigs.insert(
+        "test.finish".to_string(),
+        Effect::new(
+            StackType::RowVar("a".to_string()),
+            StackType::RowVar("a".to_string()),
+        ),
+    );
     builtin!(sigs, "test.has-failures", (a -- a Bool));
     builtin!(sigs, "test.assert", (a Bool -- a));
     builtin!(sigs, "test.assert-not", (a Bool -- a));
