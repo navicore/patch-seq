@@ -1,4 +1,6 @@
 use super::*;
+use crate::ast::{Program, Statement, WordDef};
+use crate::types::{Effect, StackType, Type};
 
 #[test]
 fn test_simple_literal() {
