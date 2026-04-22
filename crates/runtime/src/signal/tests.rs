@@ -1,5 +1,7 @@
+use super::handlers::{ignore_signal, install_signal_handler, restore_default_handler};
 use super::*;
 use serial_test::serial;
+use std::sync::atomic::Ordering;
 
 #[test]
 #[serial]
