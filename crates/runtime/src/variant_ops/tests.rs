@@ -1,6 +1,8 @@
 use super::*;
 use crate::seqstring::global_string;
-use crate::value::VariantData;
+use crate::stack::{pop, push};
+use crate::value::{Value, VariantData};
+use std::sync::Arc;
 
 #[test]
 fn test_variant_field_count() {

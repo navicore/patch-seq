@@ -1,4 +1,6 @@
 use super::*;
+use crate::stack::{pop, push};
+use crate::value::Value;
 
 #[test]
 fn test_add() {

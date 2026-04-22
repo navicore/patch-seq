@@ -1,7 +1,7 @@
 use super::*;
 use crate::quotations::push_quotation;
 use crate::scheduler::{scheduler_init, wait_all_strands};
-use crate::stack::{alloc_test_stack, pop, push};
+use crate::stack::{Stack, alloc_test_stack, pop, push};
 use crate::value::Value;
 use std::sync::atomic::{AtomicBool, Ordering};
 

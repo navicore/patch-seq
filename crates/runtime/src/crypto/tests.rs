@@ -1,5 +1,12 @@
+use super::aes::{aes_gcm_decrypt, aes_gcm_encrypt};
+use super::ed25519::{ed25519_sign, ed25519_verify};
+use super::pbkdf::derive_key_pbkdf2;
 use super::*;
-use crate::stack::pop;
+use crate::seqstring::global_string;
+use crate::stack::{pop, push};
+use crate::value::Value;
+use ::ed25519_dalek::SigningKey;
+use aes_gcm::aead::OsRng;
 
 #[test]
 fn test_sha256() {

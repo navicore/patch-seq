@@ -1,4 +1,7 @@
 use super::*;
+use crate::seqstring::global_string;
+use crate::stack::{pop, push};
+use crate::value::Value;
 
 #[test]
 fn test_string_split_simple() {

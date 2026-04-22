@@ -1,5 +1,8 @@
 use super::*;
 use crate::seqstring::global_string;
+use crate::stack::{Stack, pop, push};
+use crate::value::{Value, VariantData};
+use std::sync::Arc;
 
 // Helper quotation: double an integer
 unsafe extern "C" fn double_quot(stack: Stack) -> Stack {
