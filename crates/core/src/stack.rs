@@ -205,20 +205,6 @@ pub unsafe fn pop_two(stack: Stack, _op_name: &str) -> (Stack, Value, Value) {
     }
 }
 
-/// Pop three values from the stack.
-///
-/// # Safety
-/// Stack must have at least three values.
-#[inline]
-pub unsafe fn pop_three(stack: Stack, _op_name: &str) -> (Stack, Value, Value, Value) {
-    unsafe {
-        let (sp, c) = pop(stack);
-        let (sp, b) = pop(sp);
-        let (sp, a) = pop(sp);
-        (sp, a, b, c)
-    }
-}
-
 /// Peek at the top value without removing it.
 ///
 /// # Safety
@@ -556,20 +542,6 @@ pub unsafe extern "C" fn patch_seq_roll(stack: Stack) -> Stack {
         *sp.sub(1) = saved;
 
         sp
-    }
-}
-
-/// Clone a stack segment.
-///
-/// # Safety
-/// Both src and dst must be valid stack pointers with sufficient space for count values.
-pub unsafe fn clone_stack_segment(src: Stack, dst: Stack, count: usize) {
-    unsafe {
-        for i in 0..count {
-            let sv = *src.sub(count - i);
-            let cloned = clone_stack_value(sv);
-            *dst.add(i) = cloned;
-        }
     }
 }
 
