@@ -23,22 +23,6 @@ pub(super) fn add_docs(docs: &mut HashMap<&'static str, &'static str>) {
     // TCP Operations
     docs.insert(
         "tcp.listen",
-        "Start listening on a port. Returns (socket_id, success).",
-    );
-    docs.insert(
-        "tcp.accept",
-        "Accept a connection. Returns (client_id, success).",
-    );
-    docs.insert(
-        "tcp.read",
-        "Read data from a socket. Returns (string, success).",
-    );
-    docs.insert("tcp.write", "Write data to a socket. Returns success.");
-    docs.insert("tcp.close", "Close a socket. Returns success.");
-
-    // TCP Operations
-    docs.insert(
-        "tcp.listen",
         "Start listening on a port. Returns (fd Bool) -- Bool is false on failure.",
     );
     docs.insert(

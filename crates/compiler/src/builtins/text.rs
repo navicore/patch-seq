@@ -162,23 +162,6 @@ pub(super) fn add_docs(docs: &mut HashMap<&'static str, &'static str>) {
         "Decode a hexadecimal string. Returns (decoded, success).",
     );
 
-    // Encoding Operations
-    docs.insert("encoding.base64-encode", "Encode string as base64.");
-    docs.insert(
-        "encoding.base64-decode",
-        "Decode base64 string. Returns (String Bool) -- Bool is false if invalid.",
-    );
-    docs.insert("encoding.base64url-encode", "Encode string as base64url.");
-    docs.insert(
-        "encoding.base64url-decode",
-        "Decode base64url string. Returns (String Bool) -- Bool is false if invalid.",
-    );
-    docs.insert("encoding.hex-encode", "Encode string as hexadecimal.");
-    docs.insert(
-        "encoding.hex-decode",
-        "Decode hex string. Returns (String Bool) -- Bool is false if invalid.",
-    );
-
     // Crypto Operations
     docs.insert(
         "crypto.sha256",
@@ -224,47 +207,6 @@ pub(super) fn add_docs(docs: &mut HashMap<&'static str, &'static str>) {
     docs.insert(
         "crypto.ed25519-verify",
         "Verify Ed25519 signature. ( message signature public-key -- valid )",
-    );
-
-    // Crypto Operations
-    docs.insert("crypto.sha256", "Compute SHA-256 hash of a string.");
-    docs.insert(
-        "crypto.hmac-sha256",
-        "Compute HMAC-SHA256. ( message key -- hash )",
-    );
-    docs.insert(
-        "crypto.constant-time-eq",
-        "Constant-time string equality comparison.",
-    );
-    docs.insert(
-        "crypto.random-bytes",
-        "Generate N random bytes as a string.",
-    );
-    docs.insert(
-        "crypto.random-int",
-        "Generate random integer in range [min, max).",
-    );
-    docs.insert("crypto.uuid4", "Generate a random UUID v4 string.");
-    docs.insert(
-        "crypto.aes-gcm-encrypt",
-        "AES-GCM encrypt. Returns (String Bool) -- Bool is false on failure.",
-    );
-    docs.insert("crypto.aes-gcm-decrypt", "AES-GCM decrypt. Returns (String Bool) -- Bool is false on failure (wrong key or tampered data).");
-    docs.insert(
-        "crypto.pbkdf2-sha256",
-        "Derive key with PBKDF2. Returns (String Bool) -- Bool is false on failure.",
-    );
-    docs.insert(
-        "crypto.ed25519-keypair",
-        "Generate Ed25519 keypair. Returns (public private).",
-    );
-    docs.insert(
-        "crypto.ed25519-sign",
-        "Sign with Ed25519. Returns (String Bool) -- Bool is false on failure.",
-    );
-    docs.insert(
-        "crypto.ed25519-verify",
-        "Verify Ed25519 signature. Returns Bool -- true if valid.",
     );
 
     // HTTP Client Operations
@@ -319,34 +261,6 @@ pub(super) fn add_docs(docs: &mut HashMap<&'static str, &'static str>) {
         "Check if pattern is valid regex. ( pattern -- bool )",
     );
 
-    // Regex Operations
-    docs.insert("regex.match?", "Test if string matches regex pattern.");
-    docs.insert(
-        "regex.find",
-        "Find first match. Returns (String Bool) -- Bool is false if no match or invalid regex.",
-    );
-    docs.insert(
-        "regex.find-all",
-        "Find all matches. Returns (List Bool) -- Bool is false if invalid regex.",
-    );
-    docs.insert(
-        "regex.replace",
-        "Replace first match. Returns (String Bool) -- Bool is false if invalid regex.",
-    );
-    docs.insert(
-        "regex.replace-all",
-        "Replace all matches. Returns (String Bool) -- Bool is false if invalid regex.",
-    );
-    docs.insert(
-        "regex.captures",
-        "Get capture groups. Returns (List Bool) -- Bool is false if invalid regex.",
-    );
-    docs.insert(
-        "regex.split",
-        "Split by regex. Returns (List Bool) -- Bool is false if invalid regex.",
-    );
-    docs.insert("regex.valid?", "Check if a regex pattern is valid.");
-
     // Compression Operations
     docs.insert(
         "compress.gzip",
@@ -371,31 +285,5 @@ pub(super) fn add_docs(docs: &mut HashMap<&'static str, &'static str>) {
     docs.insert(
         "compress.unzstd",
         "Decompress zstd data. ( base64-data -- decompressed success )",
-    );
-
-    // Compression Operations
-    docs.insert(
-        "compress.gzip",
-        "Gzip compress. Returns (String Bool) -- Bool is false on failure.",
-    );
-    docs.insert(
-        "compress.gzip-level",
-        "Gzip compress at level N. Returns (String Bool) -- Bool is false on failure.",
-    );
-    docs.insert(
-        "compress.gunzip",
-        "Gzip decompress. Returns (String Bool) -- Bool is false on failure.",
-    );
-    docs.insert(
-        "compress.zstd",
-        "Zstd compress. Returns (String Bool) -- Bool is false on failure.",
-    );
-    docs.insert(
-        "compress.zstd-level",
-        "Zstd compress at level N. Returns (String Bool) -- Bool is false on failure.",
-    );
-    docs.insert(
-        "compress.unzstd",
-        "Zstd decompress. Returns (String Bool) -- Bool is false on failure.",
     );
 }

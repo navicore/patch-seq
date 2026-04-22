@@ -32,12 +32,18 @@ mod tests;
 
 /// Get the stack-effect signature for a built-in word.
 pub fn builtin_signature(name: &str) -> Option<Effect> {
-    let signatures = builtin_signatures();
-    signatures.get(name).cloned()
+    BUILTIN_SIGNATURES.get(name).cloned()
 }
 
 /// Build the full map of built-in word signatures.
+///
+/// Clones the cached map so callers that wanted ownership (e.g. tests,
+/// `TypeChecker::register_external_words`) keep working unchanged.
 pub fn builtin_signatures() -> HashMap<String, Effect> {
+    BUILTIN_SIGNATURES.clone()
+}
+
+static BUILTIN_SIGNATURES: LazyLock<HashMap<String, Effect>> = LazyLock::new(|| {
     let mut sigs = HashMap::new();
     io::add_signatures(&mut sigs);
     fs::add_signatures(&mut sigs);
@@ -54,7 +60,7 @@ pub fn builtin_signatures() -> HashMap<String, Effect> {
     float::add_signatures(&mut sigs);
     diagnostics::add_signatures(&mut sigs);
     sigs
-}
+});
 
 /// Get documentation for a built-in word.
 pub fn builtin_doc(name: &str) -> Option<&'static str> {

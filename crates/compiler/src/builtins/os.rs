@@ -61,41 +61,6 @@ pub(super) fn add_docs(docs: &mut HashMap<&'static str, &'static str>) {
     // OS Operations
     docs.insert(
         "os.getenv",
-        "Get environment variable. Returns (value, exists).",
-    );
-    docs.insert(
-        "os.home-dir",
-        "Get user's home directory. Returns (path, success).",
-    );
-    docs.insert(
-        "os.current-dir",
-        "Get current working directory. Returns (path, success).",
-    );
-    docs.insert("os.path-exists", "Check if a path exists.");
-    docs.insert("os.path-is-file", "Check if path is a regular file.");
-    docs.insert("os.path-is-dir", "Check if path is a directory.");
-    docs.insert("os.path-join", "Join two path components.");
-    docs.insert(
-        "os.path-parent",
-        "Get parent directory. Returns (path, success).",
-    );
-    docs.insert(
-        "os.path-filename",
-        "Get filename component. Returns (name, success).",
-    );
-    docs.insert("os.exit", "Exit the program with a status code.");
-    docs.insert(
-        "os.name",
-        "Get the operating system name (e.g., \"macos\", \"linux\").",
-    );
-    docs.insert(
-        "os.arch",
-        "Get the CPU architecture (e.g., \"aarch64\", \"x86_64\").",
-    );
-
-    // OS Operations
-    docs.insert(
-        "os.getenv",
         "Get environment variable. Returns (String Bool) -- Bool is false if not set.",
     );
     docs.insert(
@@ -166,17 +131,6 @@ pub(super) fn add_docs(docs: &mut HashMap<&'static str, &'static str>) {
     docs.insert("signal.SIGALRM", "SIGALRM constant (alarm clock).");
     docs.insert("signal.SIGCONT", "SIGCONT constant (continue if stopped).");
 
-    // Signal Operations
-    docs.insert(
-        "signal.trap",
-        "Register a signal handler for the given signal number.",
-    );
-    docs.insert("signal.received?", "Check if a signal has been received.");
-    docs.insert("signal.pending?", "Check if a signal is pending.");
-    docs.insert("signal.default", "Reset signal to default handler.");
-    docs.insert("signal.ignore", "Ignore a signal.");
-    docs.insert("signal.clear", "Clear pending signal.");
-
     // Terminal Operations
     docs.insert(
         "terminal.raw-mode",
@@ -202,15 +156,4 @@ pub(super) fn add_docs(docs: &mut HashMap<&'static str, &'static str>) {
         "terminal.flush",
         "Flush stdout. Use after writing escape sequences or partial lines.",
     );
-
-    // Terminal Operations
-    docs.insert("terminal.raw-mode", "Enable/disable raw terminal mode.");
-    docs.insert("terminal.read-char", "Read a single character (blocking).");
-    docs.insert(
-        "terminal.read-char?",
-        "Read a character if available (non-blocking). Returns 0 if none.",
-    );
-    docs.insert("terminal.width", "Get terminal width in columns.");
-    docs.insert("terminal.height", "Get terminal height in rows.");
-    docs.insert("terminal.flush", "Flush stdout.");
 }

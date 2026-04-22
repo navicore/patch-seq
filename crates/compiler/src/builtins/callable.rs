@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use crate::types::{Effect, SideEffect, StackType, Type};
+use crate::types::{Effect, StackType, Type};
 
 pub(super) fn add_signatures(sigs: &mut HashMap<String, Effect>) {
     // =========================================================================
@@ -72,75 +72,6 @@ pub(super) fn add_signatures(sigs: &mut HashMap<String, Effect>) {
         Effect::new(
             StackType::RowVar("a".to_string()),
             StackType::RowVar("b".to_string()),
-        ),
-    );
-
-    // strand.spawn: ( a Quotation -- a Int ) - spawn a concurrent strand
-    // The quotation can have any stack effect - it runs independently
-    sigs.insert(
-        "strand.spawn".to_string(),
-        Effect::new(
-            StackType::RowVar("a".to_string()).push(Type::Quotation(Box::new(Effect::new(
-                StackType::RowVar("spawn_in".to_string()),
-                StackType::RowVar("spawn_out".to_string()),
-            )))),
-            StackType::RowVar("a".to_string()).push(Type::Int),
-        ),
-    );
-
-    // strand.weave: ( a Quotation -- a handle ) - create a woven strand (generator)
-    // The quotation receives (WeaveCtx, first_resume_value) and must thread WeaveCtx through.
-    // Returns a handle (WeaveCtx) for use with strand.resume.
-    sigs.insert(
-        "strand.weave".to_string(),
-        Effect::new(
-            StackType::RowVar("a".to_string()).push(Type::Quotation(Box::new(Effect::new(
-                StackType::RowVar("weave_in".to_string()),
-                StackType::RowVar("weave_out".to_string()),
-            )))),
-            StackType::RowVar("a".to_string()).push(Type::Var("handle".to_string())),
-        ),
-    );
-
-    // strand.resume: ( a handle b -- a handle b Bool ) - resume weave with value
-    // Takes handle and value to send, returns (handle, yielded_value, has_more)
-    sigs.insert(
-        "strand.resume".to_string(),
-        Effect::new(
-            StackType::RowVar("a".to_string())
-                .push(Type::Var("handle".to_string()))
-                .push(Type::Var("b".to_string())),
-            StackType::RowVar("a".to_string())
-                .push(Type::Var("handle".to_string()))
-                .push(Type::Var("b".to_string()))
-                .push(Type::Bool),
-        ),
-    );
-
-    // yield: ( a ctx b -- a ctx b | Yield b ) - yield value and receive resume value
-    // The WeaveCtx must be passed explicitly and threaded through.
-    // The Yield effect indicates this word produces yield semantics.
-    sigs.insert(
-        "yield".to_string(),
-        Effect::with_effects(
-            StackType::RowVar("a".to_string())
-                .push(Type::Var("ctx".to_string()))
-                .push(Type::Var("b".to_string())),
-            StackType::RowVar("a".to_string())
-                .push(Type::Var("ctx".to_string()))
-                .push(Type::Var("b".to_string())),
-            vec![SideEffect::Yield(Box::new(Type::Var("b".to_string())))],
-        ),
-    );
-
-    // strand.weave-cancel: ( a handle -- a ) - cancel a weave and release its resources
-    // Use this to clean up a weave that won't be resumed to completion.
-    // This prevents resource leaks from abandoned weaves.
-    sigs.insert(
-        "strand.weave-cancel".to_string(),
-        Effect::new(
-            StackType::RowVar("a".to_string()).push(Type::Var("handle".to_string())),
-            StackType::RowVar("a".to_string()),
         ),
     );
 }
