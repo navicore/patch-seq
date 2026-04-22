@@ -1,4 +1,5 @@
 use super::*;
+use crate::types::{StackType, Type};
 
 #[test]
 fn test_builtin_signature_write_line() {
