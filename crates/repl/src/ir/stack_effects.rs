@@ -33,6 +33,8 @@ fn stack_type_to_stack(st: &StackType) -> Stack {
     values.into_iter().fold(base, |s, v| s.push(v))
 }
 
+// `StackType` is a right-spine cons list terminated by `Empty` or `RowVar`,
+// so `RowVar` only ever appears at the tail (bottom of the stack).
 fn walk(st: &StackType, values: &mut Vec<StackValue>, row_var: &mut Option<String>) {
     match st {
         StackType::Empty => {}
@@ -62,8 +64,13 @@ fn type_to_value(ty: &Type) -> StackValue {
 }
 
 /// Strip the type-variable freshening suffix (`T$5` → `T`).
+///
+/// Guards against the pathological case of a name that begins with `$`
+/// (which would otherwise return an empty string) by falling back to the
+/// original name when the prefix is empty.
 fn strip_freshening(name: &str) -> &str {
-    name.split('$').next().unwrap_or(name)
+    let prefix = name.split('$').next().unwrap_or(name);
+    if prefix.is_empty() { name } else { prefix }
 }
 
 #[cfg(test)]
@@ -76,7 +83,22 @@ mod tests {
         assert!(get_effect("drop").is_some());
         assert!(get_effect("swap").is_some());
         assert!(get_effect("i.+").is_some());
+        assert!(get_effect("f.add").is_some());
         assert!(get_effect("nonexistent").is_none());
+    }
+
+    #[test]
+    fn strip_freshening_handles_edges() {
+        // Common case: strip suffix.
+        assert_eq!(strip_freshening("T$5"), "T");
+        // No suffix: pass through unchanged.
+        assert_eq!(strip_freshening("T"), "T");
+        // Multiple `$`: keep only the leading prefix.
+        assert_eq!(strip_freshening("T$a$b"), "T");
+        // Name starting with `$`: fall back to the full name rather than "".
+        assert_eq!(strip_freshening("$T"), "$T");
+        // Only `$`: fall back to the original.
+        assert_eq!(strip_freshening("$"), "$");
     }
 
     #[test]

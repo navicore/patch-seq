@@ -67,7 +67,10 @@ impl Token {
 /// Intentionally narrow — only tokens the parser itself special-cases.
 /// `true` / `false` and `include` are handled as their own `TokenKind`s
 /// elsewhere in `classify_identifier`. Stdlib words (`spawn`, `send`,
-/// `recv`, …) are highlighted as `Builtin` via the compiler lookup.
+/// `recv`, `yield`, …) are highlighted as `Builtin` via the compiler
+/// lookup. `loop`, `break`, and `return` used to live here but aren't
+/// parser keywords nor compiler builtins — they were stale copies from
+/// an earlier plan and are intentionally absent.
 const KEYWORDS: &[&str] = &["if", "else", "then", "match", "end", "union"];
 
 /// User-nameable base types in stack effects (see `docs/GRAMMAR.md`).
