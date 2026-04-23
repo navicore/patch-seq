@@ -20,6 +20,32 @@ row polymorphism, and green-thread concurrency.
 
 ## Project Structure
 
+### Crate graph
+
+Arrows point from a crate to the crates it depends on at compile time.
+
+```mermaid
+graph TD
+    core[seq-core<br/><i>values, stack, arena</i>]
+    runtime[seq-runtime<br/><i>scheduler, I/O, stdlib ops</i>]
+    compiler[seq-compiler<br/><i>parser, typechecker, codegen</i>]
+    lsp[seq-lsp<br/><i>language server</i>]
+    repl[seq-repl<br/><i>seqr TUI REPL</i>]
+    vim[vim-line<br/><i>vim-motion line editor</i>]
+
+    runtime --> core
+    compiler --> runtime
+    lsp --> compiler
+    repl --> compiler
+    repl --> vim
+```
+
+`seq-repl` launches `seq-lsp` as a subprocess for completions — that's a
+runtime dependency, not a compile-time one, so it doesn't appear in the
+graph above.
+
+### Layout
+
 ```
 patch-seq/
 ├── crates/
