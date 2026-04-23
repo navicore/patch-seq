@@ -59,6 +59,15 @@ impl MemorySlot {
     }
 }
 
+/// Aggregated memory statistics across all threads
+#[derive(Debug, Clone, Copy)]
+pub struct AggregateMemoryStats {
+    pub active_threads: usize,
+    pub total_arena_bytes: u64,
+    pub total_peak_arena_bytes: u64,
+    pub overflow_count: u64,
+}
+
 /// Global registry for cross-thread memory statistics
 pub struct MemoryStatsRegistry {
     slots: Box<[MemorySlot]>,
@@ -80,7 +89,7 @@ impl MemoryStatsRegistry {
     ///
     /// Returns Some(index) if a slot was claimed, None if registry is full.
     /// Uses the current thread's ID as the identifier.
-    pub fn register(&self) -> Option<usize> {
+    fn register(&self) -> Option<usize> {
         let thread_id = current_thread_id();
 
         // Scan for a free slot
@@ -105,7 +114,7 @@ impl MemoryStatsRegistry {
     /// # Safety
     /// Caller must own the slot (be the thread that registered it)
     #[inline]
-    pub fn update_arena(&self, slot_idx: usize, arena_bytes: usize) {
+    fn update_arena(&self, slot_idx: usize, arena_bytes: usize) {
         if let Some(slot) = self.slots.get(slot_idx) {
             let bytes = arena_bytes as u64;
             slot.arena_bytes.store(bytes, Ordering::Relaxed);
@@ -148,20 +157,6 @@ impl MemoryStatsRegistry {
             overflow_count: self.overflow_count.load(Ordering::Relaxed),
         }
     }
-
-    /// Get registry capacity
-    pub fn capacity(&self) -> usize {
-        self.slots.len()
-    }
-}
-
-/// Aggregated memory statistics across all threads
-#[derive(Debug, Clone, Copy)]
-pub struct AggregateMemoryStats {
-    pub active_threads: usize,
-    pub total_arena_bytes: u64,
-    pub total_peak_arena_bytes: u64,
-    pub overflow_count: u64,
 }
 
 /// Global counter for generating unique thread IDs

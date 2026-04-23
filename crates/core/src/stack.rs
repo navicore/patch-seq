@@ -1,25 +1,30 @@
-//! Tagged Stack Implementation
+//! Stack operations for the concatenative runtime.
 //!
-//! Stack operations using 8-byte tagged values (tagged pointers).
+//! Provides `push` / `pop` / `peek`, the shuffle FFI ops
+//! (`dup` / `swap` / `rot` / `over` / `nip` / `tuck` / `2dup` / `pick` / `roll`),
+//! coroutine-local stack-base tracking for nested strands, stack allocation
+//! helpers, and the REPL stack-dump operation.
 //!
-//! Encoding:
-//! - Odd (bit 0 = 1): Int — 63-bit signed integer, value = tagged >> 1
-//! - 0x0: Bool false
-//! - 0x2: Bool true
-//! - Even > 2: Heap pointer to Arc<Value>
+//! The tagged-value encoding itself (`StackValue`, tag constants,
+//! `tag_int` / `untag_int`, `TaggedStack` backing storage) lives in
+//! `tagged_stack`.
 //!
-//! The Stack type is a pointer to the "current position" (where next push goes).
-//! - Push: store at *sp, return sp + 1
-//! - Pop: return sp - 1, read from *(sp - 1)
+//! The `Stack` type is a pointer to the "current position" — where the next
+//! push goes. Push stores at `*sp` and returns `sp + 1`; pop returns
+//! `sp - 1` and reads from `*(sp - 1)`.
 
-use crate::tagged_stack::{StackValue, TAG_FALSE, TAG_TRUE, is_tagged_int, tag_int, untag_int};
+use crate::son::{SonConfig, value_to_son};
+use crate::tagged_stack::{
+    DEFAULT_STACK_CAPACITY, StackValue, TAG_FALSE, TAG_TRUE, TaggedStack, is_tagged_int, tag_int,
+    untag_int,
+};
 use crate::value::Value;
+use std::cell::Cell;
 use std::sync::Arc;
 
 /// Stack: A pointer to the current position in a contiguous array of u64.
 pub type Stack = *mut StackValue;
 
-/// Returns the size of a StackValue in bytes
 #[inline]
 pub fn stack_value_size() -> usize {
     std::mem::size_of::<StackValue>()
@@ -200,20 +205,6 @@ pub unsafe fn pop_two(stack: Stack, _op_name: &str) -> (Stack, Value, Value) {
     }
 }
 
-/// Pop three values from the stack.
-///
-/// # Safety
-/// Stack must have at least three values.
-#[inline]
-pub unsafe fn pop_three(stack: Stack, _op_name: &str) -> (Stack, Value, Value, Value) {
-    unsafe {
-        let (sp, c) = pop(stack);
-        let (sp, b) = pop(sp);
-        let (sp, a) = pop(sp);
-        (sp, a, b, c)
-    }
-}
-
 /// Peek at the top value without removing it.
 ///
 /// # Safety
@@ -313,7 +304,11 @@ pub unsafe extern "C" fn patch_seq_dup(stack: Stack) -> Stack {
     }
 }
 
-/// Drop the top value: ( a -- )
+/// Pop the top value and drop it (decrement Arc refcount for heap types).
+///
+/// Private helper shared by `patch_seq_drop_op` and any Rust-side caller
+/// that needs to discard the top of the stack without materializing a
+/// `Value`.
 ///
 /// # Safety
 /// Stack must have at least one value.
@@ -442,6 +437,58 @@ pub unsafe extern "C" fn patch_seq_2dup(stack: Stack) -> Stack {
     }
 }
 
+/// Pop and type-check the Int index for pick/roll-style ops.
+///
+/// On success returns `(sp_after_pop, index)`. On failure sets a runtime
+/// error and returns `Err(sp_after_pop)` — callers should propagate that
+/// pointer unchanged so the stack slot stays consumed.
+///
+/// # Safety
+/// Stack must have at least one value.
+#[inline]
+unsafe fn pop_and_validate_index(stack: Stack, op_name: &str) -> Result<(Stack, usize), Stack> {
+    unsafe {
+        let (sp, n_val) = pop(stack);
+        let n_raw = match n_val {
+            Value::Int(i) => i,
+            _ => {
+                crate::error::set_runtime_error(format!(
+                    "{}: expected Int index on top of stack",
+                    op_name
+                ));
+                return Err(sp);
+            }
+        };
+        if n_raw < 0 {
+            crate::error::set_runtime_error(format!(
+                "{}: index cannot be negative (got {})",
+                op_name, n_raw
+            ));
+            return Err(sp);
+        }
+        Ok((sp, n_raw as usize))
+    }
+}
+
+/// Verify the stack holds at least `n + 1` values beyond the current base.
+/// Sets a runtime error and returns `false` on underflow.
+#[inline]
+fn check_depth_for_index(sp: Stack, n: usize, op_name: &str) -> bool {
+    let base = get_stack_base();
+    let depth = (sp as usize - base as usize) / std::mem::size_of::<StackValue>();
+    if n >= depth {
+        crate::error::set_runtime_error(format!(
+            "{}: index {} exceeds stack depth {} (need at least {} values)",
+            op_name,
+            n,
+            depth,
+            n + 1
+        ));
+        return false;
+    }
+    true
+}
+
 /// Pick: Copy the nth value to the top.
 ///
 /// # Safety
@@ -449,33 +496,11 @@ pub unsafe extern "C" fn patch_seq_2dup(stack: Stack) -> Stack {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn patch_seq_pick_op(stack: Stack) -> Stack {
     unsafe {
-        let (sp, n_val) = pop(stack);
-        let n_raw = match n_val {
-            Value::Int(i) => i,
-            _ => {
-                crate::error::set_runtime_error("pick: expected Int index on top of stack");
-                return sp;
-            }
+        let (sp, n) = match pop_and_validate_index(stack, "pick") {
+            Ok(x) => x,
+            Err(sp) => return sp,
         };
-
-        if n_raw < 0 {
-            crate::error::set_runtime_error(format!(
-                "pick: index cannot be negative (got {})",
-                n_raw
-            ));
-            return sp;
-        }
-        let n = n_raw as usize;
-
-        let base = get_stack_base();
-        let depth = (sp as usize - base as usize) / std::mem::size_of::<StackValue>();
-        if n >= depth {
-            crate::error::set_runtime_error(format!(
-                "pick: index {} exceeds stack depth {} (need at least {} values)",
-                n,
-                depth,
-                n + 1
-            ));
+        if !check_depth_for_index(sp, n, "pick") {
             return sp;
         }
 
@@ -492,23 +517,10 @@ pub unsafe extern "C" fn patch_seq_pick_op(stack: Stack) -> Stack {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn patch_seq_roll(stack: Stack) -> Stack {
     unsafe {
-        let (sp, n_val) = pop(stack);
-        let n_raw = match n_val {
-            Value::Int(i) => i,
-            _ => {
-                crate::error::set_runtime_error("roll: expected Int index on top of stack");
-                return sp;
-            }
+        let (sp, n) = match pop_and_validate_index(stack, "roll") {
+            Ok(x) => x,
+            Err(sp) => return sp,
         };
-
-        if n_raw < 0 {
-            crate::error::set_runtime_error(format!(
-                "roll: index cannot be negative (got {})",
-                n_raw
-            ));
-            return sp;
-        }
-        let n = n_raw as usize;
 
         if n == 0 {
             return sp;
@@ -520,15 +532,7 @@ pub unsafe extern "C" fn patch_seq_roll(stack: Stack) -> Stack {
             return patch_seq_rot(sp);
         }
 
-        let base = get_stack_base();
-        let depth = (sp as usize - base as usize) / std::mem::size_of::<StackValue>();
-        if n >= depth {
-            crate::error::set_runtime_error(format!(
-                "roll: index {} exceeds stack depth {} (need at least {} values)",
-                n,
-                depth,
-                n + 1
-            ));
+        if !check_depth_for_index(sp, n, "roll") {
             return sp;
         }
 
@@ -541,25 +545,9 @@ pub unsafe extern "C" fn patch_seq_roll(stack: Stack) -> Stack {
     }
 }
 
-/// Clone a stack segment.
-///
-/// # Safety
-/// Both src and dst must be valid stack pointers with sufficient space for count values.
-pub unsafe fn clone_stack_segment(src: Stack, dst: Stack, count: usize) {
-    unsafe {
-        for i in 0..count {
-            let sv = *src.sub(count - i);
-            let cloned = clone_stack_value(sv);
-            *dst.add(i) = cloned;
-        }
-    }
-}
-
 // ============================================================================
 // Coroutine-Local Stack Base Tracking
 // ============================================================================
-
-use std::cell::Cell;
 
 may::coroutine_local!(static STACK_BASE: Cell<usize> = Cell::new(0));
 
@@ -572,6 +560,7 @@ pub unsafe extern "C" fn patch_seq_set_stack_base(base: Stack) {
     });
 }
 
+/// Read the current strand's stack base, or a null pointer if unset.
 #[inline]
 pub fn get_stack_base() -> Stack {
     STACK_BASE.with(|cell| cell.get() as *mut StackValue)
@@ -598,14 +587,12 @@ pub unsafe fn clone_stack_with_base(sp: Stack) -> (Stack, Stack) {
     let depth = unsafe { sp.offset_from(base) as usize };
 
     if depth == 0 {
-        use crate::tagged_stack::{DEFAULT_STACK_CAPACITY, TaggedStack};
         let new_stack = TaggedStack::new(DEFAULT_STACK_CAPACITY);
         let new_base = new_stack.base;
         std::mem::forget(new_stack);
         return (new_base, new_base);
     }
 
-    use crate::tagged_stack::{DEFAULT_STACK_CAPACITY, TaggedStack};
     let capacity = depth.max(DEFAULT_STACK_CAPACITY);
     let new_stack = TaggedStack::new(capacity);
     let new_base = new_stack.base;
@@ -626,14 +613,23 @@ pub unsafe fn clone_stack_with_base(sp: Stack) -> (Stack, Stack) {
 // Stack Allocation Helpers
 // ============================================================================
 
+/// Allocate a fresh stack buffer and return its base pointer.
+///
+/// The caller takes ownership of the underlying `TaggedStack` storage via
+/// the raw base pointer — the `TaggedStack` wrapper is intentionally leaked
+/// here so the coroutine-native `Stack` type can be a plain `*mut StackValue`.
 pub fn alloc_stack() -> Stack {
-    use crate::tagged_stack::TaggedStack;
     let stack = TaggedStack::with_default_capacity();
     let base = stack.base;
     std::mem::forget(stack);
     base
 }
 
+/// Allocate a fresh stack and register it as the current strand's base.
+///
+/// Convenience wrapper for tests: installs the stack base so ops like
+/// `pick` / `roll` / `clone_stack` that depend on `get_stack_base()`
+/// behave correctly in a single-strand test harness.
 pub fn alloc_test_stack() -> Stack {
     let stack = alloc_stack();
     unsafe { patch_seq_set_stack_base(stack) };
@@ -684,8 +680,6 @@ pub unsafe extern "C" fn patch_seq_stack_dump(sp: Stack) -> Stack {
 }
 
 fn print_stack_value(sv: StackValue) {
-    use crate::son::{SonConfig, value_to_son};
-
     let cloned = unsafe { clone_stack_value(sv) };
     let value = unsafe { stack_value_to_value(cloned) };
     let son = value_to_son(&value, &SonConfig::compact());

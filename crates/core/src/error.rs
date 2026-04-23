@@ -62,6 +62,25 @@ pub fn clear_runtime_error() {
 
 // FFI-safe error access functions
 
+/// Replace any interior null bytes with `'?'`, build a `CString`, cache it
+/// in `ERROR_CSTRING`, and return a raw pointer into the cached string.
+///
+/// The returned pointer is valid until the next call to `set_runtime_error`,
+/// `patch_seq_get_error`, `patch_seq_take_error`, or `patch_seq_clear_error`
+/// replaces or clears the cached `CString`.
+fn cache_error_cstring(msg: &str) -> *const i8 {
+    let safe_msg: String = msg
+        .chars()
+        .map(|c| if c == '\0' { '?' } else { c })
+        .collect();
+    let cstring = CString::new(safe_msg).expect("null bytes already replaced");
+    ERROR_CSTRING.with(|cs| {
+        let ptr = cstring.as_ptr();
+        *cs.borrow_mut() = Some(cstring);
+        ptr
+    })
+}
+
 /// Check if there's a pending runtime error (FFI-safe)
 #[unsafe(no_mangle)]
 pub extern "C" fn patch_seq_has_error() -> bool {
@@ -78,25 +97,9 @@ pub extern "C" fn patch_seq_has_error() -> bool {
 /// immediately if they need to retain it.
 #[unsafe(no_mangle)]
 pub extern "C" fn patch_seq_get_error() -> *const i8 {
-    LAST_ERROR.with(|e| {
-        let error = e.borrow();
-        match &*error {
-            Some(msg) => {
-                // Cache the CString so the pointer remains valid
-                ERROR_CSTRING.with(|cs| {
-                    // Replace null bytes with '?' to preserve error content
-                    let safe_msg: String = msg
-                        .chars()
-                        .map(|c| if c == '\0' { '?' } else { c })
-                        .collect();
-                    let cstring = CString::new(safe_msg).expect("null bytes already replaced");
-                    let ptr = cstring.as_ptr();
-                    *cs.borrow_mut() = Some(cstring);
-                    ptr
-                })
-            }
-            None => ptr::null(),
-        }
+    LAST_ERROR.with(|e| match e.borrow().as_deref() {
+        Some(msg) => cache_error_cstring(msg),
+        None => ptr::null(),
     })
 }
 
@@ -110,16 +113,8 @@ pub extern "C" fn patch_seq_get_error() -> *const i8 {
 /// immediately if they need to retain it.
 #[unsafe(no_mangle)]
 pub extern "C" fn patch_seq_take_error() -> *const i8 {
-    let msg = take_runtime_error();
-    match msg {
-        Some(s) => ERROR_CSTRING.with(|cs| {
-            // Replace null bytes with '?' to preserve error content
-            let safe_msg: String = s.chars().map(|c| if c == '\0' { '?' } else { c }).collect();
-            let cstring = CString::new(safe_msg).expect("null bytes already replaced");
-            let ptr = cstring.as_ptr();
-            *cs.borrow_mut() = Some(cstring);
-            ptr
-        }),
+    match take_runtime_error() {
+        Some(msg) => cache_error_cstring(&msg),
         None => ptr::null(),
     }
 }

@@ -56,17 +56,15 @@ thread_local! {
     static ARENA_BYTES_ALLOCATED: RefCell<usize> = const { RefCell::new(0) };
 }
 
-/// Execute a function with access to the thread-local arena
+/// Execute a function with access to the thread-local arena.
 ///
-/// This is used by CemString to allocate strings from the arena.
+/// The `&Bump` is live only for the duration of the closure, so the closure
+/// must consume any borrowed `&str` it allocates. To retain an allocated
+/// string past the call, wrap it with `SeqString` via
+/// `seqstring::arena_string` (the canonical user-facing entry point).
 ///
 /// # Performance
-/// ~5ns vs ~100ns for global allocator (20x faster)
-///
-/// # Example
-/// ```ignore
-/// let arena_str = with_arena(|arena| arena.alloc_str("Hello"));
-/// ```
+/// ~5ns vs ~100ns for global allocator (20x faster).
 pub fn with_arena<F, R>(f: F) -> R
 where
     F: FnOnce(&Bump) -> R,

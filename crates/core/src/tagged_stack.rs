@@ -28,7 +28,7 @@
 //!                                ↑ SP
 //! ```
 
-use std::alloc::{Layout, alloc, dealloc, realloc};
+use std::alloc::{Layout, alloc, dealloc, handle_alloc_error, realloc};
 
 // =============================================================================
 // StackValue
@@ -102,7 +102,7 @@ impl TaggedStack {
         let layout = Layout::array::<StackValue>(capacity).expect("stack layout overflow");
         let base = unsafe { alloc(layout) as *mut StackValue };
         if base.is_null() {
-            panic!("Failed to allocate tagged stack");
+            handle_alloc_error(layout);
         }
 
         TaggedStack {
@@ -146,10 +146,7 @@ impl TaggedStack {
         };
 
         if new_base.is_null() {
-            panic!(
-                "Failed to grow tagged stack from {} to {}",
-                self.capacity, new_capacity
-            );
+            handle_alloc_error(new_layout);
         }
 
         self.base = new_base;
@@ -214,7 +211,7 @@ impl TaggedStack {
         let layout = Layout::array::<StackValue>(self.capacity).expect("layout overflow");
         let new_base = unsafe { alloc(layout) as *mut StackValue };
         if new_base.is_null() {
-            panic!("Failed to allocate cloned stack");
+            handle_alloc_error(layout);
         }
 
         for i in 0..self.sp {
@@ -257,12 +254,10 @@ impl Drop for TaggedStack {
 // FFI Functions for LLVM Codegen
 // =============================================================================
 
-#[unsafe(no_mangle)]
-pub extern "C" fn seq_stack_new(capacity: usize) -> *mut TaggedStack {
-    let stack = Box::new(TaggedStack::new(capacity));
-    Box::into_raw(stack)
-}
-
+/// Allocate a new tagged stack with `DEFAULT_STACK_CAPACITY`.
+///
+/// Returns a heap-owned raw pointer; the caller must release it with
+/// `seq_stack_free`.
 #[unsafe(no_mangle)]
 pub extern "C" fn seq_stack_new_default() -> *mut TaggedStack {
     let stack = Box::new(TaggedStack::with_default_capacity());
@@ -270,7 +265,7 @@ pub extern "C" fn seq_stack_new_default() -> *mut TaggedStack {
 }
 
 /// # Safety
-/// Pointer must have been returned by `seq_stack_new`.
+/// Pointer must have been returned by `seq_stack_new_default`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn seq_stack_free(stack: *mut TaggedStack) {
     if !stack.is_null() {
@@ -318,23 +313,6 @@ pub unsafe extern "C" fn seq_stack_set_sp(stack: *mut TaggedStack, new_sp: usize
         );
         (*stack).sp = new_sp;
     }
-}
-
-/// # Safety
-/// `stack` must be a valid pointer to a TaggedStack.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn seq_stack_capacity(stack: *mut TaggedStack) -> usize {
-    assert!(!stack.is_null(), "seq_stack_capacity: null stack");
-    unsafe { (*stack).capacity }
-}
-
-/// # Safety
-/// `stack` must be a valid pointer to a TaggedStack.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn seq_stack_clone(stack: *mut TaggedStack) -> *mut TaggedStack {
-    assert!(!stack.is_null(), "seq_stack_clone: null stack");
-    let cloned = unsafe { (*stack).clone_stack() };
-    Box::into_raw(Box::new(cloned))
 }
 
 // =============================================================================
@@ -412,19 +390,6 @@ mod tests {
         assert_eq!(stack.pop_int(), 3);
         assert_eq!(stack.pop_int(), 2);
         assert_eq!(stack.pop_int(), 1);
-    }
-
-    #[test]
-    fn test_ffi_stack_new_free() {
-        let stack = seq_stack_new(64);
-        assert!(!stack.is_null());
-
-        unsafe {
-            assert_eq!(seq_stack_capacity(stack), 64);
-            assert_eq!(seq_stack_sp(stack), 0);
-
-            seq_stack_free(stack);
-        }
     }
 
     #[test]

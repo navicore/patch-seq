@@ -21,11 +21,11 @@ use std::collections::HashMap;
 
 /// Configuration for SON output formatting
 #[derive(Clone)]
-pub struct SonConfig {
+pub(crate) struct SonConfig {
     /// Use pretty printing with indentation
-    pub pretty: bool,
+    pub(crate) pretty: bool,
     /// Number of spaces per indentation level
-    pub indent: usize,
+    pub(crate) indent: usize,
 }
 
 impl Default for SonConfig {
@@ -39,12 +39,12 @@ impl Default for SonConfig {
 
 impl SonConfig {
     /// Create a compact (single-line) config
-    pub fn compact() -> Self {
+    pub(crate) fn compact() -> Self {
         Self::default()
     }
 
     /// Create a pretty-printed config
-    pub fn pretty() -> Self {
+    pub(crate) fn pretty() -> Self {
         Self {
             pretty: true,
             indent: 2,
@@ -53,7 +53,7 @@ impl SonConfig {
 }
 
 /// Format a Value to SON string
-pub fn value_to_son(value: &Value, config: &SonConfig) -> String {
+pub(crate) fn value_to_son(value: &Value, config: &SonConfig) -> String {
     let mut buf = String::new();
     format_value(value, config, 0, &mut buf);
     buf
@@ -141,12 +141,10 @@ fn format_variant(v: &VariantData, config: &SonConfig, depth: usize, buf: &mut S
 
         if config.pretty && !v.fields.is_empty() {
             for field in v.fields.iter() {
-                buf.push('\n');
-                push_indent(buf, depth + 1, config.indent);
+                newline_at_indent(buf, depth + 1, config);
                 format_value(field, config, depth + 1, buf);
             }
-            buf.push('\n');
-            push_indent(buf, depth, config.indent);
+            newline_at_indent(buf, depth, config);
         } else {
             for field in v.fields.iter() {
                 buf.push(' ');
@@ -168,8 +166,7 @@ fn format_list(fields: &[Value], config: &SonConfig, depth: usize, buf: &mut Str
 
     if config.pretty {
         for field in fields.iter() {
-            buf.push('\n');
-            push_indent(buf, depth + 1, config.indent);
+            newline_at_indent(buf, depth + 1, config);
             format_value(field, config, depth + 1, buf);
             buf.push_str(" lv");
         }
@@ -200,8 +197,7 @@ fn format_map(map: &HashMap<MapKey, Value>, config: &SonConfig, depth: usize, bu
 
     if config.pretty {
         for (key, value) in entries {
-            buf.push('\n');
-            push_indent(buf, depth + 1, config.indent);
+            newline_at_indent(buf, depth + 1, config);
             format_map_key(key, buf);
             buf.push(' ');
             format_value(value, config, depth + 1, buf);
@@ -241,6 +237,12 @@ fn push_indent(buf: &mut String, depth: usize, indent_size: usize) {
     for _ in 0..(depth * indent_size) {
         buf.push(' ');
     }
+}
+
+/// Start a new line and indent to the given depth (pretty-print helper).
+fn newline_at_indent(buf: &mut String, depth: usize, config: &SonConfig) {
+    buf.push('\n');
+    push_indent(buf, depth, config.indent);
 }
 
 // ============================================================================

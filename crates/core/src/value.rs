@@ -1,3 +1,17 @@
+//! The `Value` type — the datum a Seq program talks about — plus the
+//! supporting types it embeds or composes with:
+//!
+//! - [`Value`]: the 11-variant enum (Int, Float, Bool, String, Symbol,
+//!   Variant, Map, Quotation, Closure, Channel, WeaveCtx).
+//! - [`VariantData`]: the heap-allocated payload behind `Value::Variant`.
+//! - [`MapKey`]: the hashable subset of `Value` allowed as map keys.
+//! - [`ChannelData`] / [`WeaveChannelData`] / [`WeaveMessage`]: the channel
+//!   handles that back `Value::Channel` and `Value::WeaveCtx`.
+//!
+//! `Value` has `#[repr(C)]` so compiled code can write into it directly
+//! without going through FFI, and implements `Send + Sync` via an `unsafe
+//! impl` (see the comment block on that impl for the safety argument).
+
 use crate::seqstring::SeqString;
 use may::sync::mpmc;
 use std::collections::HashMap;
@@ -9,19 +23,10 @@ use std::sync::Arc;
 /// Both sender and receiver are Clone (MPMC), so duplicating a Channel value
 /// just clones the Arc. Send/receive operations use the handles directly
 /// with zero mutex overhead.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ChannelData {
     pub sender: mpmc::Sender<Value>,
     pub receiver: mpmc::Receiver<Value>,
-}
-
-impl Clone for ChannelData {
-    fn clone(&self) -> Self {
-        Self {
-            sender: self.sender.clone(),
-            receiver: self.receiver.clone(),
-        }
-    }
 }
 
 // PartialEq by identity (Arc pointer comparison)
@@ -48,19 +53,10 @@ pub enum WeaveMessage {
 /// Channel data specifically for weave communication.
 ///
 /// Uses `WeaveMessage` instead of raw `Value` to support typed control flow.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct WeaveChannelData {
     pub sender: mpmc::Sender<WeaveMessage>,
     pub receiver: mpmc::Receiver<WeaveMessage>,
-}
-
-impl Clone for WeaveChannelData {
-    fn clone(&self) -> Self {
-        Self {
-            sender: self.sender.clone(),
-            receiver: self.receiver.clone(),
-        }
-    }
 }
 
 // PartialEq by identity (Arc pointer comparison)
@@ -115,6 +111,39 @@ impl MapKey {
             MapKey::String(s) => Value::String(s.clone()),
             MapKey::Bool(b) => Value::Bool(*b),
         }
+    }
+}
+
+/// VariantData: Composite values (sum types)
+///
+/// Fields are stored in a heap-allocated array, NOT linked via next pointers.
+/// This is the key difference from cem2, which used StackCell.next for field linking.
+///
+/// # Arc and Reference Cycles
+///
+/// Variants use `Arc<VariantData>` for O(1) cloning, which could theoretically
+/// create reference cycles. However, cycles are prevented by design:
+/// - VariantData.fields is immutable (no mutation after creation)
+/// - All variant operations create new variants rather than modifying existing ones
+/// - The Seq language has no mutation primitives for variant fields
+///
+/// This functional/immutable design ensures Arc reference counts always reach zero.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VariantData {
+    /// Tag identifies which variant constructor was used (symbol name)
+    /// Stored as SeqString for dynamic variant construction via `wrap-N`
+    pub tag: SeqString,
+
+    /// Fields stored as a Vec for COW (copy-on-write) optimization.
+    /// When Arc refcount == 1, list.push can append in place (amortized O(1)).
+    /// When shared, a clone is made before mutation.
+    pub fields: Vec<Value>,
+}
+
+impl VariantData {
+    /// Create a new variant with the given tag and fields
+    pub fn new(tag: SeqString, fields: Vec<Value>) -> Self {
+        Self { tag, fields }
     }
 }
 
@@ -218,39 +247,6 @@ pub enum Value {
 // - Arc-based sharing of Variants, Closure environments, and Channels
 unsafe impl Send for Value {}
 unsafe impl Sync for Value {}
-
-/// VariantData: Composite values (sum types)
-///
-/// Fields are stored in a heap-allocated array, NOT linked via next pointers.
-/// This is the key difference from cem2, which used StackCell.next for field linking.
-///
-/// # Arc and Reference Cycles
-///
-/// Variants use `Arc<VariantData>` for O(1) cloning, which could theoretically
-/// create reference cycles. However, cycles are prevented by design:
-/// - VariantData.fields is immutable (no mutation after creation)
-/// - All variant operations create new variants rather than modifying existing ones
-/// - The Seq language has no mutation primitives for variant fields
-///
-/// This functional/immutable design ensures Arc reference counts always reach zero.
-#[derive(Debug, Clone, PartialEq)]
-pub struct VariantData {
-    /// Tag identifies which variant constructor was used (symbol name)
-    /// Stored as SeqString for dynamic variant construction via `wrap-N`
-    pub tag: SeqString,
-
-    /// Fields stored as a Vec for COW (copy-on-write) optimization.
-    /// When Arc refcount == 1, list.push can append in place (amortized O(1)).
-    /// When shared, a clone is made before mutation.
-    pub fields: Vec<Value>,
-}
-
-impl VariantData {
-    /// Create a new variant with the given tag and fields
-    pub fn new(tag: SeqString, fields: Vec<Value>) -> Self {
-        Self { tag, fields }
-    }
-}
 
 impl std::fmt::Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
