@@ -1,3 +1,7 @@
+//! Binary entry point for `seq-lsp`. Implements the `LanguageServer` trait
+//! over a per-URI document cache and dispatches to the sibling `completion`,
+//! `diagnostics`, and `includes` modules.
+
 use std::collections::HashMap;
 use std::env;
 use std::path::PathBuf;
@@ -41,6 +45,15 @@ impl SeqLanguageServer {
             client,
             documents: RwLock::new(HashMap::new()),
         }
+    }
+
+    /// Run `f` against the cached `DocumentState` for `uri`. Returns `None`
+    /// if the document is unknown or the read lock cannot be acquired.
+    fn with_document<T>(&self, uri: &str, f: impl FnOnce(&DocumentState) -> T) -> Option<T> {
+        self.documents
+            .read()
+            .ok()
+            .and_then(|docs| docs.get(uri).map(f))
     }
 
     /// Update document state, resolve includes, and return diagnostics
@@ -167,7 +180,6 @@ impl LanguageServer for SeqLanguageServer {
 
         info!("Document opened: {}", uri);
 
-        // Extract file path from URI
         let file_path = includes::uri_to_path(uri.as_str());
         info!("File path: {:?}", file_path);
 
@@ -189,11 +201,9 @@ impl LanguageServer for SeqLanguageServer {
             info!("Document changed: {}", uri);
 
             // Get existing file path from cache
-            let file_path = if let Ok(docs) = self.documents.read() {
-                docs.get(uri.as_str()).and_then(|s| s.file_path.clone())
-            } else {
-                None
-            };
+            let file_path = self
+                .with_document(uri.as_str(), |s| s.file_path.clone())
+                .flatten();
 
             // Update document state (re-parses includes) and get diagnostics
             let diagnostics = self.update_document(uri.as_str(), text, file_path);
@@ -208,7 +218,6 @@ impl LanguageServer for SeqLanguageServer {
         let uri = params.text_document.uri;
         info!("Document closed: {}", uri);
 
-        // Remove from cache
         if let Ok(mut docs) = self.documents.write() {
             docs.remove(uri.as_str());
         }
@@ -221,30 +230,24 @@ impl LanguageServer for SeqLanguageServer {
         let uri = params.text_document_position_params.text_document.uri;
         let position = params.text_document_position_params.position;
 
-        // Get document state
-        let (word, local_words, included_words, quotations) =
-            if let Ok(docs) = self.documents.read() {
-                if let Some(state) = docs.get(uri.as_str()) {
-                    let word = get_word_at_position(&state.content, position);
-                    (
-                        word,
-                        state.local_words.clone(),
-                        state.includes.words.clone(),
-                        state.quotations.clone(),
-                    )
-                } else {
-                    return Ok(None);
-                }
-            } else {
-                return Ok(None);
-            };
+        let Some((word, local_words, included_words, quotations)) =
+            self.with_document(uri.as_str(), |state| {
+                (
+                    get_word_at_position(&state.content, position),
+                    state.local_words.clone(),
+                    state.includes.words.clone(),
+                    state.quotations.clone(),
+                )
+            })
+        else {
+            return Ok(None);
+        };
 
         // Check if cursor is inside a quotation
         let line = position.line as usize;
         let col = position.character as usize;
         for q in &quotations {
             if q.span.contains(line, col) {
-                // Format the quotation type for hover
                 let type_str = format_quotation_type(&q.inferred_type);
                 return Ok(Some(Hover {
                     contents: HoverContents::Markup(MarkupContent {
@@ -284,19 +287,13 @@ impl LanguageServer for SeqLanguageServer {
         let uri = params.text_document_position_params.text_document.uri;
         let position = params.text_document_position_params.position;
 
-        // Get document state and find word under cursor
-        let (word, local_words, included_words) = if let Ok(docs) = self.documents.read() {
-            if let Some(state) = docs.get(uri.as_str()) {
-                let word = get_word_at_position(&state.content, position);
-                (
-                    word,
-                    state.local_words.clone(),
-                    state.includes.words.clone(),
-                )
-            } else {
-                return Ok(None);
-            }
-        } else {
+        let Some((word, local_words, included_words)) = self.with_document(uri.as_str(), |state| {
+            (
+                get_word_at_position(&state.content, position),
+                state.local_words.clone(),
+                state.includes.words.clone(),
+            )
+        }) else {
             return Ok(None);
         };
 
@@ -338,14 +335,9 @@ impl LanguageServer for SeqLanguageServer {
         let uri = params.text_document.uri;
         let range = params.range;
 
-        // Get document content and file path
-        let (content, file_path) = if let Ok(docs) = self.documents.read() {
-            if let Some(state) = docs.get(uri.as_str()) {
-                (state.content.clone(), state.file_path.clone())
-            } else {
-                return Ok(None);
-            }
-        } else {
+        let Some((content, file_path)) = self.with_document(uri.as_str(), |state| {
+            (state.content.clone(), state.file_path.clone())
+        }) else {
             return Ok(None);
         };
 
@@ -367,9 +359,8 @@ impl LanguageServer for SeqLanguageServer {
         let uri = params.text_document_position.text_document.uri;
         let position = params.text_document_position.position;
 
-        // Get document state
-        let (line_prefix, included_words, local_words) = if let Ok(docs) = self.documents.read() {
-            if let Some(state) = docs.get(uri.as_str()) {
+        let (line_prefix, included_words, local_words) = self
+            .with_document(uri.as_str(), |state| {
                 let prefix = state
                     .content
                     .lines()
@@ -383,12 +374,8 @@ impl LanguageServer for SeqLanguageServer {
                     state.includes.words.clone(),
                     state.local_words.clone(),
                 )
-            } else {
-                (None, Vec::new(), Vec::new())
-            }
-        } else {
-            (None, Vec::new(), Vec::new())
-        };
+            })
+            .unwrap_or_default();
 
         let context = line_prefix
             .as_ref()
@@ -408,14 +395,9 @@ impl LanguageServer for SeqLanguageServer {
     ) -> Result<Option<DocumentSymbolResponse>> {
         let uri = params.text_document.uri;
 
-        // Get local words and content from document state
-        let (local_words, content) = if let Ok(docs) = self.documents.read() {
-            if let Some(state) = docs.get(uri.as_str()) {
-                (state.local_words.clone(), state.content.clone())
-            } else {
-                return Ok(None);
-            }
-        } else {
+        let Some((local_words, content)) = self.with_document(uri.as_str(), |state| {
+            (state.local_words.clone(), state.content.clone())
+        }) else {
             return Ok(None);
         };
 
@@ -430,7 +412,6 @@ impl LanguageServer for SeqLanguageServer {
         let symbols: Vec<DocumentSymbol> = local_words
             .iter()
             .map(|word| {
-                // Get actual line length for end position
                 let end_char = line_lengths.get(word.end_line).copied().unwrap_or(0);
 
                 #[allow(deprecated)]
@@ -472,18 +453,15 @@ impl LanguageServer for SeqLanguageServer {
         let uri = params.text_document.uri;
         let range = params.range;
 
-        // Get document state
-        let (content, local_words, included_words) = if let Ok(docs) = self.documents.read() {
-            if let Some(state) = docs.get(uri.as_str()) {
+        let Some((content, local_words, included_words)) =
+            self.with_document(uri.as_str(), |state| {
                 (
                     state.content.clone(),
                     state.local_words.clone(),
                     state.includes.words.clone(),
                 )
-            } else {
-                return Ok(None);
-            }
-        } else {
+            })
+        else {
             return Ok(None);
         };
 
@@ -502,7 +480,6 @@ impl LanguageServer for SeqLanguageServer {
                 continue;
             }
 
-            // Find word calls in this line and add inlay hints
             for hint in find_word_calls_in_line(line, line_num, &local_words, &included_words) {
                 hints.push(hint);
             }
@@ -574,6 +551,24 @@ fn find_word_calls_in_line(
     hints
 }
 
+/// Build a TYPE-kind inlay hint that shows an effect label after a word.
+fn make_type_inlay_hint(line: u32, end_col: u32, effect: &seqc::Effect) -> InlayHint {
+    let effect_str = completion::format_effect(effect);
+    InlayHint {
+        position: Position {
+            line,
+            character: end_col,
+        },
+        label: InlayHintLabel::String(format!(": {}", effect_str)),
+        kind: Some(InlayHintKind::TYPE),
+        text_edits: None,
+        tooltip: None,
+        padding_left: Some(false),
+        padding_right: Some(true),
+        data: None,
+    }
+}
+
 /// Create an inlay hint for a word if it has a known signature
 fn make_inlay_hint_for_word(
     word: &str,
@@ -592,67 +587,25 @@ fn make_inlay_hint_for_word(
         return None;
     }
 
-    // Look up in local words
     for local in local_words {
         if local.name == word
             && let Some(ref effect) = local.effect
         {
-            let effect_str = completion::format_effect(effect);
-            return Some(InlayHint {
-                position: Position {
-                    line,
-                    character: end_col,
-                },
-                label: InlayHintLabel::String(format!(": {}", effect_str)),
-                kind: Some(InlayHintKind::TYPE),
-                text_edits: None,
-                tooltip: None,
-                padding_left: Some(false),
-                padding_right: Some(true),
-                data: None,
-            });
+            return Some(make_type_inlay_hint(line, end_col, effect));
         }
     }
 
-    // Look up in included words
     for included in included_words {
         if included.name == word
             && let Some(ref effect) = included.effect
         {
-            let effect_str = completion::format_effect(effect);
-            return Some(InlayHint {
-                position: Position {
-                    line,
-                    character: end_col,
-                },
-                label: InlayHintLabel::String(format!(": {}", effect_str)),
-                kind: Some(InlayHintKind::TYPE),
-                text_edits: None,
-                tooltip: None,
-                padding_left: Some(false),
-                padding_right: Some(true),
-                data: None,
-            });
+            return Some(make_type_inlay_hint(line, end_col, effect));
         }
     }
 
-    // Look up in builtins
     for (name, effect) in seqc::builtins::builtin_signatures() {
         if name == word {
-            let effect_str = completion::format_effect(&effect);
-            return Some(InlayHint {
-                position: Position {
-                    line,
-                    character: end_col,
-                },
-                label: InlayHintLabel::String(format!(": {}", effect_str)),
-                kind: Some(InlayHintKind::TYPE),
-                text_edits: None,
-                tooltip: None,
-                padding_left: Some(false),
-                padding_right: Some(true),
-                data: None,
-            });
+            return Some(make_type_inlay_hint(line, end_col, &effect));
         }
     }
 
@@ -667,7 +620,6 @@ fn get_word_at_position(content: &str, position: Position) -> Option<String> {
     // Find word boundaries - Seq words can contain special chars like -, >, ?, !
     let is_word_char = |c: char| c.is_alphanumeric() || "-_>?!<+=*/:".contains(c);
 
-    // Find start of word
     let start = line[..col.min(line.len())]
         .char_indices()
         .rev()
@@ -675,7 +627,6 @@ fn get_word_at_position(content: &str, position: Position) -> Option<String> {
         .map(|(i, _)| i + 1)
         .unwrap_or(0);
 
-    // Find end of word
     let end = line[col.min(line.len())..]
         .char_indices()
         .find(|(_, c)| !is_word_char(*c))

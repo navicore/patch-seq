@@ -1,3 +1,7 @@
+//! LSP completion logic. Detects cursor context from the line prefix and
+//! builds ranked `CompletionItem`s for local/included words, builtins,
+//! keywords, stdlib module names, and stack-effect types.
+
 use crate::includes::{IncludedWord, LocalWord};
 use seqc::builtins::builtin_signatures;
 use tower_lsp::lsp_types::{
@@ -27,13 +31,13 @@ const STDLIB_MODULES: &[(&str, &str)] = &[
 ];
 
 /// Context for completion requests.
-pub struct CompletionContext<'a> {
+pub(crate) struct CompletionContext<'a> {
     /// The current line text up to the cursor
-    pub line_prefix: &'a str,
+    pub(crate) line_prefix: &'a str,
     /// Words from included modules
-    pub included_words: &'a [IncludedWord],
+    pub(crate) included_words: &'a [IncludedWord],
     /// Words defined in the current document
-    pub local_words: &'a [LocalWord],
+    pub(crate) local_words: &'a [LocalWord],
 }
 
 /// Completion context type - determines what completions to show
@@ -56,7 +60,7 @@ enum ContextType {
 }
 
 /// Get completion items based on context.
-pub fn get_completions(context: Option<CompletionContext<'_>>) -> Vec<CompletionItem> {
+pub(crate) fn get_completions(context: Option<CompletionContext<'_>>) -> Vec<CompletionItem> {
     let Some(ctx) = context else {
         return get_builtin_completions();
     };
@@ -80,7 +84,7 @@ fn detect_context(line_prefix: &str) -> ContextType {
     let trimmed = line_prefix.trim_start();
 
     // Check for include contexts first (most specific)
-    if let Some(_partial) = trimmed.strip_prefix("include std:") {
+    if trimmed.starts_with("include std:") {
         return ContextType::IncludeStdModule;
     }
     if trimmed.starts_with("include ") {
@@ -93,14 +97,10 @@ fn detect_context(line_prefix: &str) -> ContextType {
     }
 
     // Check for comment (anything after #)
-    if line_prefix.contains('#') {
-        // Find if cursor is after the #
-        if let Some(hash_pos) = line_prefix.rfind('#') {
-            // Check if this # is inside a string
-            let before_hash = &line_prefix[..hash_pos];
-            if !is_in_string(before_hash) {
-                return ContextType::InComment;
-            }
+    if let Some(hash_pos) = line_prefix.rfind('#') {
+        let before_hash = &line_prefix[..hash_pos];
+        if !is_in_string(before_hash) {
+            return ContextType::InComment;
         }
     }
 
@@ -237,6 +237,33 @@ fn get_type_completions() -> Vec<CompletionItem> {
         .collect()
 }
 
+/// Build a FUNCTION-kind CompletionItem for a user-visible word.
+///
+/// `source_trailer` is the trailing italicized markdown line
+/// (e.g. `*Defined in this file*` or `*From utils*`).
+fn make_word_completion(
+    name: &str,
+    effect: Option<&seqc::Effect>,
+    source_trailer: &str,
+    sort_prefix: &str,
+) -> CompletionItem {
+    let detail = effect
+        .map(format_effect)
+        .unwrap_or_else(|| "( ? )".to_string());
+    let doc_value = format!("```seq\n: {} {}\n```\n\n{}", name, detail, source_trailer);
+    CompletionItem {
+        label: name.to_string(),
+        kind: Some(CompletionItemKind::FUNCTION),
+        detail: Some(detail),
+        documentation: Some(Documentation::MarkupContent(MarkupContent {
+            kind: MarkupKind::Markdown,
+            value: doc_value,
+        })),
+        sort_text: Some(format!("{}{}", sort_prefix, name)),
+        ..Default::default()
+    }
+}
+
 /// Get completions for normal code context
 fn get_code_completions(
     included_words: &[IncludedWord],
@@ -246,53 +273,24 @@ fn get_code_completions(
 
     // Add local words first (highest priority)
     for word in local_words {
-        let detail = word
-            .effect
-            .as_ref()
-            .map(format_effect)
-            .unwrap_or_else(|| "( ? )".to_string());
-
-        items.push(CompletionItem {
-            label: word.name.clone(),
-            kind: Some(CompletionItemKind::FUNCTION),
-            detail: Some(detail.clone()),
-            documentation: Some(Documentation::MarkupContent(MarkupContent {
-                kind: MarkupKind::Markdown,
-                value: format!(
-                    "```seq\n: {} {}\n```\n\n*Defined in this file*",
-                    word.name, detail
-                ),
-            })),
-            sort_text: Some(format!("0_{}", word.name)), // Sort local words first
-            ..Default::default()
-        });
+        items.push(make_word_completion(
+            &word.name,
+            word.effect.as_ref(),
+            "*Defined in this file*",
+            "0_",
+        ));
     }
 
-    // Add included words
     for word in included_words {
-        let detail = word
-            .effect
-            .as_ref()
-            .map(format_effect)
-            .unwrap_or_else(|| "( ? )".to_string());
-
-        items.push(CompletionItem {
-            label: word.name.clone(),
-            kind: Some(CompletionItemKind::FUNCTION),
-            detail: Some(detail.clone()),
-            documentation: Some(Documentation::MarkupContent(MarkupContent {
-                kind: MarkupKind::Markdown,
-                value: format!(
-                    "```seq\n: {} {}\n```\n\n*From {}*",
-                    word.name, detail, word.source
-                ),
-            })),
-            sort_text: Some(format!("1_{}", word.name)), // Sort included words second
-            ..Default::default()
-        });
+        let trailer = format!("*From {}*", word.source);
+        items.push(make_word_completion(
+            &word.name,
+            word.effect.as_ref(),
+            &trailer,
+            "1_",
+        ));
     }
 
-    // Add builtins
     items.extend(get_builtin_completions());
 
     items
@@ -305,13 +303,14 @@ fn get_builtin_completions() -> Vec<CompletionItem> {
     // Add all builtins with their signatures
     for (name, effect) in builtin_signatures() {
         let signature = format_effect(&effect);
+        let doc_value = format!("```seq\n{} {}\n```\n\n*Built-in*", name, signature);
         items.push(CompletionItem {
             label: name.clone(),
             kind: Some(CompletionItemKind::FUNCTION),
-            detail: Some(signature.clone()),
+            detail: Some(signature),
             documentation: Some(Documentation::MarkupContent(MarkupContent {
                 kind: MarkupKind::Markdown,
-                value: format!("```seq\n{} {}\n```\n\n*Built-in*", name, signature),
+                value: doc_value,
             })),
             sort_text: Some(format!("2_{}", name)), // Sort builtins after local/included
             ..Default::default()
@@ -357,7 +356,7 @@ fn get_builtin_completions() -> Vec<CompletionItem> {
 }
 
 /// Format a stack effect for display.
-pub fn format_effect(effect: &seqc::Effect) -> String {
+pub(crate) fn format_effect(effect: &seqc::Effect) -> String {
     format!(
         "( {} -- {} )",
         format_stack(&effect.inputs),
@@ -385,7 +384,7 @@ fn format_stack(stack: &seqc::StackType) -> String {
 }
 
 /// Format a type for display.
-pub fn format_type(ty: &seqc::Type) -> String {
+pub(crate) fn format_type(ty: &seqc::Type) -> String {
     use seqc::Type;
 
     match ty {

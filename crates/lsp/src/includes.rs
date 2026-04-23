@@ -4,7 +4,7 @@
 //! Uses the embedded stdlib from the compiler - no filesystem search needed.
 
 use seqc::Effect;
-use seqc::ast::Include;
+use seqc::ast::{Include, Program};
 use seqc::parser::Parser;
 use seqc::stdlib_embed;
 use std::collections::HashSet;
@@ -13,39 +13,39 @@ use tracing::{debug, warn};
 
 /// A word extracted from an included module
 #[derive(Debug, Clone)]
-pub struct IncludedWord {
-    pub name: String,
-    pub effect: Option<Effect>,
+pub(crate) struct IncludedWord {
+    pub(crate) name: String,
+    pub(crate) effect: Option<Effect>,
     /// Source module name (e.g., "std:json" or "utils")
-    pub source: String,
+    pub(crate) source: String,
     /// File path where the word is defined
-    pub file_path: Option<PathBuf>,
+    pub(crate) file_path: Option<PathBuf>,
     /// Line number where the word is defined (0-indexed)
-    pub start_line: usize,
+    pub(crate) start_line: usize,
 }
 
 /// Results from resolving includes
 #[derive(Debug, Clone, Default)]
-pub struct IncludeResolution {
+pub(crate) struct IncludeResolution {
     /// Words from included modules (including auto-generated constructors)
-    pub words: Vec<IncludedWord>,
+    pub(crate) words: Vec<IncludedWord>,
     /// Union type names from included modules (for type validation)
-    pub union_names: Vec<String>,
+    pub(crate) union_names: Vec<String>,
 }
 
 /// A word defined in the current document
 #[derive(Debug, Clone)]
-pub struct LocalWord {
-    pub name: String,
-    pub effect: Option<Effect>,
+pub(crate) struct LocalWord {
+    pub(crate) name: String,
+    pub(crate) effect: Option<Effect>,
     /// Line number where the word is defined (0-indexed)
-    pub start_line: usize,
+    pub(crate) start_line: usize,
     /// Line number where the word ends (0-indexed)
-    pub end_line: usize,
+    pub(crate) end_line: usize,
 }
 
 /// Extract include statements and local words from source code
-pub fn parse_document(source: &str) -> (Vec<Include>, Vec<LocalWord>) {
+pub(crate) fn parse_document(source: &str) -> (Vec<Include>, Vec<LocalWord>) {
     let mut parser = Parser::new(source);
     match parser.parse() {
         Ok(program) => {
@@ -76,7 +76,7 @@ pub fn parse_document(source: &str) -> (Vec<Include>, Vec<LocalWord>) {
 
 /// Resolve includes and extract words from included files.
 /// Uses embedded stdlib for std: includes, filesystem for relative includes.
-pub fn resolve_includes(includes: &[Include], doc_path: Option<&Path>) -> IncludeResolution {
+pub(crate) fn resolve_includes(includes: &[Include], doc_path: Option<&Path>) -> IncludeResolution {
     let mut result = IncludeResolution::default();
     let mut visited = HashSet::new();
 
@@ -88,6 +88,41 @@ pub fn resolve_includes(includes: &[Include], doc_path: Option<&Path>) -> Includ
     }
 
     result
+}
+
+/// Append words and union constructors from a parsed module into `result`,
+/// tagging each entry with the given source label and optional file path.
+fn ingest_program(
+    program: &Program,
+    source_label: &str,
+    file_path: Option<&Path>,
+    result: &mut IncludeResolution,
+) {
+    for word in &program.words {
+        let start_line = word.source.as_ref().map(|s| s.start_line).unwrap_or(0);
+        result.words.push(IncludedWord {
+            name: word.name.clone(),
+            effect: word.effect.clone(),
+            source: source_label.to_string(),
+            file_path: file_path.map(|p| p.to_path_buf()),
+            start_line,
+        });
+    }
+
+    for union_def in &program.unions {
+        // Track the union type name for field type validation
+        result.union_names.push(union_def.name.clone());
+
+        for variant in &union_def.variants {
+            result.words.push(IncludedWord {
+                name: format!("Make-{}", variant.name),
+                effect: None, // Constructor effects are complex, skip for now
+                source: source_label.to_string(),
+                file_path: file_path.map(|p| p.to_path_buf()),
+                start_line: 0,
+            });
+        }
+    }
 }
 
 /// Recursively resolve an include, with cycle detection and depth limit
@@ -113,12 +148,9 @@ fn resolve_include_recursive(
             }
             visited.insert(key.clone());
 
-            let content = match stdlib_embed::get_stdlib(name) {
-                Some(c) => c,
-                None => {
-                    debug!("Stdlib module not found: {}", name);
-                    return;
-                }
+            let Some(content) = stdlib_embed::get_stdlib(name) else {
+                debug!("Stdlib module not found: {}", name);
+                return;
             };
 
             let mut parser = Parser::new(content);
@@ -130,34 +162,8 @@ fn resolve_include_recursive(
                 }
             };
 
-            // Extract words from stdlib module
-            for word in &program.words {
-                let start_line = word.source.as_ref().map(|s| s.start_line).unwrap_or(0);
-                result.words.push(IncludedWord {
-                    name: word.name.clone(),
-                    effect: word.effect.clone(),
-                    source: format!("std:{}", name),
-                    file_path: None, // Embedded, no file path
-                    start_line,
-                });
-            }
-
-            // Extract union type names and constructors (Make-VariantName) from stdlib module
-            for union_def in &program.unions {
-                // Track the union type name for field type validation
-                result.union_names.push(union_def.name.clone());
-
-                for variant in &union_def.variants {
-                    let constructor_name = format!("Make-{}", variant.name);
-                    result.words.push(IncludedWord {
-                        name: constructor_name,
-                        effect: None, // Constructor effects are complex, skip for now
-                        source: format!("std:{}", name),
-                        file_path: None,
-                        start_line: 0,
-                    });
-                }
-            }
+            let source_label = format!("std:{}", name);
+            ingest_program(&program, &source_label, None, result);
 
             // Recursively resolve nested includes (stdlib can include other stdlib)
             for nested_include in &program.includes {
@@ -166,21 +172,15 @@ fn resolve_include_recursive(
         }
         Include::Relative(name) => {
             // Filesystem-based resolution for relative includes
-            let dir = match doc_dir {
-                Some(d) => d,
-                None => {
-                    debug!("No document directory for relative include: {}", name);
-                    return;
-                }
+            let Some(dir) = doc_dir else {
+                debug!("No document directory for relative include: {}", name);
+                return;
             };
 
             let path = dir.join(format!("{}.seq", name));
-            let canonical = match path.canonicalize() {
-                Ok(p) => p,
-                Err(_) => {
-                    debug!("Could not resolve relative include: {}", name);
-                    return;
-                }
+            let Ok(canonical) = path.canonicalize() else {
+                debug!("Could not resolve relative include: {}", name);
+                return;
             };
 
             let key = canonical.to_string_lossy().to_string();
@@ -206,34 +206,7 @@ fn resolve_include_recursive(
                 }
             };
 
-            // Extract words from this file
-            for word in &program.words {
-                let start_line = word.source.as_ref().map(|s| s.start_line).unwrap_or(0);
-                result.words.push(IncludedWord {
-                    name: word.name.clone(),
-                    effect: word.effect.clone(),
-                    source: name.clone(),
-                    file_path: Some(canonical.clone()),
-                    start_line,
-                });
-            }
-
-            // Extract union type names and constructors (Make-VariantName) from this file
-            for union_def in &program.unions {
-                // Track the union type name for field type validation
-                result.union_names.push(union_def.name.clone());
-
-                for variant in &union_def.variants {
-                    let constructor_name = format!("Make-{}", variant.name);
-                    result.words.push(IncludedWord {
-                        name: constructor_name,
-                        effect: None, // Constructor effects are complex, skip for now
-                        source: name.clone(),
-                        file_path: Some(canonical.clone()),
-                        start_line: 0,
-                    });
-                }
-            }
+            ingest_program(&program, name, Some(&canonical), result);
 
             // Recursively resolve nested includes
             let include_dir = canonical.parent();
@@ -249,7 +222,7 @@ fn resolve_include_recursive(
 }
 
 /// Convert a file:// URI to a PathBuf
-pub fn uri_to_path(uri: &str) -> Option<PathBuf> {
+pub(crate) fn uri_to_path(uri: &str) -> Option<PathBuf> {
     if let Some(path_str) = uri.strip_prefix("file://") {
         // On Windows, URIs look like file:///C:/path
         // On Unix, file:///path
