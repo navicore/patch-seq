@@ -691,7 +691,7 @@ impl App {
                 let _ = fs::remove_file(&output_path);
 
                 match result {
-                    RunResult::Success { stdout, stderr: _ } => {
+                    RunResult::Success { stdout } => {
                         // Update IR from the session file - only on success
                         self.update_ir_from_session(expr);
 
@@ -704,11 +704,7 @@ impl App {
                                 .add_entry(HistoryEntry::new(expr).with_output(output_text));
                         }
                     }
-                    RunResult::Failed {
-                        stdout: _,
-                        stderr,
-                        status,
-                    } => {
+                    RunResult::Failed { stderr, status } => {
                         // Rollback on runtime error - don't keep failed expression in session
                         self.rollback_session(&original);
                         let err = if stderr.is_empty() {
@@ -1042,7 +1038,7 @@ impl App {
                 let _ = fs::remove_file(&output_path);
 
                 match result {
-                    RunResult::Success { stdout, stderr: _ } => {
+                    RunResult::Success { stdout } => {
                         let output_text = stdout.trim();
                         // Add command to history with stack output
                         if !output_text.is_empty() {
@@ -1079,7 +1075,7 @@ impl App {
                 let _ = fs::remove_file(&output_path);
 
                 match result {
-                    RunResult::Success { stdout, stderr: _ } => {
+                    RunResult::Success { stdout } => {
                         let output_text = stdout.trim();
                         let mut lines = vec!["Stack:".to_string()];
                         if !output_text.is_empty() {
