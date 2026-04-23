@@ -13,9 +13,80 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Widget, Wrap},
 };
 
+/// LLVM IR keywords (calling conventions, linkage, flags).
+const LLVM_KEYWORDS: &[&str] = &[
+    "define", "declare", "tailcc", "fastcc", "ccc", "private", "internal", "external", "global",
+    "constant", "align", "to", "null", "true", "false", "undef", "nuw", "nsw", "exact", "inbounds",
+];
+
+/// LLVM IR instruction mnemonics.
+const LLVM_INSTRUCTIONS: &[&str] = &[
+    "ret",
+    "br",
+    "switch",
+    "invoke",
+    "resume",
+    "unreachable",
+    "add",
+    "sub",
+    "mul",
+    "udiv",
+    "sdiv",
+    "urem",
+    "srem",
+    "and",
+    "or",
+    "xor",
+    "shl",
+    "lshr",
+    "ashr",
+    "fadd",
+    "fsub",
+    "fmul",
+    "fdiv",
+    "frem",
+    "alloca",
+    "load",
+    "store",
+    "getelementptr",
+    "fence",
+    "cmpxchg",
+    "atomicrmw",
+    "trunc",
+    "zext",
+    "sext",
+    "fptrunc",
+    "fpext",
+    "fptoui",
+    "fptosi",
+    "uitofp",
+    "sitofp",
+    "ptrtoint",
+    "inttoptr",
+    "bitcast",
+    "addrspacecast",
+    "icmp",
+    "fcmp",
+    "phi",
+    "select",
+    "call",
+    "va_arg",
+    "extractelement",
+    "insertelement",
+    "shufflevector",
+    "extractvalue",
+    "insertvalue",
+];
+
+/// LLVM IR named types (plus `i<N>` integer types handled inline).
+const LLVM_TYPES: &[&str] = &[
+    "void", "i1", "i8", "i16", "i32", "i64", "i128", "half", "float", "double", "fp128", "ptr",
+    "label", "metadata", "type",
+];
+
 /// The different IR view modes
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum IrViewMode {
+pub(crate) enum IrViewMode {
     /// ASCII art stack effect diagrams
     #[default]
     StackArt,
@@ -27,7 +98,7 @@ pub enum IrViewMode {
 
 impl IrViewMode {
     /// Get the next view mode (for cycling with arrow keys)
-    pub fn next(self) -> Self {
+    pub(crate) fn next(self) -> Self {
         match self {
             Self::StackArt => Self::TypedAst,
             Self::TypedAst => Self::LlvmIr,
@@ -35,17 +106,8 @@ impl IrViewMode {
         }
     }
 
-    /// Get the previous view mode
-    pub fn prev(self) -> Self {
-        match self {
-            Self::StackArt => Self::LlvmIr,
-            Self::TypedAst => Self::StackArt,
-            Self::LlvmIr => Self::TypedAst,
-        }
-    }
-
     /// Get the display name for this mode
-    pub fn name(&self) -> &'static str {
+    pub(crate) fn name(&self) -> &'static str {
         match self {
             Self::StackArt => "Stack Effects",
             Self::TypedAst => "Typed AST",
@@ -56,33 +118,25 @@ impl IrViewMode {
 
 /// Content to display in the IR pane
 #[derive(Debug, Clone, Default)]
-pub struct IrContent {
+pub(crate) struct IrContent {
     /// Stack art lines (rendered ASCII art)
-    pub stack_art: Vec<String>,
+    pub(crate) stack_art: Vec<String>,
     /// Typed AST representation
-    pub typed_ast: Vec<String>,
+    pub(crate) typed_ast: Vec<String>,
     /// LLVM IR snippet
-    pub llvm_ir: Vec<String>,
+    pub(crate) llvm_ir: Vec<String>,
     /// Any error messages
-    pub errors: Vec<String>,
+    pub(crate) errors: Vec<String>,
 }
 
 impl IrContent {
     /// Create empty IR content
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
-    /// Create content with an error message
-    pub fn with_error(error: impl Into<String>) -> Self {
-        Self {
-            errors: vec![error.into()],
-            ..Default::default()
-        }
-    }
-
     /// Get the content for the given view mode
-    pub fn content_for(&self, mode: IrViewMode) -> &[String] {
+    pub(crate) fn content_for(&self, mode: IrViewMode) -> &[String] {
         match mode {
             IrViewMode::StackArt => &self.stack_art,
             IrViewMode::TypedAst => &self.typed_ast,
@@ -91,13 +145,13 @@ impl IrContent {
     }
 
     /// Check if there are errors
-    pub fn has_errors(&self) -> bool {
+    pub(crate) fn has_errors(&self) -> bool {
         !self.errors.is_empty()
     }
 }
 
 /// The IR pane widget
-pub struct IrPane<'a> {
+pub(crate) struct IrPane<'a> {
     /// Current view mode
     mode: IrViewMode,
     /// Content to display
@@ -108,7 +162,7 @@ pub struct IrPane<'a> {
 
 impl<'a> IrPane<'a> {
     /// Create a new IR pane
-    pub fn new(content: &'a IrContent) -> Self {
+    pub(crate) fn new(content: &'a IrContent) -> Self {
         Self {
             mode: IrViewMode::default(),
             content,
@@ -117,14 +171,8 @@ impl<'a> IrPane<'a> {
     }
 
     /// Set the view mode
-    pub fn mode(mut self, mode: IrViewMode) -> Self {
+    pub(crate) fn mode(mut self, mode: IrViewMode) -> Self {
         self.mode = mode;
-        self
-    }
-
-    /// Set the scroll offset
-    pub fn scroll(mut self, scroll: u16) -> Self {
-        self.scroll = scroll;
         self
     }
 
@@ -333,83 +381,11 @@ impl<'a> IrPane<'a> {
 
     /// Get style for an LLVM IR word
     fn llvm_word_style(&self, word: &str) -> Style {
-        // Keywords (calling conventions, linkage, etc.)
-        const KEYWORDS: &[&str] = &[
-            "define", "declare", "tailcc", "fastcc", "ccc", "private", "internal", "external",
-            "global", "constant", "align", "to", "null", "true", "false", "undef", "nuw", "nsw",
-            "exact", "inbounds",
-        ];
-
-        // Instructions
-        const INSTRUCTIONS: &[&str] = &[
-            "ret",
-            "br",
-            "switch",
-            "invoke",
-            "resume",
-            "unreachable",
-            "add",
-            "sub",
-            "mul",
-            "udiv",
-            "sdiv",
-            "urem",
-            "srem",
-            "and",
-            "or",
-            "xor",
-            "shl",
-            "lshr",
-            "ashr",
-            "fadd",
-            "fsub",
-            "fmul",
-            "fdiv",
-            "frem",
-            "alloca",
-            "load",
-            "store",
-            "getelementptr",
-            "fence",
-            "cmpxchg",
-            "atomicrmw",
-            "trunc",
-            "zext",
-            "sext",
-            "fptrunc",
-            "fpext",
-            "fptoui",
-            "fptosi",
-            "uitofp",
-            "sitofp",
-            "ptrtoint",
-            "inttoptr",
-            "bitcast",
-            "addrspacecast",
-            "icmp",
-            "fcmp",
-            "phi",
-            "select",
-            "call",
-            "va_arg",
-            "extractelement",
-            "insertelement",
-            "shufflevector",
-            "extractvalue",
-            "insertvalue",
-        ];
-
-        // Type names
-        const TYPES: &[&str] = &[
-            "void", "i1", "i8", "i16", "i32", "i64", "i128", "half", "float", "double", "fp128",
-            "ptr", "label", "metadata", "type",
-        ];
-
-        if KEYWORDS.contains(&word) {
+        if LLVM_KEYWORDS.contains(&word) {
             Style::default().fg(Color::Yellow)
-        } else if INSTRUCTIONS.contains(&word) {
+        } else if LLVM_INSTRUCTIONS.contains(&word) {
             Style::default().fg(Color::Green)
-        } else if TYPES.contains(&word)
+        } else if LLVM_TYPES.contains(&word)
             || word.starts_with('i') && word[1..].chars().all(|c| c.is_ascii_digit())
         {
             Style::default().fg(Color::Cyan)
@@ -417,34 +393,7 @@ impl<'a> IrPane<'a> {
             Style::default().fg(Color::White)
         }
     }
-}
 
-impl Widget for &IrPane<'_> {
-    fn render(self, area: Rect, buf: &mut Buffer) {
-        // Create the border with title showing current mode
-        let title = format!(" {} ", self.mode.name());
-
-        let block = Block::default()
-            .title(title)
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::DarkGray));
-
-        let inner = block.inner(area);
-        block.render(area, buf);
-
-        // Get content and adapt to available width
-        let available_width = inner.width as usize;
-        let lines = self.width_adapted_lines(available_width);
-
-        let paragraph = Paragraph::new(lines)
-            .scroll((self.scroll, 0))
-            .wrap(Wrap { trim: false });
-
-        paragraph.render(inner, buf);
-    }
-}
-
-impl<'a> IrPane<'a> {
     /// Get lines adapted to available width
     fn width_adapted_lines(&self, available_width: usize) -> Vec<Line<'a>> {
         if self.content.has_errors() {
@@ -482,11 +431,7 @@ impl<'a> IrPane<'a> {
             .iter()
             .filter_map(|line| {
                 // Skip decorative box lines (help header box)
-                if line.contains('╭')
-                    || line.contains('╮')
-                    || line.contains('╰')
-                    || line.contains('╯')
-                {
+                if ['╭', '╮', '╰', '╯'].iter().any(|c| line.contains(*c)) {
                     return None;
                 }
                 // Convert box header content to plain text
@@ -504,12 +449,9 @@ impl<'a> IrPane<'a> {
                 }
 
                 // Skip ASCII art stack boxes if too wide
-                let has_box_chars = line.contains('┌')
-                    || line.contains('┐')
-                    || line.contains('└')
-                    || line.contains('┘')
-                    || line.contains('├')
-                    || line.contains('┤');
+                let has_box_chars = ['┌', '┐', '└', '┘', '├', '┤']
+                    .iter()
+                    .any(|c| line.contains(*c));
 
                 if has_box_chars && line.chars().count() > available_width {
                     // For stack art, extract just the effect signature
@@ -543,6 +485,31 @@ impl<'a> IrPane<'a> {
     }
 }
 
+impl Widget for &IrPane<'_> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        // Create the border with title showing current mode
+        let title = format!(" {} ", self.mode.name());
+
+        let block = Block::default()
+            .title(title)
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray));
+
+        let inner = block.inner(area);
+        block.render(area, buf);
+
+        // Get content and adapt to available width
+        let available_width = inner.width as usize;
+        let lines = self.width_adapted_lines(available_width);
+
+        let paragraph = Paragraph::new(lines)
+            .scroll((self.scroll, 0))
+            .wrap(Wrap { trim: false });
+
+        paragraph.render(inner, buf);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -553,8 +520,6 @@ mod tests {
         assert_eq!(mode.next(), IrViewMode::TypedAst);
         assert_eq!(mode.next().next(), IrViewMode::LlvmIr);
         assert_eq!(mode.next().next().next(), IrViewMode::StackArt);
-
-        assert_eq!(mode.prev(), IrViewMode::LlvmIr);
     }
 
     #[test]
@@ -569,13 +534,6 @@ mod tests {
         let content = IrContent::new();
         assert!(!content.has_errors());
         assert!(content.content_for(IrViewMode::StackArt).is_empty());
-    }
-
-    #[test]
-    fn test_ir_content_with_error() {
-        let content = IrContent::with_error("test error");
-        assert!(content.has_errors());
-        assert_eq!(content.errors[0], "test error");
     }
 
     #[test]

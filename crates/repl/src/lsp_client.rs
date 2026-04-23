@@ -2,8 +2,6 @@
 //!
 //! Connects to seq-lsp to provide completions.
 //! Uses JSON-RPC over stdin/stdout to communicate with the language server.
-//!
-//! Ported from crates/repl/src/lsp_client.rs
 
 use lsp_types::{
     ClientCapabilities, CompletionItem, CompletionParams, CompletionResponse,
@@ -52,7 +50,7 @@ struct ResponseError {
 }
 
 /// LSP Client that manages communication with seq-lsp
-pub struct LspClient {
+pub(crate) struct LspClient {
     process: Child,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
@@ -63,7 +61,7 @@ pub struct LspClient {
 
 impl LspClient {
     /// Spawn seq-lsp and initialize the connection
-    pub fn new(seq_file: &Path) -> Result<Self, String> {
+    pub(crate) fn new(seq_file: &Path) -> Result<Self, String> {
         // Find seq-lsp binary (same directory as seqr, or in PATH)
         let lsp_path = find_seq_lsp()?;
 
@@ -117,7 +115,7 @@ impl LspClient {
     }
 
     /// Notify the server that a document was opened
-    pub fn did_open(&mut self, content: &str) -> Result<(), String> {
+    pub(crate) fn did_open(&mut self, content: &str) -> Result<(), String> {
         self.document_version = 1;
 
         let params = DidOpenTextDocumentParams {
@@ -133,7 +131,7 @@ impl LspClient {
     }
 
     /// Notify the server that document content changed
-    pub fn did_change(&mut self, content: &str) -> Result<(), String> {
+    pub(crate) fn did_change(&mut self, content: &str) -> Result<(), String> {
         self.document_version += 1;
 
         let params = DidChangeTextDocumentParams {
@@ -152,7 +150,7 @@ impl LspClient {
     }
 
     /// Request completions at a position
-    pub fn completions(
+    pub(crate) fn completions(
         &mut self,
         line: u32,
         character: u32,
@@ -306,16 +304,10 @@ impl LspClient {
     }
 
     /// Shutdown the LSP server gracefully
-    pub fn shutdown(&mut self) -> Result<(), String> {
-        // Send shutdown request
+    pub(crate) fn shutdown(&mut self) -> Result<(), String> {
         let _: Value = self.request("shutdown", json!({}))?;
-
-        // Send exit notification
         self.notify("exit", json!({}))?;
-
-        // Wait for process to exit
         let _ = self.process.wait();
-
         Ok(())
     }
 }
