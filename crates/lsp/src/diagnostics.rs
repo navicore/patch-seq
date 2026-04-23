@@ -1,3 +1,6 @@
+//! Parse, type-check, and lint orchestration for the LSP, plus conversion
+//! from compiler/lint results into LSP diagnostics and code actions.
+
 use crate::includes::IncludeResolution;
 use seqc::ast::{Program, QuotationSpan, Statement};
 use seqc::types::Type;
@@ -10,6 +13,15 @@ use tower_lsp::lsp_types::{
     WorkspaceEdit,
 };
 use tracing::{debug, warn};
+
+/// Information about a quotation for LSP hover support
+#[derive(Debug, Clone)]
+pub(crate) struct QuotationInfo {
+    /// The quotation's source span
+    pub(crate) span: QuotationSpan,
+    /// The inferred type (Quotation or Closure with effect)
+    pub(crate) inferred_type: Type,
+}
 
 /// Strip shebang line from source if present.
 ///
@@ -33,13 +45,24 @@ fn strip_shebang(source: &str) -> Cow<'_, str> {
     }
 }
 
-/// Information about a quotation for LSP hover support
-#[derive(Debug, Clone)]
-pub struct QuotationInfo {
-    /// The quotation's source span
-    pub span: QuotationSpan,
-    /// The inferred type (Quotation or Closure with effect)
-    pub inferred_type: Type,
+/// Resolve the path used for lint/error-flag diagnostics; defaults to `source.seq`
+/// when the document has no on-disk path yet (e.g. untitled buffer).
+fn default_lint_path(file_path: Option<&Path>) -> PathBuf {
+    file_path
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("source.seq"))
+}
+
+/// Build a `WorkspaceEdit` that changes a single range in a single file.
+fn single_file_workspace_edit(uri: &Url, range: Range, new_text: String) -> WorkspaceEdit {
+    let edit = TextEdit { range, new_text };
+    let mut changes = HashMap::new();
+    changes.insert(uri.clone(), vec![edit]);
+    WorkspaceEdit {
+        changes: Some(changes),
+        document_changes: None,
+        change_annotations: None,
+    }
 }
 
 /// Collect all quotation spans from a program
@@ -98,7 +121,7 @@ pub fn check_document(source: &str) -> Vec<Diagnostic> {
 ///
 /// Parses the document, type-checks it, and collects quotation
 /// spans and their inferred types for LSP hover functionality.
-pub fn check_document_with_quotations(
+pub(crate) fn check_document_with_quotations(
     source: &str,
     includes: &IncludeResolution,
     file_path: Option<&Path>,
@@ -166,9 +189,7 @@ pub fn check_document_with_quotations(
     }
 
     // Phase 4: Lint checks
-    let lint_file_path = file_path
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| PathBuf::from("source.seq"));
+    let lint_file_path = default_lint_path(file_path);
     if let Ok(linter) = lint::Linter::with_defaults() {
         let lint_diagnostics = linter.lint_program(&program, &lint_file_path);
         for lint_diag in lint_diagnostics {
@@ -191,7 +212,7 @@ pub fn check_document_with_quotations(
 /// Get code actions for lint diagnostics that overlap with the given range.
 ///
 /// This re-runs the linter to find applicable fixes for the requested range.
-pub fn get_code_actions(
+pub(crate) fn get_code_actions(
     source: &str,
     range: Range,
     uri: &Url,
@@ -204,19 +225,15 @@ pub fn get_code_actions(
 
     // Parse the source
     let mut parser = Parser::new(&source);
-    let program = match parser.parse() {
-        Ok(prog) => prog,
-        Err(_) => return actions, // No actions if parse fails
+    let Ok(program) = parser.parse() else {
+        return actions; // No actions if parse fails
     };
 
     // Run linter
-    let lint_file_path = file_path
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| PathBuf::from("source.seq"));
+    let lint_file_path = default_lint_path(file_path);
 
-    let linter = match lint::Linter::with_defaults() {
-        Ok(l) => l,
-        Err(_) => return actions,
+    let Ok(linter) = lint::Linter::with_defaults() else {
+        return actions;
     };
 
     let lint_diagnostics = linter.lint_program(&program, &lint_file_path);
@@ -311,30 +328,13 @@ fn lint_to_code_action(
         return unchecked_error_code_action(lint_diag, uri, range);
     }
 
-    // Create the title based on whether there's a replacement or removal
     let title = if lint_diag.replacement.is_empty() {
         format!("Remove redundant code ({})", lint_diag.id)
     } else {
         format!("Replace with `{}`", lint_diag.replacement)
     };
 
-    // Create the text edit
-    let new_text = lint_diag.replacement.clone();
-
-    let edit = TextEdit {
-        range: *range,
-        new_text,
-    };
-
-    // Create workspace edit
-    let mut changes = HashMap::new();
-    changes.insert(uri.clone(), vec![edit]);
-
-    let workspace_edit = WorkspaceEdit {
-        changes: Some(changes),
-        document_changes: None,
-        change_annotations: None,
-    };
+    let workspace_edit = single_file_workspace_edit(uri, *range, lint_diag.replacement.clone());
 
     Some(CodeAction {
         title,
@@ -384,19 +384,7 @@ fn unchecked_error_code_action(
         op_name, op_name,
     );
 
-    let edit = TextEdit {
-        range: *range,
-        new_text,
-    };
-
-    let mut changes = HashMap::new();
-    changes.insert(uri.clone(), vec![edit]);
-
-    let workspace_edit = WorkspaceEdit {
-        changes: Some(changes),
-        document_changes: None,
-        change_annotations: None,
-    };
+    let workspace_edit = single_file_workspace_edit(uri, *range, new_text);
 
     Some(CodeAction {
         title,
@@ -427,7 +415,6 @@ fn lint_to_diagnostic(lint_diag: &lint::LintDiagnostic, source: &str) -> Diagnos
         )
     };
 
-    // Use make_lint_range to handle both single-line and multi-line diagnostics
     let range = make_lint_range(lint_diag, source);
 
     Diagnostic {
