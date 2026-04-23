@@ -81,7 +81,8 @@ pub struct Stack {
 }
 
 impl Stack {
-    /// Create a new stack from values (bottom to top)
+    /// Create a new stack from values (bottom to top) — test-only.
+    #[cfg(test)]
     pub fn new(values: Vec<StackValue>) -> Self {
         Self { values }
     }

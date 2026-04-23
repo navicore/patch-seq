@@ -7,7 +7,7 @@ use std::ops::Range;
 
 /// A token type for syntax highlighting
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TokenKind {
+pub(crate) enum TokenKind {
     /// Keywords: if, else, loop, break, etc.
     Keyword,
     /// Built-in words: dup, drop, swap, over, etc.
@@ -46,10 +46,10 @@ pub enum TokenKind {
 
 /// A highlighted token with its position
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Token {
-    pub kind: TokenKind,
-    pub span: Range<usize>,
-    pub text: String,
+pub(crate) struct Token {
+    pub(crate) kind: TokenKind,
+    pub(crate) span: Range<usize>,
+    pub(crate) text: String,
 }
 
 impl Token {
@@ -119,8 +119,14 @@ const TYPE_NAMES: &[&str] = &[
     "Int", "Float", "Bool", "String", "Char", "Unit", "Option", "Result", "Channel", "Strand",
 ];
 
+/// Push a token spanning `start..end` of `chars` to `tokens`.
+fn push_range(tokens: &mut Vec<Token>, chars: &[char], start: usize, end: usize, kind: TokenKind) {
+    let text: String = chars[start..end].iter().collect();
+    tokens.push(Token::new(kind, start, end, text));
+}
+
 /// Tokenize Seq source code for syntax highlighting
-pub fn tokenize(source: &str) -> Vec<Token> {
+pub(crate) fn tokenize(source: &str) -> Vec<Token> {
     let mut tokens = Vec::new();
     let chars: Vec<char> = source.chars().collect();
     let mut pos = 0;
@@ -134,8 +140,7 @@ pub fn tokenize(source: &str) -> Vec<Token> {
             while pos < chars.len() && chars[pos].is_whitespace() {
                 pos += 1;
             }
-            let text: String = chars[start..pos].iter().collect();
-            tokens.push(Token::new(TokenKind::Whitespace, start, pos, text));
+            push_range(&mut tokens, &chars, start, pos, TokenKind::Whitespace);
             continue;
         }
 
@@ -144,8 +149,7 @@ pub fn tokenize(source: &str) -> Vec<Token> {
             while pos < chars.len() && chars[pos] != '\n' {
                 pos += 1;
             }
-            let text: String = chars[start..pos].iter().collect();
-            tokens.push(Token::new(TokenKind::Comment, start, pos, text));
+            push_range(&mut tokens, &chars, start, pos, TokenKind::Comment);
             continue;
         }
 
@@ -162,8 +166,7 @@ pub fn tokenize(source: &str) -> Vec<Token> {
             if pos < chars.len() {
                 pos += 1; // Skip closing quote
             }
-            let text: String = chars[start..pos].iter().collect();
-            tokens.push(Token::new(TokenKind::String, start, pos, text));
+            push_range(&mut tokens, &chars, start, pos, TokenKind::String);
             continue;
         }
 
@@ -192,8 +195,7 @@ pub fn tokenize(source: &str) -> Vec<Token> {
             // Check if this is a module path separator (word:subword)
             if start > 0 && !chars[start - 1].is_whitespace() {
                 // Part of a module path
-                let text: String = chars[start..pos].iter().collect();
-                tokens.push(Token::new(TokenKind::ModulePath, start, pos, text));
+                push_range(&mut tokens, &chars, start, pos, TokenKind::ModulePath);
             } else {
                 tokens.push(Token::new(TokenKind::DefMarker, start, pos, ":"));
             }
@@ -237,11 +239,9 @@ pub fn tokenize(source: &str) -> Vec<Token> {
                 while pos < chars.len() && chars[pos].is_ascii_digit() {
                     pos += 1;
                 }
-                let text: String = chars[start..pos].iter().collect();
-                tokens.push(Token::new(TokenKind::Float, start, pos, text));
+                push_range(&mut tokens, &chars, start, pos, TokenKind::Float);
             } else {
-                let text: String = chars[start..pos].iter().collect();
-                tokens.push(Token::new(TokenKind::Integer, start, pos, text));
+                push_range(&mut tokens, &chars, start, pos, TokenKind::Integer);
             }
             continue;
         }
@@ -275,8 +275,7 @@ pub fn tokenize(source: &str) -> Vec<Token> {
                     pos += 1;
                 }
             }
-            let text: String = chars[start..pos].iter().collect();
-            tokens.push(Token::new(TokenKind::Builtin, start, pos, text));
+            push_range(&mut tokens, &chars, start, pos, TokenKind::Builtin);
             continue;
         }
 
@@ -290,51 +289,38 @@ pub fn tokenize(source: &str) -> Vec<Token> {
 
 /// Classify an identifier as keyword, builtin, type, or regular identifier
 fn classify_identifier(text: &str) -> TokenKind {
-    // Check for booleans
     if text == "true" || text == "false" {
         return TokenKind::Boolean;
     }
-
-    // Check for include
     if text == "include" {
         return TokenKind::Include;
     }
-
-    // Check for keywords
     if KEYWORDS.contains(&text) {
         return TokenKind::Keyword;
     }
-
-    // Check for builtins
     if BUILTINS.contains(&text) {
         return TokenKind::Builtin;
     }
-
-    // Check for type names (capitalized)
     if TYPE_NAMES.contains(&text) {
         return TokenKind::TypeName;
     }
-
-    // Check for module paths (contains :)
     if text.contains(':') {
         return TokenKind::ModulePath;
     }
-
     TokenKind::Identifier
-}
-
-/// Get tokens excluding whitespace (useful for rendering)
-#[allow(dead_code)]
-pub fn tokenize_visible(source: &str) -> Vec<Token> {
-    tokenize(source)
-        .into_iter()
-        .filter(|t| t.kind != TokenKind::Whitespace)
-        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Tokenize, dropping whitespace tokens — convenient for assertions.
+    fn tokenize_visible(source: &str) -> Vec<Token> {
+        tokenize(source)
+            .into_iter()
+            .filter(|t| t.kind != TokenKind::Whitespace)
+            .collect()
+    }
 
     #[test]
     fn test_tokenize_numbers() {
