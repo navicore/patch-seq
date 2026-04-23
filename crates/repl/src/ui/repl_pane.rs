@@ -17,20 +17,49 @@ use ratatui::{
 /// Prompt shown for continuation lines in multiline input
 const CONTINUATION_PROMPT: &str = ".... ";
 
+/// Map a token kind to its display style.
+fn token_style(kind: TokenKind) -> Style {
+    match kind {
+        TokenKind::Keyword => Style::default()
+            .fg(Color::Magenta)
+            .add_modifier(Modifier::BOLD),
+        TokenKind::Builtin => Style::default().fg(Color::Cyan),
+        TokenKind::DefMarker | TokenKind::DefEnd => Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD),
+        TokenKind::Integer | TokenKind::Float => Style::default().fg(Color::Blue),
+        TokenKind::Boolean => Style::default().fg(Color::Magenta),
+        TokenKind::String => Style::default().fg(Color::Green),
+        TokenKind::Comment => Style::default().fg(Color::DarkGray),
+        TokenKind::TypeName => Style::default().fg(Color::Green),
+        TokenKind::StackEffect => Style::default().fg(Color::DarkGray),
+        TokenKind::Quotation => Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD),
+        TokenKind::Include => Style::default()
+            .fg(Color::Magenta)
+            .add_modifier(Modifier::BOLD),
+        TokenKind::ModulePath => Style::default().fg(Color::Cyan),
+        TokenKind::Identifier => Style::default().fg(Color::White),
+        TokenKind::Whitespace => Style::default(),
+        TokenKind::Unknown => Style::default().fg(Color::Red),
+    }
+}
+
 /// A single entry in the REPL history
 #[derive(Debug, Clone)]
-pub struct HistoryEntry {
+pub(crate) struct HistoryEntry {
     /// The input that was entered
-    pub input: String,
+    pub(crate) input: String,
     /// The output/result (if any)
-    pub output: Option<String>,
+    pub(crate) output: Option<String>,
     /// Whether this entry had an error
-    pub is_error: bool,
+    pub(crate) is_error: bool,
 }
 
 impl HistoryEntry {
     /// Create a new history entry
-    pub fn new(input: impl Into<String>) -> Self {
+    pub(crate) fn new(input: impl Into<String>) -> Self {
         Self {
             input: input.into(),
             output: None,
@@ -39,13 +68,13 @@ impl HistoryEntry {
     }
 
     /// Set the output
-    pub fn with_output(mut self, output: impl Into<String>) -> Self {
+    pub(crate) fn with_output(mut self, output: impl Into<String>) -> Self {
         self.output = Some(output.into());
         self
     }
 
     /// Mark as an error
-    pub fn with_error(mut self, error: impl Into<String>) -> Self {
+    pub(crate) fn with_error(mut self, error: impl Into<String>) -> Self {
         self.output = Some(error.into());
         self.is_error = true;
         self
@@ -54,15 +83,13 @@ impl HistoryEntry {
 
 /// The REPL pane state
 #[derive(Debug, Clone, Default)]
-pub struct ReplState {
+pub(crate) struct ReplState {
     /// Command history
-    pub history: Vec<HistoryEntry>,
+    pub(crate) history: Vec<HistoryEntry>,
     /// Current input line
-    pub input: String,
+    pub(crate) input: String,
     /// Cursor position in the input
-    pub cursor: usize,
-    /// Scroll offset for history display
-    pub scroll: u16,
+    pub(crate) cursor: usize,
     /// History navigation index (None = current input, Some(i) = browsing history)
     history_index: Option<usize>,
     /// Saved input when browsing history
@@ -71,75 +98,30 @@ pub struct ReplState {
 
 impl ReplState {
     /// Create a new REPL state
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
     /// Add a history entry
-    pub fn add_entry(&mut self, entry: HistoryEntry) {
+    pub(crate) fn add_entry(&mut self, entry: HistoryEntry) {
         self.history.push(entry);
     }
 
     /// Clear the current input and reset history navigation
-    pub fn clear_input(&mut self) {
+    pub(crate) fn clear_input(&mut self) {
         self.input.clear();
         self.cursor = 0;
         self.history_index = None;
         self.saved_input.clear();
     }
 
-    /// Insert a character at the cursor
-    pub fn insert_char(&mut self, ch: char) {
-        self.input.insert(self.cursor, ch);
-        self.cursor += 1;
-    }
-
-    /// Delete the character before the cursor
-    pub fn backspace(&mut self) {
-        if self.cursor > 0 {
-            self.cursor -= 1;
-            self.input.remove(self.cursor);
-        }
-    }
-
-    /// Delete the character at the cursor
-    pub fn delete(&mut self) {
-        if self.cursor < self.input.len() {
-            self.input.remove(self.cursor);
-        }
-    }
-
-    /// Move cursor left
-    pub fn cursor_left(&mut self) {
-        if self.cursor > 0 {
-            self.cursor -= 1;
-        }
-    }
-
-    /// Move cursor right
-    pub fn cursor_right(&mut self) {
-        if self.cursor < self.input.len() {
-            self.cursor += 1;
-        }
-    }
-
-    /// Move cursor to start
-    pub fn cursor_home(&mut self) {
-        self.cursor = 0;
-    }
-
-    /// Move cursor to end
-    pub fn cursor_end(&mut self) {
-        self.cursor = self.input.len();
-    }
-
     /// Get the current input
-    pub fn current_input(&self) -> &str {
+    pub(crate) fn current_input(&self) -> &str {
         &self.input
     }
 
     /// Navigate to previous command in history (up arrow / k)
-    pub fn history_up(&mut self) {
+    pub(crate) fn history_up(&mut self) {
         if self.history.is_empty() {
             return;
         }
@@ -165,7 +147,7 @@ impl ReplState {
     }
 
     /// Navigate to next command in history (down arrow / j)
-    pub fn history_down(&mut self) {
+    pub(crate) fn history_down(&mut self) {
         match self.history_index {
             Some(idx) if idx + 1 < self.history.len() => {
                 // Navigate forward in history
@@ -186,7 +168,7 @@ impl ReplState {
 }
 
 /// The REPL pane widget
-pub struct ReplPane<'a> {
+pub(crate) struct ReplPane<'a> {
     /// The REPL state
     state: &'a ReplState,
     /// Whether this pane is focused
@@ -197,7 +179,7 @@ pub struct ReplPane<'a> {
 
 impl<'a> ReplPane<'a> {
     /// Create a new REPL pane
-    pub fn new(state: &'a ReplState) -> Self {
+    pub(crate) fn new(state: &'a ReplState) -> Self {
         Self {
             state,
             focused: true,
@@ -206,50 +188,33 @@ impl<'a> ReplPane<'a> {
     }
 
     /// Set whether the pane is focused
-    pub fn focused(mut self, focused: bool) -> Self {
+    pub(crate) fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
         self
     }
 
     /// Set the prompt string
-    pub fn prompt(mut self, prompt: &'a str) -> Self {
+    pub(crate) fn prompt(mut self, prompt: &'a str) -> Self {
         self.prompt = prompt;
         self
     }
 
+    /// Styled prompt for the `i`-th line of a (possibly multiline) input —
+    /// main prompt on line 0, continuation prompt elsewhere.
+    fn prompt_span(&self, i: usize) -> Span<'a> {
+        let prompt = if i == 0 {
+            self.prompt
+        } else {
+            CONTINUATION_PROMPT
+        };
+        Span::styled(prompt.to_string(), Style::default().fg(Color::Green))
+    }
+
     /// Highlight a line of Seq code
     fn highlight_code(&self, code: &str) -> Line<'a> {
-        let tokens = tokenize(code);
-        let spans: Vec<Span> = tokens
+        let spans: Vec<Span> = tokenize(code)
             .into_iter()
-            .map(|token| {
-                let style = match token.kind {
-                    TokenKind::Keyword => Style::default()
-                        .fg(Color::Magenta)
-                        .add_modifier(Modifier::BOLD),
-                    TokenKind::Builtin => Style::default().fg(Color::Cyan),
-                    TokenKind::DefMarker | TokenKind::DefEnd => Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                    TokenKind::Integer | TokenKind::Float => Style::default().fg(Color::Blue),
-                    TokenKind::Boolean => Style::default().fg(Color::Magenta),
-                    TokenKind::String => Style::default().fg(Color::Green),
-                    TokenKind::Comment => Style::default().fg(Color::DarkGray),
-                    TokenKind::TypeName => Style::default().fg(Color::Green),
-                    TokenKind::StackEffect => Style::default().fg(Color::DarkGray),
-                    TokenKind::Quotation => Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                    TokenKind::Include => Style::default()
-                        .fg(Color::Magenta)
-                        .add_modifier(Modifier::BOLD),
-                    TokenKind::ModulePath => Style::default().fg(Color::Cyan),
-                    TokenKind::Identifier => Style::default().fg(Color::White),
-                    TokenKind::Whitespace => Style::default(),
-                    TokenKind::Unknown => Style::default().fg(Color::Red),
-                };
-                Span::styled(token.text, style)
-            })
+            .map(|token| Span::styled(token.text, token_style(token.kind)))
             .collect();
         Line::from(spans)
     }
@@ -262,15 +227,7 @@ impl<'a> ReplPane<'a> {
         for entry in &self.state.history {
             // Split input by newlines for multiline history entries
             for (i, input_line) in entry.input.split('\n').enumerate() {
-                let prompt = if i == 0 {
-                    self.prompt
-                } else {
-                    CONTINUATION_PROMPT
-                };
-                let mut spans = vec![Span::styled(
-                    prompt.to_string(),
-                    Style::default().fg(Color::Green),
-                )];
+                let mut spans = vec![self.prompt_span(i)];
                 spans.extend(self.highlight_code(input_line).spans);
                 lines.push(Line::from(spans));
             }
@@ -316,15 +273,7 @@ impl<'a> ReplPane<'a> {
 
         // Render each input line
         for (i, line_text) in input_lines.iter().enumerate() {
-            let prompt = if i == 0 {
-                self.prompt
-            } else {
-                CONTINUATION_PROMPT
-            };
-            let mut spans = vec![Span::styled(
-                prompt.to_string(),
-                Style::default().fg(Color::Green),
-            )];
+            let mut spans = vec![self.prompt_span(i)];
 
             if self.focused && i == cursor_line {
                 // This line has the cursor - split at cursor position
@@ -403,40 +352,6 @@ mod tests {
 
         let error = HistoryEntry::new("bad").with_error("unknown word");
         assert!(error.is_error);
-    }
-
-    #[test]
-    fn test_repl_state_input() {
-        let mut state = ReplState::new();
-
-        state.insert_char('h');
-        state.insert_char('i');
-        assert_eq!(state.input, "hi");
-        assert_eq!(state.cursor, 2);
-
-        state.backspace();
-        assert_eq!(state.input, "h");
-        assert_eq!(state.cursor, 1);
-
-        state.cursor_left();
-        state.insert_char('x');
-        assert_eq!(state.input, "xh");
-    }
-
-    #[test]
-    fn test_repl_state_cursor_movement() {
-        let mut state = ReplState::new();
-        state.input = "hello".to_string();
-        state.cursor = 2;
-
-        state.cursor_left();
-        assert_eq!(state.cursor, 1);
-
-        state.cursor_home();
-        assert_eq!(state.cursor, 0);
-
-        state.cursor_end();
-        assert_eq!(state.cursor, 5);
     }
 
     #[test]
