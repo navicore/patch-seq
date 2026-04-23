@@ -40,12 +40,12 @@ field           = IDENT ":" type_name ;
 ### Word Definitions
 
 ```ebnf
-word_def        = ":" IDENT stack_effect { statement } ";" ;
+word_def        = ":" IDENT [ stack_effect ] { statement } ";" ;
 
 stack_effect    = "(" type_list "--" type_list [ "|" effect_annotation { effect_annotation } ] ")" ;
 effect_annotation = "Yield" type ;
 type_list       = [ row_var ] { type } ;
-row_var         = ".." LOWER_IDENT ;
+row_var         = ".." ROW_VAR_NAME ;
 
 type            = base_type
                 | type_var
@@ -57,6 +57,11 @@ type_var        = UPPER_IDENT ;
 quotation_type  = "[" type_list "--" type_list "]" ;
 closure_type    = "Closure" "[" type_list "--" type_list "]" ;
 ```
+
+`type_var` must not be the literal token `Quotation`: the parser rejects
+it explicitly with a hint pointing at the `[ .. -- .. ]` syntax. The
+name `Closure` is also reserved — it's handled as the start of
+`closure_type`, not as a type variable.
 
 ### Statements
 
@@ -70,7 +75,8 @@ statement       = literal
 literal         = INT_LITERAL
                 | FLOAT_LITERAL
                 | BOOL_LITERAL
-                | STRING ;
+                | STRING
+                | SYMBOL_LITERAL ;
 
 word_call       = IDENT ;
 
@@ -80,9 +86,14 @@ if_stmt         = "if" { statement } ( "then" | "else" { statement } "then" ) ;
 
 match_stmt      = "match" { match_arm } "end" ;
 match_arm       = pattern "->" { statement } ;
-pattern         = UPPER_IDENT [ "{" { binding } "}" ] ;
-binding         = ">" IDENT ;
+pattern         = UPPER_IDENT [ "{" { BINDING } "}" ] ;
+BINDING         = ">" IDENT ;
 ```
+
+`BINDING` is a single lexical token: `>` and the field name must not be
+separated by whitespace. `>value` is a binding; `> value` is two
+separate tokens (the word calls `>` and `value`) and the parser reports
+an error asking for the `>`-prefix form.
 
 ---
 
@@ -92,17 +103,26 @@ binding         = ">" IDENT ;
 
 ```ebnf
 IDENT           = IDENT_START { IDENT_CHAR } ;
-IDENT_START     = LETTER | "_" | "-" | "." | ">" | "<" | "=" | "?" | "!" | "+" | "*" | "/" ;
+IDENT_START     = LETTER | "_" | "-" | "." | ">" | "<" | "=" | "?" | "!" | "+" | "*" | "/" | "%" ;
 IDENT_CHAR      = IDENT_START | DIGIT ;
 
 UPPER_IDENT     = UPPER_LETTER { IDENT_CHAR } ;
 LOWER_IDENT     = LOWER_LETTER { IDENT_CHAR } ;
+
+ROW_VAR_NAME    = LOWER_LETTER { LETTER | DIGIT | "_" } ;
 
 LETTER          = UPPER_LETTER | LOWER_LETTER ;
 UPPER_LETTER    = "A" | "B" | ... | "Z" ;
 LOWER_LETTER    = "a" | "b" | ... | "z" ;
 DIGIT           = "0" | "1" | ... | "9" ;
 ```
+
+Row-variable names (`..rest`) use the stricter `ROW_VAR_NAME` rule: they
+must start with a lowercase letter and contain only letters, digits, and
+underscores. The broader `IDENT` punctuation characters (`- . > < = ? !
++ * / %`) are rejected. The names `Int`, `Bool`, `String` are reserved
+even though they're already excluded by the lowercase-start rule (the
+parser emits a dedicated error if you try to use them).
 
 ### Literals
 
@@ -123,17 +143,43 @@ EXPONENT        = ( "e" | "E" ) [ "+" | "-" ] DIGIT { DIGIT } ;
 
 BOOL_LITERAL    = "true" | "false" ;
 
+SYMBOL_LITERAL  = ":" SYMBOL_NAME ;
+SYMBOL_NAME     = LETTER { LETTER | DIGIT | "-" | "_" | "." | "?" | "!" } ;
+
+(* `:` is a single-character delimiter token; whitespace after it is not
+   significant. Disambiguation between `word_def` and `SYMBOL_LITERAL` is
+   context-driven: a `:` at the top level starts a `word_def`, and a `:`
+   inside a word body (wherever a `statement` is expected) starts a
+   `SYMBOL_LITERAL`. *)
+
 STRING          = '"' { STRING_CHAR | ESCAPE_SEQ } '"' ;
 STRING_CHAR     = any character except '"' or '\' ;
-ESCAPE_SEQ      = '\' ( '"' | '\' | 'n' | 'r' | 't' ) ;
+ESCAPE_SEQ      = '\' ( '"' | '\' | 'n' | 'r' | 't' )
+                | '\' 'x' HEX_DIGIT HEX_DIGIT ;
 ```
+
+The `\xNN` escape produces the Unicode code point `U+00NN`. For `NN` in
+`00..7F` this is a single ASCII byte (common use: `\x1b` for ANSI
+terminal escape sequences). For `NN` in `80..FF` the code point falls
+in the Latin-1 Supplement block (`U+0080..U+00FF`) and the resulting
+character is encoded as multi-byte UTF-8.
 
 ### Comments and Whitespace
 
 ```ebnf
 COMMENT         = "#" { any character except newline } NEWLINE ;
+SHEBANG         = "#!" { any character except newline } NEWLINE ;
 WHITESPACE      = SPACE | TAB | NEWLINE ;
 ```
+
+A `SHEBANG` line (typically `#!/usr/bin/env seqc`) is accepted anywhere a
+`COMMENT` is, so scripts can be executed directly from the shell. The
+parser treats it as an ordinary comment.
+
+Comments matching the form `# seq:allow(lint-id)` are collected as lint
+allowances for the word definition that follows them. The text inside
+the parentheses is the lint rule id; multiple `seq:allow` comments
+before a word stack additively.
 
 ---
 
@@ -160,6 +206,18 @@ This means `( -- )` preserves the stack (it's `( ..rest -- ..rest )`), not that 
 | `->` (arrow) | Type conversions | `int->string`, `float->int` |
 | `?` (question) | Predicates | `list.empty?`, `map.has?` |
 
+For each `union` definition, the compiler auto-generates helper words
+by convention. Given `union Shape { Circle { radius: Int } … }`:
+
+| Generated word | Shape | Example |
+|----------------|-------|---------|
+| `Make-<Variant>` | constructor | `5 Make-Circle` |
+| `is-<Variant>?` | predicate | `shape is-Circle?` |
+| `<Variant>-<field>` | field accessor | `circle Circle-radius` |
+
+These are ordinary `word_call`s at the grammar level; they're listed
+here so readers can predict the generated names.
+
 ### Reserved Words
 
 The following are reserved and cannot be used as word names:
@@ -171,6 +229,37 @@ The following are reserved and cannot be used as word names:
 ### Operator Precedence
 
 Seq has no operator precedence - all tokens are either literals or word calls. Evaluation is strictly left-to-right with stack-based semantics.
+
+### Quotations vs Closures
+
+A `quotation` (the surface syntax `[ … ]`) has two possible types:
+
+- `quotation_type` — if the body consumes only values pushed inside the
+  quotation itself (plus an implicit row variable).
+- `closure_type` — if the body references values from the enclosing
+  stack. The compiler captures those values into an environment at the
+  point the quotation is produced; the result is a `Closure[ … ]` at
+  the type level.
+
+There is no dedicated syntax for a closure — the parser always builds a
+quotation literal, and the type checker decides whether the result is a
+`quotation_type` or a `closure_type` based on what the body references.
+
+### Arithmetic Sugar
+
+The tokens `+`, `-`, `*`, `/`, `%`, `=`, `<`, `>`, `<=`, `>=`, and `<>` are
+ordinary identifiers at the grammar level but are resolved by the compiler
+to their typed counterparts based on the inferred stack types. For example:
+
+```seq
+3 4 +        # resolves to `i.+` — both operands are Int
+3.0 4.0 +    # resolves to `f.+` — both operands are Float
+```
+
+This is a compile-time rewrite, not dynamic dispatch: if the types can't
+be inferred unambiguously the program fails to type-check. Writing the
+explicit form (`i.+`, `f.<`, etc.) is always valid and suppresses the
+sugar resolution.
 
 ---
 
