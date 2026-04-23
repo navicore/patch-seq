@@ -28,6 +28,8 @@ mod engine;
 mod ir;
 mod keys;
 mod lsp_client;
+mod run;
+mod text_utils;
 mod ui;
 
 use clap::Parser as ClapParser;

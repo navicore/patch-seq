@@ -10,6 +10,8 @@ use crate::completion::CompletionManager;
 use crate::engine::{AnalysisResult, analyze, analyze_expression};
 use crate::ir::stack_art::{Stack, StackEffect, render_transition};
 use crate::keys::convert_key;
+use crate::run::{RunResult, run_with_timeout};
+use crate::text_utils::floor_char_boundary;
 use crate::ui::ir_pane::{IrContent, IrPane, IrViewMode};
 use crate::ui::layout::{ComputedLayout, LayoutConfig, StatusContent};
 use crate::ui::repl_pane::{HistoryEntry, ReplPane, ReplState};
@@ -22,110 +24,9 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph},
 };
 use std::fs;
-use std::io::{BufRead, BufReader, Read as _, Write};
-use std::path::{Path, PathBuf};
-use std::process::{Command, ExitStatus, Stdio};
-use std::time::{Duration, Instant};
+use std::io::{BufRead, BufReader, Write};
+use std::path::PathBuf;
 use tempfile::NamedTempFile;
-
-/// Default execution timeout in seconds (can be overridden via SEQ_REPL_TIMEOUT)
-/// Set higher now that weaves don't block (issue #287 fix) - this is a safety net
-const DEFAULT_TIMEOUT_SECS: u64 = 10;
-
-/// Result of running a command with timeout
-#[allow(dead_code)] // Fields kept for API completeness
-enum RunResult {
-    /// Command completed successfully
-    Success { stdout: String, stderr: String },
-    /// Command failed with non-zero exit
-    Failed {
-        stdout: String,
-        stderr: String,
-        status: ExitStatus,
-    },
-    /// Command timed out and was killed
-    Timeout { timeout_secs: u64 },
-    /// Command failed to start
-    Error(String),
-}
-
-/// Run a compiled program with a timeout
-///
-/// This prevents the REPL from hanging indefinitely when a program blocks
-/// (e.g., creating a weave without resuming it).
-fn run_with_timeout(path: &Path) -> RunResult {
-    let timeout_secs = std::env::var("SEQ_REPL_TIMEOUT")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(DEFAULT_TIMEOUT_SECS);
-
-    let timeout = Duration::from_secs(timeout_secs);
-
-    // Spawn the child process
-    let mut child = match Command::new(path)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-    {
-        Ok(c) => c,
-        Err(e) => return RunResult::Error(format!("Failed to start: {}", e)),
-    };
-
-    let start = Instant::now();
-    let poll_interval = Duration::from_millis(50);
-
-    // Poll for completion with timeout
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                // Process exited - collect output
-                let stdout = child
-                    .stdout
-                    .take()
-                    .map(|mut s| {
-                        let mut buf = String::new();
-                        let _ = s.read_to_string(&mut buf);
-                        buf
-                    })
-                    .unwrap_or_default();
-
-                let stderr = child
-                    .stderr
-                    .take()
-                    .map(|mut s| {
-                        let mut buf = String::new();
-                        let _ = s.read_to_string(&mut buf);
-                        buf
-                    })
-                    .unwrap_or_default();
-
-                if status.success() {
-                    return RunResult::Success { stdout, stderr };
-                } else {
-                    return RunResult::Failed {
-                        stdout,
-                        stderr,
-                        status,
-                    };
-                }
-            }
-            Ok(None) => {
-                // Still running - check timeout
-                if start.elapsed() >= timeout {
-                    // Timeout - kill the process
-                    let _ = child.kill();
-                    let _ = child.wait(); // Reap the zombie
-                    return RunResult::Timeout { timeout_secs };
-                }
-                // Brief sleep before next poll
-                std::thread::sleep(poll_interval);
-            }
-            Err(e) => {
-                return RunResult::Error(format!("Wait error: {}", e));
-            }
-        }
-    }
-}
 use vim_line::{Action, LineEditor, TextEdit, VimLineEditor};
 
 /// REPL template for new sessions (same as original REPL)
@@ -149,30 +50,79 @@ const INCLUDES_MARKER: &str = "# --- includes ---";
 /// Marker for main section
 const MAIN_MARKER: &str = "# --- main ---";
 
+/// Lines shown by the `:help` command in the IR pane.
+const HELP_LINES: &[&str] = &[
+    "╭─────────────────────────────────────╮",
+    "│           Seq TUI REPL              │",
+    "╰─────────────────────────────────────╯",
+    "",
+    "COMMANDS",
+    "  :q, :quit     Exit the REPL",
+    "  :version, :v  Show version",
+    "  :clear        Clear session and history",
+    "  :pop          Remove last expression",
+    "  :stack, :s    Show current stack",
+    "  :show         Show session file",
+    "  :edit, :e     Open in $EDITOR",
+    "  :ir           Toggle IR pane",
+    "  :ir stack     Show stack effects",
+    "  :ir ast       Show typed AST",
+    "  :ir llvm      Show LLVM IR",
+    "  :include <m>  Include module",
+    "  :help, :h     Show this help",
+    "",
+    "VI MODE",
+    "  i, a, A, I    Enter insert mode",
+    "  Esc           Return to normal mode",
+    "  h, l          Move cursor left/right",
+    "  j, k          History down/up",
+    "  w, b          Word forward/backward",
+    "  0, $          Line start/end",
+    "  x             Delete character",
+    "  d             Clear line",
+    "  /             Search history",
+    "",
+    "KEYS",
+    "  F1            Toggle Stack Effects",
+    "  F2            Toggle Typed AST",
+    "  F3            Toggle LLVM IR",
+    "  Tab           Show completions",
+    "  Ctrl+N        Cycle IR views",
+    "  Ctrl+D        Exit REPL",
+    "  Enter         Execute expression",
+    "  Up/Down       History navigation",
+    "",
+    "SEARCH MODE (after /)",
+    "  Type          Filter history",
+    "  Tab/Shift+Tab Cycle matches",
+    "  Enter         Accept match",
+    "  Esc           Cancel search",
+];
+
 /// Main application state
-pub struct App {
+pub(crate) struct App {
     /// REPL state (history, input, cursor)
-    pub repl_state: ReplState,
+    pub(crate) repl_state: ReplState,
     /// IR content for visualization
-    pub ir_content: IrContent,
+    pub(crate) ir_content: IrContent,
     /// Current IR view mode
-    pub ir_mode: IrViewMode,
+    pub(crate) ir_mode: IrViewMode,
     /// Vim-style line editor
-    pub editor: VimLineEditor,
+    pub(crate) editor: VimLineEditor,
     /// Layout configuration
-    pub layout_config: LayoutConfig,
+    pub(crate) layout_config: LayoutConfig,
     /// Current filename (display name)
-    pub filename: String,
+    pub(crate) filename: String,
     /// Whether the IR pane is visible
-    pub show_ir_pane: bool,
+    pub(crate) show_ir_pane: bool,
     /// Whether the app should quit
-    pub should_quit: bool,
+    pub(crate) should_quit: bool,
     /// Whether the app should open editor
-    pub should_edit: bool,
+    pub(crate) should_edit: bool,
     /// Status message (clears after next action)
-    pub status_message: Option<String>,
+    pub(crate) status_message: Option<String>,
     /// Session file path (temp file or user-provided file)
-    pub session_path: PathBuf,
+    pub(crate) session_path: PathBuf,
     /// Temp file handle (kept alive to prevent deletion)
     _temp_file: Option<NamedTempFile>,
     /// Completion manager (handles LSP and builtin completions)
@@ -195,26 +145,9 @@ pub struct App {
 /// Maximum history entries to keep in memory
 const MAX_HISTORY_IN_MEMORY: usize = 1000;
 
-/// Find the largest byte index <= pos that is a valid char boundary.
-/// This is a stable implementation of the nightly `str::floor_char_boundary`.
-fn floor_char_boundary(s: &str, pos: usize) -> usize {
-    if pos >= s.len() {
-        s.len()
-    } else if s.is_char_boundary(pos) {
-        pos
-    } else {
-        // Walk backwards to find a valid boundary
-        let mut p = pos;
-        while p > 0 && !s.is_char_boundary(p) {
-            p -= 1;
-        }
-        p
-    }
-}
-
 impl App {
     /// Create a new application with a temp session file
-    pub fn new() -> Result<Self, String> {
+    pub(crate) fn new() -> Result<Self, String> {
         // Create temp file for session
         let temp_file = NamedTempFile::with_suffix(".seq")
             .map_err(|e| format!("Failed to create temp file: {}", e))?;
@@ -253,7 +186,7 @@ impl App {
     }
 
     /// Create application with an existing file
-    pub fn with_file(path: PathBuf) -> Result<Self, String> {
+    pub(crate) fn with_file(path: PathBuf) -> Result<Self, String> {
         let filename = path.display().to_string();
 
         // Check if file exists, create if not
@@ -333,7 +266,7 @@ impl App {
     }
 
     /// Save history to file
-    pub fn save_history(&self) {
+    pub(crate) fn save_history(&self) {
         if let Some(path) = Self::history_file_path() {
             // Ensure parent directory exists
             if let Some(parent) = path.parent()
@@ -366,8 +299,28 @@ impl App {
         self.editor.status() == "NORMAL"
     }
 
+    /// Restore the session file to `original` content; surface a warning via
+    /// the status bar if that write fails.
+    fn rollback_session(&mut self, original: &str) {
+        if let Err(rollback_err) = fs::write(&self.session_path, original) {
+            self.status_message = Some(format!(
+                "Warning: Could not rollback session file: {}",
+                rollback_err
+            ));
+        }
+    }
+
+    /// Sync the vim-line editor and `repl_state.cursor` to the current
+    /// `repl_state.input`, placing the cursor at end-of-input.
+    fn sync_editor_to_input(&mut self) {
+        self.editor.reset();
+        self.editor
+            .set_cursor(self.repl_state.input.len(), &self.repl_state.input);
+        self.repl_state.cursor = self.editor.cursor();
+    }
+
     /// Handle a key event
-    pub fn handle_key(&mut self, key: KeyEvent) {
+    pub(crate) fn handle_key(&mut self, key: KeyEvent) {
         // Clear status message on any key
         self.status_message = None;
 
@@ -415,10 +368,7 @@ impl App {
                 KeyCode::Esc => {
                     // Cancel search - restore original input
                     self.repl_state.input = self.search_original_input.clone();
-                    self.editor.reset();
-                    self.editor
-                        .set_cursor(self.repl_state.input.len(), &self.repl_state.input);
-                    self.repl_state.cursor = self.editor.cursor();
+                    self.sync_editor_to_input();
                     self.search_mode = false;
                     self.search_pattern.clear();
                     self.search_matches.clear();
@@ -688,12 +638,7 @@ impl App {
             }
             Err(e) => {
                 // Rollback
-                if let Err(rollback_err) = fs::write(&self.session_path, &original) {
-                    self.status_message = Some(format!(
-                        "Warning: Could not rollback session file: {}",
-                        rollback_err
-                    ));
-                }
+                self.rollback_session(&original);
                 self.add_error_entry(def, &e.to_string());
             }
         }
@@ -701,15 +646,13 @@ impl App {
 
     /// Add a definition to the definitions section
     fn add_definition(&mut self, def: &str) -> bool {
-        let content = match fs::read_to_string(&self.session_path) {
-            Ok(c) => c,
-            Err(_) => return false,
+        let Ok(content) = fs::read_to_string(&self.session_path) else {
+            return false;
         };
 
         // Find the main marker
-        let main_pos = match content.find(MAIN_MARKER) {
-            Some(p) => p,
-            None => return false,
+        let Some(main_pos) = content.find(MAIN_MARKER) else {
+            return false;
         };
 
         // Insert definition before the main marker
@@ -767,12 +710,7 @@ impl App {
                         status,
                     } => {
                         // Rollback on runtime error - don't keep failed expression in session
-                        if let Err(rollback_err) = fs::write(&self.session_path, &original) {
-                            self.status_message = Some(format!(
-                                "Warning: Could not rollback session file: {}",
-                                rollback_err
-                            ));
-                        }
+                        self.rollback_session(&original);
                         let err = if stderr.is_empty() {
                             format!("exit: {:?}", status.code())
                         } else {
@@ -783,12 +721,7 @@ impl App {
                     }
                     RunResult::Timeout { timeout_secs } => {
                         // Rollback on timeout - the expression caused blocking
-                        if let Err(rollback_err) = fs::write(&self.session_path, &original) {
-                            self.status_message = Some(format!(
-                                "Warning: Could not rollback session file: {}",
-                                rollback_err
-                            ));
-                        }
+                        self.rollback_session(&original);
                         self.repl_state
                             .add_entry(HistoryEntry::new(expr).with_error(format!(
                                 "Timeout after {}s (SEQ_REPL_TIMEOUT to adjust)",
@@ -797,12 +730,7 @@ impl App {
                     }
                     RunResult::Error(e) => {
                         // Rollback on run error - don't keep failed expression in session
-                        if let Err(rollback_err) = fs::write(&self.session_path, &original) {
-                            self.status_message = Some(format!(
-                                "Warning: Could not rollback session file: {}",
-                                rollback_err
-                            ));
-                        }
+                        self.rollback_session(&original);
                         self.add_error_entry(expr, &format!("Run error: {}", e));
                     }
                 }
@@ -810,12 +738,7 @@ impl App {
             }
             Err(e) => {
                 // Rollback
-                if let Err(rollback_err) = fs::write(&self.session_path, &original) {
-                    self.status_message = Some(format!(
-                        "Warning: Could not rollback session file: {}",
-                        rollback_err
-                    ));
-                }
+                self.rollback_session(&original);
                 self.add_error_entry(expr, &e.to_string());
             }
         }
@@ -831,15 +754,13 @@ impl App {
             return true; // Skip appending but allow compile/run to proceed
         }
 
-        let content = match fs::read_to_string(&self.session_path) {
-            Ok(c) => c,
-            Err(_) => return false,
+        let Ok(content) = fs::read_to_string(&self.session_path) else {
+            return false;
         };
 
         // Find "stack.dump" which marks the end of user code
-        let dump_pos = match content.find("  stack.dump") {
-            Some(p) => p,
-            None => return false,
+        let Some(dump_pos) = content.find("  stack.dump") else {
+            return false;
         };
 
         // Insert new expression before stack.dump
@@ -855,25 +776,22 @@ impl App {
 
     /// Pop the last expression from main
     fn pop_last_expression(&mut self) -> bool {
-        let content = match fs::read_to_string(&self.session_path) {
-            Ok(c) => c,
-            Err(_) => return false,
+        let Ok(content) = fs::read_to_string(&self.session_path) else {
+            return false;
         };
 
         // Find ": main ( -- )" line end
-        let main_pos = match content.find(": main") {
-            Some(p) => p,
-            None => return false,
+        let Some(main_pos) = content.find(": main") else {
+            return false;
         };
-        let main_line_end = match content[main_pos..].find('\n') {
-            Some(p) => main_pos + p + 1,
-            None => return false,
+        let Some(newline_offset) = content[main_pos..].find('\n') else {
+            return false;
         };
+        let main_line_end = main_pos + newline_offset + 1;
 
         // Find "  stack.dump"
-        let dump_pos = match content.find("  stack.dump") {
-            Some(p) => p,
-            None => return false,
+        let Some(dump_pos) = content.find("  stack.dump") else {
+            return false;
         };
 
         // Get the expressions section
@@ -923,9 +841,8 @@ impl App {
 
     /// Add an include to the includes section
     fn add_include(&mut self, module: &str) -> bool {
-        let content = match fs::read_to_string(&self.session_path) {
-            Ok(c) => c,
-            Err(_) => return false,
+        let Ok(content) = fs::read_to_string(&self.session_path) else {
+            return false;
         };
 
         // Check if already included
@@ -936,9 +853,8 @@ impl App {
         }
 
         // Find the includes marker
-        let includes_pos = match content.find(INCLUDES_MARKER) {
-            Some(p) => p,
-            None => return false,
+        let Some(includes_pos) = content.find(INCLUDES_MARKER) else {
+            return false;
         };
 
         // Find end of marker line
@@ -960,9 +876,8 @@ impl App {
 
     /// Try including a module
     fn try_include(&mut self, module: &str) {
-        let original = match fs::read_to_string(&self.session_path) {
-            Ok(c) => c,
-            Err(_) => return,
+        let Ok(original) = fs::read_to_string(&self.session_path) else {
+            return;
         };
 
         if !self.add_include(module) {
@@ -1091,53 +1006,7 @@ impl App {
                 // Show help in the IR pane
                 self.repl_state.add_entry(HistoryEntry::new(cmd));
                 self.ir_content = IrContent {
-                    stack_art: vec![
-                        "╭─────────────────────────────────────╮".to_string(),
-                        "│           Seq TUI REPL              │".to_string(),
-                        "╰─────────────────────────────────────╯".to_string(),
-                        String::new(),
-                        "COMMANDS".to_string(),
-                        "  :q, :quit     Exit the REPL".to_string(),
-                        "  :version, :v  Show version".to_string(),
-                        "  :clear        Clear session and history".to_string(),
-                        "  :pop          Remove last expression".to_string(),
-                        "  :stack, :s    Show current stack".to_string(),
-                        "  :show         Show session file".to_string(),
-                        "  :edit, :e     Open in $EDITOR".to_string(),
-                        "  :ir           Toggle IR pane".to_string(),
-                        "  :ir stack     Show stack effects".to_string(),
-                        "  :ir ast       Show typed AST".to_string(),
-                        "  :ir llvm      Show LLVM IR".to_string(),
-                        "  :include <m>  Include module".to_string(),
-                        "  :help, :h     Show this help".to_string(),
-                        String::new(),
-                        "VI MODE".to_string(),
-                        "  i, a, A, I    Enter insert mode".to_string(),
-                        "  Esc           Return to normal mode".to_string(),
-                        "  h, l          Move cursor left/right".to_string(),
-                        "  j, k          History down/up".to_string(),
-                        "  w, b          Word forward/backward".to_string(),
-                        "  0, $          Line start/end".to_string(),
-                        "  x             Delete character".to_string(),
-                        "  d             Clear line".to_string(),
-                        "  /             Search history".to_string(),
-                        String::new(),
-                        "KEYS".to_string(),
-                        "  F1            Toggle Stack Effects".to_string(),
-                        "  F2            Toggle Typed AST".to_string(),
-                        "  F3            Toggle LLVM IR".to_string(),
-                        "  Tab           Show completions".to_string(),
-                        "  Ctrl+N        Cycle IR views".to_string(),
-                        "  Ctrl+D        Exit REPL".to_string(),
-                        "  Enter         Execute expression".to_string(),
-                        "  Up/Down       History navigation".to_string(),
-                        String::new(),
-                        "SEARCH MODE (after /)".to_string(),
-                        "  Type          Filter history".to_string(),
-                        "  Tab/Shift+Tab Cycle matches".to_string(),
-                        "  Enter         Accept match".to_string(),
-                        "  Esc           Cancel search".to_string(),
-                    ],
+                    stack_art: HELP_LINES.iter().map(|s| s.to_string()).collect(),
                     typed_ast: vec![],
                     llvm_ir: vec![],
                     errors: vec![],
@@ -1268,10 +1137,7 @@ impl App {
                 self.repl_state.input = entry.input.clone();
             }
         }
-        self.editor.reset();
-        self.editor
-            .set_cursor(self.repl_state.input.len(), &self.repl_state.input);
-        self.repl_state.cursor = self.editor.cursor();
+        self.sync_editor_to_input();
     }
 
     /// Update status message to show search state
@@ -1313,19 +1179,13 @@ impl App {
     /// Navigate to previous history entry (older)
     fn navigate_history_prev(&mut self) {
         self.repl_state.history_up();
-        self.editor.reset();
-        self.editor
-            .set_cursor(self.repl_state.input.len(), &self.repl_state.input);
-        self.repl_state.cursor = self.editor.cursor();
+        self.sync_editor_to_input();
     }
 
     /// Navigate to next history entry (newer)
     fn navigate_history_next(&mut self) {
         self.repl_state.history_down();
-        self.editor.reset();
-        self.editor
-            .set_cursor(self.repl_state.input.len(), &self.repl_state.input);
-        self.repl_state.cursor = self.editor.cursor();
+        self.sync_editor_to_input();
     }
 
     /// Toggle IR pane to a specific view mode
@@ -1440,7 +1300,7 @@ impl App {
     }
 
     /// Render the application to a frame
-    pub fn render(&self, frame: &mut Frame) {
+    pub(crate) fn render(&self, frame: &mut Frame) {
         let area = frame.area();
         let layout = ComputedLayout::compute(area, &self.layout_config, self.show_ir_pane);
 
