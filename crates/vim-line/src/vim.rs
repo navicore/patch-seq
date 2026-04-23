@@ -7,6 +7,9 @@
 use crate::{Action, EditResult, Key, KeyCode, LineEditor, TextEdit};
 use std::ops::Range;
 
+mod edits;
+mod motions;
+
 /// Vim editing mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum Mode {
@@ -33,12 +36,12 @@ pub(crate) enum Operator {
 /// Designed for single "one-shot" inputs that may span multiple lines.
 #[derive(Debug, Clone)]
 pub struct VimLineEditor {
-    cursor: usize,
-    mode: Mode,
+    pub(in crate::vim) cursor: usize,
+    pub(in crate::vim) mode: Mode,
     /// Anchor point for visual selection (cursor is the other end).
-    visual_anchor: Option<usize>,
+    pub(in crate::vim) visual_anchor: Option<usize>,
     /// Last yanked text (for paste).
-    yank_buffer: String,
+    pub(in crate::vim) yank_buffer: String,
 }
 
 impl Default for VimLineEditor {
@@ -71,378 +74,63 @@ impl VimLineEditor {
 
     /// Move cursor left by one character.
     fn move_left(&mut self, text: &str) {
-        if self.cursor > 0 {
-            // Find the previous character boundary
-            let mut new_pos = self.cursor - 1;
-            while new_pos > 0 && !text.is_char_boundary(new_pos) {
-                new_pos -= 1;
-            }
-            self.cursor = new_pos;
-        }
+        self.cursor = motions::move_left(self.cursor, text);
     }
 
     /// Move cursor right by one character.
     fn move_right(&mut self, text: &str) {
-        if self.cursor < text.len() {
-            // Find the next character boundary
-            let mut new_pos = self.cursor + 1;
-            while new_pos < text.len() && !text.is_char_boundary(new_pos) {
-                new_pos += 1;
-            }
-            self.cursor = new_pos;
-        }
+        self.cursor = motions::move_right(self.cursor, text);
     }
 
     /// Move cursor to start of line (0).
     fn move_line_start(&mut self, text: &str) {
-        // Find the start of the current line
-        self.cursor = text[..self.cursor].rfind('\n').map(|i| i + 1).unwrap_or(0);
+        self.cursor = motions::move_line_start(self.cursor, text);
     }
 
     /// Move cursor to first non-whitespace of line (^).
     fn move_first_non_blank(&mut self, text: &str) {
-        self.move_line_start(text);
-        // Skip whitespace
-        let line_start = self.cursor;
-        for (i, c) in text[line_start..].char_indices() {
-            if c == '\n' || !c.is_whitespace() {
-                self.cursor = line_start + i;
-                return;
-            }
-        }
+        self.cursor = motions::move_first_non_blank(self.cursor, text);
     }
 
-    /// Move cursor to end of line ($).
-    /// In Normal mode, cursor should be ON the last character.
-    /// The `past_end` parameter allows Insert mode to go past the last char.
-    fn move_line_end_impl(&mut self, text: &str, past_end: bool) {
-        // Find the end of the current line
-        let line_end = text[self.cursor..]
-            .find('\n')
-            .map(|i| self.cursor + i)
-            .unwrap_or(text.len());
-
-        if past_end || line_end == 0 {
-            self.cursor = line_end;
-        } else {
-            // In Normal mode, cursor should be ON the last character
-            // Find the start of the last character (handle multi-byte)
-            let mut last_char_start = line_end.saturating_sub(1);
-            while last_char_start > 0 && !text.is_char_boundary(last_char_start) {
-                last_char_start -= 1;
-            }
-            self.cursor = last_char_start;
-        }
-    }
-
-    /// Move cursor to end of line (Normal mode - stays on last char)
+    /// Move cursor to end of line (Normal mode — stays on last char).
     fn move_line_end(&mut self, text: &str) {
-        self.move_line_end_impl(text, false);
+        self.cursor = motions::move_line_end(self.cursor, text);
     }
 
-    /// Move cursor past end of line (Insert mode)
+    /// Move cursor past end of line (Insert mode).
     fn move_line_end_insert(&mut self, text: &str) {
-        self.move_line_end_impl(text, true);
+        self.cursor = motions::move_line_end_insert(self.cursor, text);
     }
 
     /// Move cursor forward by word (w).
     fn move_word_forward(&mut self, text: &str) {
-        let bytes = text.as_bytes();
-        let mut pos = self.cursor;
-
-        // Skip current word (non-whitespace)
-        while pos < bytes.len() && !bytes[pos].is_ascii_whitespace() {
-            pos += 1;
-        }
-        // Skip whitespace
-        while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
-            pos += 1;
-        }
-
-        self.cursor = pos;
+        self.cursor = motions::move_word_forward(self.cursor, text);
     }
 
     /// Move cursor backward by word (b).
     fn move_word_backward(&mut self, text: &str) {
-        let bytes = text.as_bytes();
-        let mut pos = self.cursor;
-
-        // Skip whitespace before cursor
-        while pos > 0 && bytes[pos - 1].is_ascii_whitespace() {
-            pos -= 1;
-        }
-        // Skip word (non-whitespace)
-        while pos > 0 && !bytes[pos - 1].is_ascii_whitespace() {
-            pos -= 1;
-        }
-
-        self.cursor = pos;
+        self.cursor = motions::move_word_backward(self.cursor, text);
     }
 
     /// Move cursor to end of word (e).
     fn move_word_end(&mut self, text: &str) {
-        let bytes = text.as_bytes();
-        let mut pos = self.cursor;
-
-        // Move at least one character
-        if pos < bytes.len() {
-            pos += 1;
-        }
-        // Skip whitespace
-        while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
-            pos += 1;
-        }
-        // Move to end of word
-        while pos < bytes.len() && !bytes[pos].is_ascii_whitespace() {
-            pos += 1;
-        }
-        // Back up one (end of word, not start of next)
-        if pos > self.cursor + 1 {
-            pos -= 1;
-        }
-
-        self.cursor = pos;
+        self.cursor = motions::move_word_end(self.cursor, text);
     }
 
     /// Move cursor up one line (k).
     fn move_up(&mut self, text: &str) {
-        // Find current line start
-        let line_start = text[..self.cursor].rfind('\n').map(|i| i + 1).unwrap_or(0);
-
-        if line_start == 0 {
-            // Already on first line, can't go up
-            return;
-        }
-
-        // Column offset from line start
-        let col = self.cursor - line_start;
-
-        // Find previous line start
-        let prev_line_start = text[..line_start - 1]
-            .rfind('\n')
-            .map(|i| i + 1)
-            .unwrap_or(0);
-
-        // Previous line length
-        let prev_line_end = line_start - 1; // Position of \n
-        let prev_line_len = prev_line_end - prev_line_start;
-
-        // Move to same column or end of line
-        self.cursor = prev_line_start + col.min(prev_line_len);
+        self.cursor = motions::move_up(self.cursor, text);
     }
 
     /// Move cursor down one line (j).
     fn move_down(&mut self, text: &str) {
-        // Find current line start
-        let line_start = text[..self.cursor].rfind('\n').map(|i| i + 1).unwrap_or(0);
-
-        // Column offset
-        let col = self.cursor - line_start;
-
-        // Find next line start
-        let Some(newline_pos) = text[self.cursor..].find('\n') else {
-            // Already on last line
-            return;
-        };
-        let next_line_start = self.cursor + newline_pos + 1;
-
-        if next_line_start >= text.len() {
-            // Next line is empty/doesn't exist
-            self.cursor = text.len();
-            return;
-        }
-
-        // Find next line end
-        let next_line_end = text[next_line_start..]
-            .find('\n')
-            .map(|i| next_line_start + i)
-            .unwrap_or(text.len());
-
-        let next_line_len = next_line_end - next_line_start;
-
-        // Move to same column or end of line
-        self.cursor = next_line_start + col.min(next_line_len);
+        self.cursor = motions::move_down(self.cursor, text);
     }
 
     /// Move cursor to matching bracket (%).
     /// Supports (), [], {}, and <>.
     fn move_to_matching_bracket(&mut self, text: &str) {
-        if self.cursor >= text.len() {
-            return;
-        }
-
-        // Get the character at the cursor
-        let Some(c) = text[self.cursor..].chars().next() else {
-            return;
-        };
-
-        // Define bracket pairs: (opening, closing)
-        let pairs = [('(', ')'), ('[', ']'), ('{', '}'), ('<', '>')];
-
-        // Check if current char is an opening bracket
-        for (open, close) in pairs.iter() {
-            if c == *open {
-                // Search forward for matching close
-                if let Some(pos) = self.find_matching_forward(text, *open, *close) {
-                    self.cursor = pos;
-                }
-                return;
-            }
-            if c == *close {
-                // Search backward for matching open
-                if let Some(pos) = self.find_matching_backward(text, *open, *close) {
-                    self.cursor = pos;
-                }
-                return;
-            }
-        }
-    }
-
-    /// Find matching closing bracket, searching forward from cursor.
-    fn find_matching_forward(&self, text: &str, open: char, close: char) -> Option<usize> {
-        let mut depth = 1;
-        let mut pos = self.cursor;
-
-        // Move past the opening bracket
-        pos += open.len_utf8();
-
-        for (i, c) in text[pos..].char_indices() {
-            if c == open {
-                depth += 1;
-            } else if c == close {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(pos + i);
-                }
-            }
-        }
-        None
-    }
-
-    /// Find matching opening bracket, searching backward from cursor.
-    fn find_matching_backward(&self, text: &str, open: char, close: char) -> Option<usize> {
-        let mut depth = 1;
-
-        // Search backward from just before cursor
-        let search_text = &text[..self.cursor];
-        for (i, c) in search_text.char_indices().rev() {
-            if c == close {
-                depth += 1;
-            } else if c == open {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(i);
-                }
-            }
-        }
-        None
-    }
-
-    /// Delete character at cursor (x).
-    fn delete_char(&mut self, text: &str) -> EditResult {
-        if self.cursor >= text.len() {
-            return EditResult::none();
-        }
-
-        let start = self.cursor;
-
-        // Find the end of the current character
-        let mut end = self.cursor + 1;
-        while end < text.len() && !text.is_char_boundary(end) {
-            end += 1;
-        }
-
-        let deleted = text[start..end].to_string();
-
-        // If we're deleting the last character, move cursor left
-        // (In Normal mode, cursor must always be ON a character)
-        if end >= text.len() && self.cursor > 0 {
-            self.move_left(text);
-        }
-
-        EditResult::edit_and_yank(TextEdit::Delete { start, end }, deleted)
-    }
-
-    /// Delete to end of line (D).
-    fn delete_to_end(&mut self, text: &str) -> EditResult {
-        let end = text[self.cursor..]
-            .find('\n')
-            .map(|i| self.cursor + i)
-            .unwrap_or(text.len());
-
-        if self.cursor >= end {
-            return EditResult::none();
-        }
-
-        let deleted = text[self.cursor..end].to_string();
-        EditResult::edit_and_yank(
-            TextEdit::Delete {
-                start: self.cursor,
-                end,
-            },
-            deleted,
-        )
-    }
-
-    /// Delete entire current line (dd).
-    fn delete_line(&mut self, text: &str) -> EditResult {
-        let line_start = text[..self.cursor].rfind('\n').map(|i| i + 1).unwrap_or(0);
-
-        let line_end = text[self.cursor..]
-            .find('\n')
-            .map(|i| self.cursor + i + 1) // Include the newline
-            .unwrap_or(text.len());
-
-        // If this is the only line and no newline, include leading newline if any
-        let (start, end) = if line_start == 0 && line_end == text.len() {
-            (0, text.len())
-        } else if line_end == text.len() && line_start > 0 {
-            // Last line - delete the preceding newline instead
-            (line_start - 1, text.len())
-        } else {
-            (line_start, line_end)
-        };
-
-        let deleted = text[start..end].to_string();
-        self.cursor = start;
-
-        EditResult::edit_and_yank(TextEdit::Delete { start, end }, deleted)
-    }
-
-    /// Paste after cursor (p).
-    fn paste_after(&mut self, text: &str) -> EditResult {
-        if self.yank_buffer.is_empty() {
-            return EditResult::none();
-        }
-
-        let insert_pos = (self.cursor + 1).min(text.len());
-        let to_insert = self.yank_buffer.clone();
-        // Position cursor at end of pasted text, safely handling edge cases
-        self.cursor = (insert_pos + to_insert.len())
-            .saturating_sub(1)
-            .min(text.len() + to_insert.len());
-
-        EditResult::edit(TextEdit::Insert {
-            at: insert_pos,
-            text: to_insert,
-        })
-    }
-
-    /// Paste before cursor (P).
-    fn paste_before(&mut self, text: &str) -> EditResult {
-        if self.yank_buffer.is_empty() {
-            return EditResult::none();
-        }
-
-        let to_insert = self.yank_buffer.clone();
-        let insert_pos = self.cursor.min(text.len());
-        // Position cursor at end of pasted text
-        self.cursor = (insert_pos + to_insert.len()).min(text.len() + to_insert.len());
-
-        EditResult::edit(TextEdit::Insert {
-            at: insert_pos,
-            text: to_insert,
-        })
+        self.cursor = motions::move_to_matching_bracket(self.cursor, text);
     }
 
     /// Dispatch a shared motion key (h/l/j/k/0/$/^/w/b/e/%/Left/Right/Home/End)
@@ -748,55 +436,6 @@ impl VimLineEditor {
         self.apply_operator(op, range_start, range_end, text)
     }
 
-    /// Apply an operator to a range.
-    fn apply_operator(&mut self, op: Operator, start: usize, end: usize, text: &str) -> EditResult {
-        let affected = text[start..end].to_string();
-        self.yank_buffer = affected.clone();
-        self.cursor = start;
-
-        match op {
-            Operator::Delete => {
-                EditResult::edit_and_yank(TextEdit::Delete { start, end }, affected)
-            }
-            Operator::Change => {
-                self.mode = Mode::Insert;
-                EditResult::edit_and_yank(TextEdit::Delete { start, end }, affected)
-            }
-            Operator::Yank => {
-                // Just yank, no edit
-                EditResult {
-                    yanked: Some(affected),
-                    ..Default::default()
-                }
-            }
-        }
-    }
-
-    /// Apply an operator to the whole line.
-    fn apply_operator_line(&mut self, op: Operator, text: &str) -> EditResult {
-        match op {
-            Operator::Delete => self.delete_line(text),
-            Operator::Change => {
-                let result = self.delete_line(text);
-                self.mode = Mode::Insert;
-                result
-            }
-            Operator::Yank => {
-                let line_start = text[..self.cursor].rfind('\n').map(|i| i + 1).unwrap_or(0);
-                let line_end = text[self.cursor..]
-                    .find('\n')
-                    .map(|i| self.cursor + i + 1)
-                    .unwrap_or(text.len());
-                let line = text[line_start..line_end].to_string();
-                self.yank_buffer = line.clone();
-                EditResult {
-                    yanked: Some(line),
-                    ..Default::default()
-                }
-            }
-        }
-    }
-
     /// Handle key in Visual mode.
     fn handle_visual(&mut self, key: Key, text: &str) -> EditResult {
         match key.code {
@@ -988,386 +627,4 @@ impl LineEditor for VimLineEditor {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_basic_motion() {
-        let mut editor = VimLineEditor::new();
-        let text = "hello world";
-
-        // Move right with 'l'
-        editor.handle_key(Key::char('l'), text);
-        assert_eq!(editor.cursor(), 1);
-
-        // Move right with 'w'
-        editor.handle_key(Key::char('w'), text);
-        assert_eq!(editor.cursor(), 6); // Start of "world"
-
-        // Move to end with '$' - cursor should be ON the last char, not past it
-        editor.handle_key(Key::char('$'), text);
-        assert_eq!(editor.cursor(), 10); // 'd' is at index 10
-
-        // Move to start with '0'
-        editor.handle_key(Key::char('0'), text);
-        assert_eq!(editor.cursor(), 0);
-    }
-
-    #[test]
-    fn test_mode_switching() {
-        let mut editor = VimLineEditor::new();
-        let text = "hello";
-
-        assert_eq!(editor.mode(), Mode::Normal);
-
-        editor.handle_key(Key::char('i'), text);
-        assert_eq!(editor.mode(), Mode::Insert);
-
-        editor.handle_key(Key::code(KeyCode::Escape), text);
-        assert_eq!(editor.mode(), Mode::Normal);
-    }
-
-    #[test]
-    fn test_delete_word() {
-        let mut editor = VimLineEditor::new();
-        let text = "hello world";
-
-        // dw should delete "hello "
-        editor.handle_key(Key::char('d'), text);
-        editor.handle_key(Key::char('w'), text);
-
-        // Check we're back in Normal mode
-        assert_eq!(editor.mode(), Mode::Normal);
-    }
-
-    #[test]
-    fn test_insert_char() {
-        let mut editor = VimLineEditor::new();
-        let text = "";
-
-        editor.handle_key(Key::char('i'), text);
-        let result = editor.handle_key(Key::char('x'), text);
-
-        assert_eq!(result.edits.len(), 1);
-        match &result.edits[0] {
-            TextEdit::Insert { at, text } => {
-                assert_eq!(*at, 0);
-                assert_eq!(text, "x");
-            }
-            _ => panic!("Expected Insert"),
-        }
-    }
-
-    #[test]
-    fn test_visual_mode() {
-        let mut editor = VimLineEditor::new();
-        let text = "hello world";
-
-        // Enter visual mode
-        editor.handle_key(Key::char('v'), text);
-        assert_eq!(editor.mode(), Mode::Visual);
-
-        // Extend selection
-        editor.handle_key(Key::char('w'), text);
-
-        // Selection should cover from 0 to cursor
-        let sel = editor.selection().unwrap();
-        assert_eq!(sel.start, 0);
-        assert!(sel.end > 0);
-    }
-
-    #[test]
-    fn test_backspace_ascii() {
-        let mut editor = VimLineEditor::new();
-        let mut text = String::from("abc");
-
-        // Enter insert mode and go to end
-        editor.handle_key(Key::char('i'), &text);
-        editor.handle_key(Key::code(KeyCode::End), &text);
-        assert_eq!(editor.cursor(), 3);
-
-        // Backspace should delete 'c'
-        let result = editor.handle_key(Key::code(KeyCode::Backspace), &text);
-        for edit in result.edits.into_iter().rev() {
-            edit.apply(&mut text);
-        }
-        assert_eq!(text, "ab");
-        assert_eq!(editor.cursor(), 2);
-    }
-
-    #[test]
-    fn test_backspace_unicode() {
-        let mut editor = VimLineEditor::new();
-        let mut text = String::from("a😀b");
-
-        // Enter insert mode and position after emoji (byte position 5: 1 + 4)
-        editor.handle_key(Key::char('i'), &text);
-        editor.handle_key(Key::code(KeyCode::End), &text);
-        editor.handle_key(Key::code(KeyCode::Left), &text); // Move before 'b'
-        assert_eq!(editor.cursor(), 5); // After the 4-byte emoji
-
-        // Backspace should delete entire emoji (4 bytes), not just 1 byte
-        let result = editor.handle_key(Key::code(KeyCode::Backspace), &text);
-        for edit in result.edits.into_iter().rev() {
-            edit.apply(&mut text);
-        }
-        assert_eq!(text, "ab");
-        assert_eq!(editor.cursor(), 1);
-    }
-
-    #[test]
-    fn test_yank_and_paste() {
-        let mut editor = VimLineEditor::new();
-        let mut text = String::from("hello world");
-
-        // Yank word with yw
-        editor.handle_key(Key::char('y'), &text);
-        let result = editor.handle_key(Key::char('w'), &text);
-        assert!(result.yanked.is_some());
-        assert_eq!(result.yanked.unwrap(), "hello ");
-
-        // Move to end and paste
-        editor.handle_key(Key::char('$'), &text);
-        let result = editor.handle_key(Key::char('p'), &text);
-
-        for edit in result.edits.into_iter().rev() {
-            edit.apply(&mut text);
-        }
-        assert_eq!(text, "hello worldhello ");
-    }
-
-    #[test]
-    fn test_visual_mode_delete() {
-        let mut editor = VimLineEditor::new();
-        let mut text = String::from("hello world");
-
-        // Enter visual mode at position 0
-        editor.handle_key(Key::char('v'), &text);
-        assert_eq!(editor.mode(), Mode::Visual);
-
-        // Extend selection with 'e' motion to end of word (stays on 'o' of hello)
-        editor.handle_key(Key::char('e'), &text);
-
-        // Delete selection with d - deletes "hello"
-        let result = editor.handle_key(Key::char('d'), &text);
-
-        for edit in result.edits.into_iter().rev() {
-            edit.apply(&mut text);
-        }
-        assert_eq!(text, " world");
-        assert_eq!(editor.mode(), Mode::Normal);
-    }
-
-    #[test]
-    fn test_operator_pending_escape() {
-        let mut editor = VimLineEditor::new();
-        let text = "hello world";
-
-        // Start delete operator
-        editor.handle_key(Key::char('d'), text);
-        assert!(matches!(editor.mode(), Mode::OperatorPending(_)));
-
-        // Cancel with Escape
-        editor.handle_key(Key::code(KeyCode::Escape), text);
-        assert_eq!(editor.mode(), Mode::Normal);
-    }
-
-    #[test]
-    fn test_replace_char() {
-        let mut editor = VimLineEditor::new();
-        let mut text = String::from("hello");
-
-        // Press 'r' then 'x' to replace 'h' with 'x'
-        editor.handle_key(Key::char('r'), &text);
-        assert_eq!(editor.mode(), Mode::ReplaceChar);
-
-        let result = editor.handle_key(Key::char('x'), &text);
-        assert_eq!(editor.mode(), Mode::Normal);
-
-        // Apply edits
-        for edit in result.edits.into_iter().rev() {
-            edit.apply(&mut text);
-        }
-        assert_eq!(text, "xello");
-    }
-
-    #[test]
-    fn test_replace_char_escape() {
-        let mut editor = VimLineEditor::new();
-        let text = "hello";
-
-        // Press 'r' then Escape should cancel
-        editor.handle_key(Key::char('r'), text);
-        assert_eq!(editor.mode(), Mode::ReplaceChar);
-
-        editor.handle_key(Key::code(KeyCode::Escape), text);
-        assert_eq!(editor.mode(), Mode::Normal);
-    }
-
-    #[test]
-    fn test_cw_no_trailing_space() {
-        let mut editor = VimLineEditor::new();
-        let mut text = String::from("hello world");
-
-        // cw should delete "hello" (not "hello ") and enter insert mode
-        editor.handle_key(Key::char('c'), &text);
-        let result = editor.handle_key(Key::char('w'), &text);
-
-        assert_eq!(editor.mode(), Mode::Insert);
-
-        // Apply edits
-        for edit in result.edits.into_iter().rev() {
-            edit.apply(&mut text);
-        }
-        // Should preserve the space before "world"
-        assert_eq!(text, " world");
-    }
-
-    #[test]
-    fn test_dw_includes_trailing_space() {
-        let mut editor = VimLineEditor::new();
-        let mut text = String::from("hello world");
-
-        // dw should delete "hello " (including trailing space)
-        editor.handle_key(Key::char('d'), &text);
-        let result = editor.handle_key(Key::char('w'), &text);
-
-        assert_eq!(editor.mode(), Mode::Normal);
-
-        // Apply edits
-        for edit in result.edits.into_iter().rev() {
-            edit.apply(&mut text);
-        }
-        assert_eq!(text, "world");
-    }
-
-    #[test]
-    fn test_paste_at_empty_buffer() {
-        let mut editor = VimLineEditor::new();
-
-        // First yank something from non-empty text
-        let yank_text = String::from("test");
-        editor.handle_key(Key::char('y'), &yank_text);
-        editor.handle_key(Key::char('w'), &yank_text);
-
-        // Now paste into empty buffer
-        let mut text = String::new();
-        editor.set_cursor(0, &text);
-        let result = editor.handle_key(Key::char('p'), &text);
-
-        for edit in result.edits.into_iter().rev() {
-            edit.apply(&mut text);
-        }
-        assert_eq!(text, "test");
-    }
-
-    #[test]
-    fn test_dollar_cursor_on_last_char() {
-        let mut editor = VimLineEditor::new();
-        let text = "abc";
-
-        // $ should place cursor ON 'c' (index 2), not past it (index 3)
-        editor.handle_key(Key::char('$'), text);
-        assert_eq!(editor.cursor(), 2);
-
-        // Single character line
-        let text = "x";
-        editor.set_cursor(0, text);
-        editor.handle_key(Key::char('$'), text);
-        assert_eq!(editor.cursor(), 0); // Stay on the only char
-    }
-
-    #[test]
-    fn test_x_delete_last_char_moves_cursor_left() {
-        let mut editor = VimLineEditor::new();
-        let mut text = String::from("abc");
-
-        // Move to last char
-        editor.handle_key(Key::char('$'), &text);
-        assert_eq!(editor.cursor(), 2); // On 'c'
-
-        // Delete with x
-        let result = editor.handle_key(Key::char('x'), &text);
-        for edit in result.edits.into_iter().rev() {
-            edit.apply(&mut text);
-        }
-
-        assert_eq!(text, "ab");
-        // Cursor should move left to stay on valid char
-        assert_eq!(editor.cursor(), 1); // On 'b'
-    }
-
-    #[test]
-    fn test_x_delete_middle_char_cursor_stays() {
-        let mut editor = VimLineEditor::new();
-        let mut text = String::from("abc");
-
-        // Position on 'b' (index 1)
-        editor.handle_key(Key::char('l'), &text);
-        assert_eq!(editor.cursor(), 1);
-
-        // Delete with x
-        let result = editor.handle_key(Key::char('x'), &text);
-        for edit in result.edits.into_iter().rev() {
-            edit.apply(&mut text);
-        }
-
-        assert_eq!(text, "ac");
-        // Cursor stays at same position (now on 'c')
-        assert_eq!(editor.cursor(), 1);
-    }
-
-    #[test]
-    fn test_percent_bracket_matching() {
-        let mut editor = VimLineEditor::new();
-        let text = "(hello world)";
-
-        // Cursor starts at position 0, on '('
-        assert_eq!(editor.cursor(), 0);
-
-        // Press '%' to jump to matching ')'
-        editor.handle_key(Key::char('%'), text);
-        assert_eq!(editor.cursor(), 12); // Position of ')'
-
-        // Press '%' again to jump back to '('
-        editor.handle_key(Key::char('%'), text);
-        assert_eq!(editor.cursor(), 0);
-    }
-
-    #[test]
-    fn test_percent_nested_brackets() {
-        let mut editor = VimLineEditor::new();
-        let text = "([{<>}])";
-
-        // Start on '('
-        editor.handle_key(Key::char('%'), text);
-        assert_eq!(editor.cursor(), 7); // Matching ')'
-
-        // Move to '[' at position 1
-        editor.set_cursor(1, text);
-        editor.handle_key(Key::char('%'), text);
-        assert_eq!(editor.cursor(), 6); // Matching ']'
-
-        // Move to '{' at position 2
-        editor.set_cursor(2, text);
-        editor.handle_key(Key::char('%'), text);
-        assert_eq!(editor.cursor(), 5); // Matching '}'
-
-        // Move to '<' at position 3
-        editor.set_cursor(3, text);
-        editor.handle_key(Key::char('%'), text);
-        assert_eq!(editor.cursor(), 4); // Matching '>'
-    }
-
-    #[test]
-    fn test_percent_on_non_bracket() {
-        let mut editor = VimLineEditor::new();
-        let text = "hello";
-
-        // Start at position 0 on 'h'
-        let orig_cursor = editor.cursor();
-        editor.handle_key(Key::char('%'), text);
-        // Cursor should not move when not on a bracket
-        assert_eq!(editor.cursor(), orig_cursor);
-    }
-}
+mod tests;

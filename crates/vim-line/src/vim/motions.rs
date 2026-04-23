@@ -1,0 +1,290 @@
+//! Pure cursor-motion functions.
+//!
+//! Every function here takes the current cursor byte offset and the text
+//! buffer and returns the new cursor position. They don't touch editor
+//! mode, yank buffer, or selection — callers on `VimLineEditor` apply the
+//! returned offset into `self.cursor`.
+
+/// Move cursor left by one character.
+pub(super) fn move_left(cursor: usize, text: &str) -> usize {
+    if cursor > 0 {
+        // Find the previous character boundary
+        let mut new_pos = cursor - 1;
+        while new_pos > 0 && !text.is_char_boundary(new_pos) {
+            new_pos -= 1;
+        }
+        new_pos
+    } else {
+        cursor
+    }
+}
+
+/// Move cursor right by one character.
+pub(super) fn move_right(cursor: usize, text: &str) -> usize {
+    if cursor < text.len() {
+        // Find the next character boundary
+        let mut new_pos = cursor + 1;
+        while new_pos < text.len() && !text.is_char_boundary(new_pos) {
+            new_pos += 1;
+        }
+        new_pos
+    } else {
+        cursor
+    }
+}
+
+/// Move cursor to start of line (0).
+pub(super) fn move_line_start(cursor: usize, text: &str) -> usize {
+    text[..cursor].rfind('\n').map(|i| i + 1).unwrap_or(0)
+}
+
+/// Move cursor to first non-whitespace of line (^).
+pub(super) fn move_first_non_blank(cursor: usize, text: &str) -> usize {
+    let line_start = move_line_start(cursor, text);
+    // Skip whitespace
+    for (i, c) in text[line_start..].char_indices() {
+        if c == '\n' || !c.is_whitespace() {
+            return line_start + i;
+        }
+    }
+    line_start
+}
+
+/// Move cursor to end of line.
+///
+/// In Normal mode, the cursor should be ON the last character.
+/// When `past_end` is true (Insert mode), the cursor may go past the
+/// last char onto the newline / EOF position.
+fn line_end(cursor: usize, text: &str, past_end: bool) -> usize {
+    // Find the end of the current line
+    let line_end = text[cursor..]
+        .find('\n')
+        .map(|i| cursor + i)
+        .unwrap_or(text.len());
+
+    if past_end || line_end == 0 {
+        line_end
+    } else {
+        // In Normal mode, cursor should be ON the last character
+        // Find the start of the last character (handle multi-byte)
+        let mut last_char_start = line_end.saturating_sub(1);
+        while last_char_start > 0 && !text.is_char_boundary(last_char_start) {
+            last_char_start -= 1;
+        }
+        last_char_start
+    }
+}
+
+/// Move cursor to end of line (Normal mode — stays on last char).
+pub(super) fn move_line_end(cursor: usize, text: &str) -> usize {
+    line_end(cursor, text, false)
+}
+
+/// Move cursor past end of line (Insert mode).
+pub(super) fn move_line_end_insert(cursor: usize, text: &str) -> usize {
+    line_end(cursor, text, true)
+}
+
+/// Move cursor forward by word (w).
+pub(super) fn move_word_forward(cursor: usize, text: &str) -> usize {
+    let bytes = text.as_bytes();
+    let mut pos = cursor;
+
+    // Skip current word (non-whitespace)
+    while pos < bytes.len() && !bytes[pos].is_ascii_whitespace() {
+        pos += 1;
+    }
+    // Skip whitespace
+    while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
+        pos += 1;
+    }
+
+    pos
+}
+
+/// Move cursor backward by word (b).
+pub(super) fn move_word_backward(cursor: usize, text: &str) -> usize {
+    let bytes = text.as_bytes();
+    let mut pos = cursor;
+
+    // Skip whitespace before cursor
+    while pos > 0 && bytes[pos - 1].is_ascii_whitespace() {
+        pos -= 1;
+    }
+    // Skip word (non-whitespace)
+    while pos > 0 && !bytes[pos - 1].is_ascii_whitespace() {
+        pos -= 1;
+    }
+
+    pos
+}
+
+/// Move cursor to end of word (e).
+pub(super) fn move_word_end(cursor: usize, text: &str) -> usize {
+    let bytes = text.as_bytes();
+    let mut pos = cursor;
+
+    // Move at least one character
+    if pos < bytes.len() {
+        pos += 1;
+    }
+    // Skip whitespace
+    while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
+        pos += 1;
+    }
+    // Move to end of word
+    while pos < bytes.len() && !bytes[pos].is_ascii_whitespace() {
+        pos += 1;
+    }
+    // Back up one (end of word, not start of next)
+    if pos > cursor + 1 {
+        pos -= 1;
+    }
+
+    pos
+}
+
+/// Move cursor up one line (k).
+pub(super) fn move_up(cursor: usize, text: &str) -> usize {
+    // Find current line start
+    let line_start = text[..cursor].rfind('\n').map(|i| i + 1).unwrap_or(0);
+
+    if line_start == 0 {
+        // Already on first line, can't go up
+        return cursor;
+    }
+
+    // Column offset from line start
+    let col = cursor - line_start;
+
+    // Find previous line start
+    let prev_line_start = text[..line_start - 1]
+        .rfind('\n')
+        .map(|i| i + 1)
+        .unwrap_or(0);
+
+    // Previous line length
+    let prev_line_end = line_start - 1; // Position of \n
+    let prev_line_len = prev_line_end - prev_line_start;
+
+    // Move to same column or end of line
+    prev_line_start + col.min(prev_line_len)
+}
+
+/// Move cursor down one line (j).
+pub(super) fn move_down(cursor: usize, text: &str) -> usize {
+    // Find current line start
+    let line_start = text[..cursor].rfind('\n').map(|i| i + 1).unwrap_or(0);
+
+    // Column offset
+    let col = cursor - line_start;
+
+    // Find next line start
+    let Some(newline_pos) = text[cursor..].find('\n') else {
+        // Already on last line
+        return cursor;
+    };
+    let next_line_start = cursor + newline_pos + 1;
+
+    if next_line_start >= text.len() {
+        // Next line is empty/doesn't exist
+        return text.len();
+    }
+
+    // Find next line end
+    let next_line_end = text[next_line_start..]
+        .find('\n')
+        .map(|i| next_line_start + i)
+        .unwrap_or(text.len());
+
+    let next_line_len = next_line_end - next_line_start;
+
+    // Move to same column or end of line
+    next_line_start + col.min(next_line_len)
+}
+
+/// Move cursor to matching bracket (%).
+/// Supports (), [], {}, and <>.
+pub(super) fn move_to_matching_bracket(cursor: usize, text: &str) -> usize {
+    if cursor >= text.len() {
+        return cursor;
+    }
+
+    // Get the character at the cursor
+    let Some(c) = text[cursor..].chars().next() else {
+        return cursor;
+    };
+
+    // Define bracket pairs: (opening, closing)
+    let pairs = [('(', ')'), ('[', ']'), ('{', '}'), ('<', '>')];
+
+    // Check if current char is an opening or closing bracket
+    for (open, close) in pairs.iter() {
+        if c == *open {
+            // Search forward for matching close
+            if let Some(pos) = find_matching_forward(cursor, text, *open, *close) {
+                return pos;
+            }
+            return cursor;
+        }
+        if c == *close {
+            // Search backward for matching open
+            if let Some(pos) = find_matching_backward(cursor, text, *open, *close) {
+                return pos;
+            }
+            return cursor;
+        }
+    }
+
+    cursor
+}
+
+/// Find matching closing bracket, searching forward from cursor.
+pub(super) fn find_matching_forward(
+    cursor: usize,
+    text: &str,
+    open: char,
+    close: char,
+) -> Option<usize> {
+    let mut depth = 1;
+    let mut pos = cursor;
+
+    // Move past the opening bracket
+    pos += open.len_utf8();
+
+    for (i, c) in text[pos..].char_indices() {
+        if c == open {
+            depth += 1;
+        } else if c == close {
+            depth -= 1;
+            if depth == 0 {
+                return Some(pos + i);
+            }
+        }
+    }
+    None
+}
+
+/// Find matching opening bracket, searching backward from cursor.
+pub(super) fn find_matching_backward(
+    cursor: usize,
+    text: &str,
+    open: char,
+    close: char,
+) -> Option<usize> {
+    let mut depth = 1;
+
+    // Search backward from just before cursor
+    let search_text = &text[..cursor];
+    for (i, c) in search_text.char_indices().rev() {
+        if c == close {
+            depth += 1;
+        } else if c == open {
+            depth -= 1;
+            if depth == 0 {
+                return Some(i);
+            }
+        }
+    }
+    None
+}
