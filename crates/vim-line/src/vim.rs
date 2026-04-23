@@ -1,11 +1,15 @@
 //! Vim-style line editor implementation.
+//!
+//! Owns the `VimLineEditor` struct, its `Mode` / `Operator` state, cursor-
+//! motion and edit helpers, the five mode-specific key handlers, and the
+//! `LineEditor` trait implementation.
 
 use crate::{Action, EditResult, Key, KeyCode, LineEditor, TextEdit};
 use std::ops::Range;
 
 /// Vim editing mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Mode {
+pub(crate) enum Mode {
     #[default]
     Normal,
     Insert,
@@ -17,7 +21,7 @@ pub enum Mode {
 
 /// Operators that wait for a motion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Operator {
+pub(crate) enum Operator {
     Delete,
     Change,
     Yank,
@@ -54,8 +58,9 @@ impl VimLineEditor {
         }
     }
 
-    /// Get the current mode.
-    pub fn mode(&self) -> Mode {
+    /// Current mode — test-only accessor.
+    #[cfg(test)]
+    fn mode(&self) -> Mode {
         self.mode
     }
 
@@ -267,10 +272,8 @@ impl VimLineEditor {
         }
 
         // Get the character at the cursor
-        let char_at_cursor = text[self.cursor..].chars().next();
-        let c = match char_at_cursor {
-            Some(c) => c,
-            None => return,
+        let Some(c) = text[self.cursor..].chars().next() else {
+            return;
         };
 
         // Define bracket pairs: (opening, closing)
@@ -442,8 +445,43 @@ impl VimLineEditor {
         })
     }
 
+    /// Dispatch a shared motion key (h/l/j/k/0/$/^/w/b/e/%/Left/Right/Home/End)
+    /// to the appropriate cursor helper. Returns `true` when the key was
+    /// recognized as a motion, `false` otherwise.
+    ///
+    /// Up/Down arrow keys are intentionally NOT handled here — Normal mode
+    /// treats them as history navigation, not motion.
+    ///
+    /// Called by Normal and Visual handlers so each can delegate motion
+    /// interpretation to one place and then wrap the result in its own way.
+    /// OperatorPending has extra `c`/`cw`/`ce` quirks and handles motion
+    /// itself.
+    fn dispatch_motion(&mut self, code: KeyCode, text: &str) -> bool {
+        match code {
+            KeyCode::Char('h') | KeyCode::Left => self.move_left(text),
+            KeyCode::Char('l') | KeyCode::Right => self.move_right(text),
+            KeyCode::Char('j') => self.move_down(text),
+            KeyCode::Char('k') => self.move_up(text),
+            KeyCode::Char('0') | KeyCode::Home => self.move_line_start(text),
+            KeyCode::Char('^') => self.move_first_non_blank(text),
+            KeyCode::Char('$') | KeyCode::End => self.move_line_end(text),
+            KeyCode::Char('w') => self.move_word_forward(text),
+            KeyCode::Char('b') => self.move_word_backward(text),
+            KeyCode::Char('e') => self.move_word_end(text),
+            KeyCode::Char('%') => self.move_to_matching_bracket(text),
+            _ => return false,
+        }
+        true
+    }
+
     /// Handle key in Normal mode.
     fn handle_normal(&mut self, key: Key, text: &str) -> EditResult {
+        // Shared motions (h/l/j/k/0/$/^/w/b/e/%/Left/Right/Home/End).
+        // Up/Down are NOT motions in Normal — they're history navigation below.
+        if self.dispatch_motion(key.code, text) {
+            return EditResult::cursor_only();
+        }
+
         match key.code {
             // Mode switching
             KeyCode::Char('i') => {
@@ -490,52 +528,6 @@ impl VimLineEditor {
                 self.mode = Mode::Visual;
                 self.visual_anchor = Some(self.cursor);
                 EditResult::none()
-            }
-
-            // Motions
-            KeyCode::Char('h') | KeyCode::Left => {
-                self.move_left(text);
-                EditResult::cursor_only()
-            }
-            KeyCode::Char('l') | KeyCode::Right => {
-                self.move_right(text);
-                EditResult::cursor_only()
-            }
-            KeyCode::Char('j') => {
-                self.move_down(text);
-                EditResult::cursor_only()
-            }
-            KeyCode::Char('k') => {
-                self.move_up(text);
-                EditResult::cursor_only()
-            }
-            KeyCode::Char('0') | KeyCode::Home => {
-                self.move_line_start(text);
-                EditResult::cursor_only()
-            }
-            KeyCode::Char('^') => {
-                self.move_first_non_blank(text);
-                EditResult::cursor_only()
-            }
-            KeyCode::Char('$') | KeyCode::End => {
-                self.move_line_end(text);
-                EditResult::cursor_only()
-            }
-            KeyCode::Char('w') => {
-                self.move_word_forward(text);
-                EditResult::cursor_only()
-            }
-            KeyCode::Char('b') => {
-                self.move_word_backward(text);
-                EditResult::cursor_only()
-            }
-            KeyCode::Char('e') => {
-                self.move_word_end(text);
-                EditResult::cursor_only()
-            }
-            KeyCode::Char('%') => {
-                self.move_to_matching_bracket(text);
-                EditResult::cursor_only()
             }
 
             // Cancel (Ctrl+C)
@@ -814,7 +806,9 @@ impl VimLineEditor {
                 EditResult::none()
             }
 
-            // Motions extend selection
+            // Motions extend selection (note: `^` and `%` are intentionally
+            // not wired here to preserve original behavior — tracked for a
+            // separate behavior-change PR).
             KeyCode::Char('h') | KeyCode::Left => {
                 self.move_left(text);
                 EditResult::cursor_only()
