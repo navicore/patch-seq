@@ -62,62 +62,20 @@ impl Token {
     }
 }
 
-/// Keywords that control flow
-const KEYWORDS: &[&str] = &[
-    "if", "else", "loop", "break", "match", "return", "yield", "spawn", "send", "recv", "select",
-];
+/// Real language keywords recognized by the parser.
+///
+/// Intentionally narrow — only tokens the parser itself special-cases.
+/// `true` / `false` and `include` are handled as their own `TokenKind`s
+/// elsewhere in `classify_identifier`. Stdlib words (`spawn`, `send`,
+/// `recv`, …) are highlighted as `Builtin` via the compiler lookup.
+const KEYWORDS: &[&str] = &["if", "else", "then", "match", "end", "union"];
 
-/// Built-in stack manipulation words
-const BUILTINS: &[&str] = &[
-    // Stack ops
-    "dup",
-    "drop",
-    "swap",
-    "over",
-    "rot",
-    "nip",
-    "tuck",
-    "pick",
-    "roll",
-    // Integer Arithmetic
-    "i.add",
-    "i.subtract",
-    "i.multiply",
-    "i.divide",
-    "modulo",
-    "negate",
-    // Comparison
-    "equals",
-    "not-equals",
-    "less-than",
-    "greater-than",
-    "less-or-equal",
-    "greater-or-equal",
-    // Logic
-    "and",
-    "or",
-    "not",
-    // Quotation
-    "apply",
-    "dip",
-    "keep",
-    "bi",
-    "tri",
-    // I/O
-    "print",
-    "println",
-    "debug",
-    // Type constructors
-    "none",
-    "some",
-    "ok",
-    "err",
-];
-
-/// Type names for stack effects
-const TYPE_NAMES: &[&str] = &[
-    "Int", "Float", "Bool", "String", "Char", "Unit", "Option", "Result", "Channel", "Strand",
-];
+/// User-nameable base types in stack effects (see `docs/GRAMMAR.md`).
+///
+/// The compiler also has `Type::Symbol` and `Type::Channel` internally,
+/// but those aren't names users write in source — they appear only as
+/// inferred types in compiler diagnostics.
+const TYPE_NAMES: &[&str] = &["Int", "Float", "Bool", "String"];
 
 /// Push a token spanning `start..end` of `chars` to `tokens`.
 fn push_range(tokens: &mut Vec<Token>, chars: &[char], start: usize, end: usize, kind: TokenKind) {
@@ -298,7 +256,8 @@ fn classify_identifier(text: &str) -> TokenKind {
     if KEYWORDS.contains(&text) {
         return TokenKind::Keyword;
     }
-    if BUILTINS.contains(&text) {
+    // Ask the compiler whether this is a real builtin — single source of truth.
+    if seqc::builtins::builtin_signature(text).is_some() {
         return TokenKind::Builtin;
     }
     if TYPE_NAMES.contains(&text) {
@@ -363,7 +322,7 @@ mod tests {
 
     #[test]
     fn test_tokenize_keywords() {
-        let tokens = tokenize_visible("if else loop break");
+        let tokens = tokenize_visible("if else match end");
         assert!(tokens.iter().all(|t| t.kind == TokenKind::Keyword));
     }
 
