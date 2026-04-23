@@ -119,6 +119,7 @@ fn ingest_program(
                 effect: None, // Constructor effects are complex, skip for now
                 source: source_label.to_string(),
                 file_path: file_path.map(|p| p.to_path_buf()),
+                // TODO: surface variant span when `variant` carries one
                 start_line: 0,
             });
         }

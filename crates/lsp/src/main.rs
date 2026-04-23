@@ -10,7 +10,7 @@ use std::sync::RwLock;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
-use tracing::info;
+use tracing::{info, warn};
 
 mod completion;
 mod diagnostics;
@@ -50,10 +50,13 @@ impl SeqLanguageServer {
     /// Run `f` against the cached `DocumentState` for `uri`. Returns `None`
     /// if the document is unknown or the read lock cannot be acquired.
     fn with_document<T>(&self, uri: &str, f: impl FnOnce(&DocumentState) -> T) -> Option<T> {
-        self.documents
-            .read()
-            .ok()
-            .and_then(|docs| docs.get(uri).map(f))
+        match self.documents.read() {
+            Ok(docs) => docs.get(uri).map(f),
+            Err(e) => {
+                warn!("documents lock poisoned: {}", e);
+                None
+            }
+        }
     }
 
     /// Update document state, resolve includes, and return diagnostics
