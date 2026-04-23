@@ -80,15 +80,18 @@ mod tests {
     }
 
     #[test]
-    fn and_is_typed_as_bool() {
-        let sig = get_effect("and")
-            .expect("and should be a builtin")
-            .render_signature();
-        assert!(
-            sig.contains("Bool") && !sig.contains("Int"),
-            "and should use Bool, not Int, got: {}",
-            sig
-        );
+    fn logical_ops_are_typed_as_bool() {
+        for word in &["and", "or", "not"] {
+            let sig = get_effect(word)
+                .unwrap_or_else(|| panic!("{} should be a builtin", word))
+                .render_signature();
+            assert!(
+                sig.contains("Bool") && !sig.contains("Int"),
+                "{} should use Bool, not Int — got: {}",
+                word,
+                sig
+            );
+        }
     }
 
     #[test]
