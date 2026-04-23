@@ -45,7 +45,7 @@ word_def        = ":" IDENT [ stack_effect ] { statement } ";" ;
 stack_effect    = "(" type_list "--" type_list [ "|" effect_annotation { effect_annotation } ] ")" ;
 effect_annotation = "Yield" type ;
 type_list       = [ row_var ] { type } ;
-row_var         = ".." LOWER_IDENT ;
+row_var         = ".." ROW_VAR_NAME ;
 
 type            = base_type
                 | type_var
@@ -146,6 +146,12 @@ BOOL_LITERAL    = "true" | "false" ;
 SYMBOL_LITERAL  = ":" SYMBOL_NAME ;
 SYMBOL_NAME     = LETTER { LETTER | DIGIT | "-" | "_" | "." | "?" | "!" } ;
 
+(* `:` is a single-character delimiter token; whitespace after it is not
+   significant. Disambiguation between `word_def` and `SYMBOL_LITERAL` is
+   context-driven: a `:` at the top level starts a `word_def`, and a `:`
+   inside a word body (wherever a `statement` is expected) starts a
+   `SYMBOL_LITERAL`. *)
+
 STRING          = '"' { STRING_CHAR | ESCAPE_SEQ } '"' ;
 STRING_CHAR     = any character except '"' or '\' ;
 ESCAPE_SEQ      = '\' ( '"' | '\' | 'n' | 'r' | 't' )
@@ -154,8 +160,9 @@ ESCAPE_SEQ      = '\' ( '"' | '\' | 'n' | 'r' | 't' )
 
 The `\xNN` escape produces the Unicode code point `U+00NN`. For `NN` in
 `00..7F` this is a single ASCII byte (common use: `\x1b` for ANSI
-terminal escape sequences). For `NN` in `80..FF` the resulting character
-is encoded as multi-byte UTF-8.
+terminal escape sequences). For `NN` in `80..FF` the code point falls
+in the Latin-1 Supplement block (`U+0080..U+00FF`) and the resulting
+character is encoded as multi-byte UTF-8.
 
 ### Comments and Whitespace
 
