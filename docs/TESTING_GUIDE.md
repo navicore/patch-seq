@@ -211,6 +211,33 @@ test-math.seq
 3 tests passed, 0 failed (4ms total)
 ```
 
+### Failure Output
+
+When an assertion fails, the runner reports the source line, the
+expected value, and the actual value on the stack:
+
+```
+tests/test-math.seq::test-addition
+  test-addition ... FAILED
+    at line 6: expected 8, got 13
+```
+
+Multiple failures within a single test each get their own line.
+Tests that fire many assertions (e.g. loop-like comparisons over a
+list) cap the output at the first five failures and append a
+`+N more failures` footer so the real signal isn't buried:
+
+```
+tests/test-math.seq::test-many
+  test-many ... FAILED
+    at line 3: expected 1, got 99
+    at line 4: expected 2, got 99
+    at line 5: expected 3, got 99
+    at line 6: expected 4, got 99
+    at line 7: expected 5, got 99
+    +2 more failures
+```
+
 ## Standalone Test Files
 
 If your test file has a `main` function, it runs as a standalone program instead of using the test runner:
