@@ -237,9 +237,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.60"
+version = "1.2.61"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43c5703da9466b66a946814e1adf53ea2c90f10063b86290cc9eb67ce3478a20"
+checksum = "d16d90359e986641506914ba71350897565610e87ce0ad9e6f28569db3dd5c6d"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -2043,9 +2043,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-pki-types"
-version = "1.14.0"
+version = "1.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be040f8b0a225e40375822a563fa9524378b9d63112f53e19ffff34df5d33fdd"
+checksum = "30a7197ae7eb376e574fe940d068c30fe0462554a3ddbe4eca7838e049c937a9"
 dependencies = [
  "zeroize",
 ]
@@ -2102,7 +2102,7 @@ checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
 
 [[package]]
 name = "seq-compiler"
-version = "5.6.1"
+version = "5.6.2"
 dependencies = [
  "clap",
  "clap_complete",
@@ -2117,7 +2117,7 @@ dependencies = [
 
 [[package]]
 name = "seq-core"
-version = "5.6.1"
+version = "5.6.2"
 dependencies = [
  "bumpalo",
  "may",
@@ -2125,7 +2125,7 @@ dependencies = [
 
 [[package]]
 name = "seq-lsp"
-version = "5.6.1"
+version = "5.6.2"
 dependencies = [
  "seq-compiler",
  "serde",
@@ -2138,7 +2138,7 @@ dependencies = [
 
 [[package]]
 name = "seq-repl"
-version = "5.6.1"
+version = "5.6.2"
 dependencies = [
  "clap",
  "crossterm",
@@ -2155,7 +2155,7 @@ dependencies = [
 
 [[package]]
 name = "seq-runtime"
-version = "5.6.1"
+version = "5.6.2"
 dependencies = [
  "aes-gcm",
  "base64",
@@ -2959,7 +2959,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vim-line"
-version = "5.6.1"
+version = "5.6.2"
 
 [[package]]
 name = "vtparse"
