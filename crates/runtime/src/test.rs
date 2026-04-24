@@ -10,6 +10,16 @@ use crate::stack::{Stack, pop, push};
 use crate::value::Value;
 use std::sync::Mutex;
 
+/// Render a stack `Value` for a failure message — prefers the natural
+/// form for `Int` / `Bool`, falls back to debug for anything else.
+fn display_value(val: &Value) -> String {
+    match val {
+        Value::Bool(b) => b.to_string(),
+        Value::Int(n) => n.to_string(),
+        other => format!("{:?}", other),
+    }
+}
+
 /// Maximum number of per-test assertion failures to print in the run
 /// summary. Additional failures are rolled up into a `+N more failure(s)`
 /// footer so noisy tests (loop-like assertions over lists) don't drown
@@ -107,7 +117,14 @@ static TEST_CONTEXT: Mutex<TestContext> = Mutex::new(TestContext {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn patch_seq_test_set_line(line: i64) {
     let mut ctx = TEST_CONTEXT.lock().unwrap();
-    ctx.current_line = if line > 0 { Some(line as u32) } else { None };
+    // Reject 0 (the agreed "clear" sentinel) and any value that can't
+    // fit in a u32 (no real source file has 4B lines, but be explicit
+    // about truncation intent rather than silently wrapping).
+    ctx.current_line = if line > 0 {
+        u32::try_from(line).ok()
+    } else {
+        None
+    };
 }
 
 /// Initialize test context for a new test
@@ -217,7 +234,7 @@ pub unsafe extern "C" fn patch_seq_test_assert(stack: Stack) -> Stack {
             ctx.record_failure(
                 "assertion failed".to_string(),
                 Some("true".to_string()),
-                Some("false".to_string()),
+                Some(display_value(&val)),
             );
         }
 
@@ -253,7 +270,7 @@ pub unsafe extern "C" fn patch_seq_test_assert_not(stack: Stack) -> Stack {
             ctx.record_failure(
                 "assertion failed".to_string(),
                 Some("false".to_string()),
-                Some("true".to_string()),
+                Some(display_value(&val)),
             );
         }
 
