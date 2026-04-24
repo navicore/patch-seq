@@ -108,17 +108,16 @@ pub unsafe extern "C" fn patch_seq_test_finish(stack: Stack) -> Stack {
         // Output pass in parseable format
         println!("{} ... ok", test_name);
     } else {
-        // Output failure in parseable format
+        // Output failure in parseable format. Detail lines are emitted on
+        // STDOUT, indented, so the test runner can associate them with the
+        // preceding FAILED header on the same stream.
         println!("{} ... FAILED", test_name);
-        // Print failure details to stderr
         for failure in &ctx.failures {
-            eprintln!("    {}", failure.message);
-            if let Some(ref expected) = failure.expected {
-                eprintln!("      expected: {}", expected);
-            }
-            if let Some(ref actual) = failure.actual {
-                eprintln!("      actual: {}", actual);
-            }
+            let line = match (&failure.expected, &failure.actual) {
+                (Some(e), Some(a)) => format!("expected {}, got {}", e, a),
+                _ => failure.message.clone(),
+            };
+            println!("  {}", line);
         }
     }
 
@@ -163,9 +162,9 @@ pub unsafe extern "C" fn patch_seq_test_assert(stack: Stack) -> Stack {
             ctx.record_pass();
         } else {
             ctx.record_failure(
-                "assertion failed: expected truthy value".to_string(),
-                Some("non-zero".to_string()),
-                Some("0".to_string()),
+                "assertion failed".to_string(),
+                Some("true".to_string()),
+                Some("false".to_string()),
             );
         }
 
@@ -199,9 +198,9 @@ pub unsafe extern "C" fn patch_seq_test_assert_not(stack: Stack) -> Stack {
             ctx.record_pass();
         } else {
             ctx.record_failure(
-                "assertion failed: expected falsy value".to_string(),
-                Some("0".to_string()),
-                Some(format!("{:?}", val)),
+                "assertion failed".to_string(),
+                Some("false".to_string()),
+                Some("true".to_string()),
             );
         }
 
