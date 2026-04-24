@@ -1,6 +1,6 @@
 # Enriching `test.assert*` Failure Output
 
-Status: design · 2026-04-24 · issue [#422]
+Status: done · 2026-04-24 · issue [#422]
 
 ## Intent
 

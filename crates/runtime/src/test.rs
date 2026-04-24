@@ -10,6 +10,12 @@ use crate::stack::{Stack, pop, push};
 use crate::value::Value;
 use std::sync::Mutex;
 
+/// Maximum number of per-test assertion failures to print in the run
+/// summary. Additional failures are rolled up into a `+N more failure(s)`
+/// footer so noisy tests (loop-like assertions over lists) don't drown
+/// the overall report. Tune here if feedback suggests a different value.
+const MAX_PRINTED_FAILURES_PER_TEST: usize = 5;
+
 /// A single test failure with context
 #[derive(Debug, Clone)]
 pub struct TestFailure {
@@ -49,6 +55,10 @@ impl TestContext {
 
     pub fn record_pass(&mut self) {
         self.passes += 1;
+        // Consume the line so a following assertion without a `set_line`
+        // hook (defensive — span-less `WordCall`s don't emit one) can't
+        // inherit this one's attribution.
+        self.current_line = None;
     }
 
     pub fn record_failure(
@@ -63,6 +73,9 @@ impl TestContext {
             expected,
             actual,
         });
+        // Same rationale as `record_pass`: don't let this line bleed into
+        // the next assertion's record.
+        self.current_line = None;
     }
 
     pub fn has_failures(&self) -> bool {
@@ -140,11 +153,11 @@ pub unsafe extern "C" fn patch_seq_test_finish(stack: Stack) -> Stack {
         // STDOUT, indented, so the test runner can associate them with the
         // preceding FAILED header on the same stream.
         // Cap the per-test output so a flood of failures (e.g. a loop-like
-        // test walking a list) doesn't drown the summary. The first MAX
-        // are printed in full; a footer counts anything suppressed.
-        const MAX_PRINTED: usize = 5;
+        // test walking a list) doesn't drown the summary. The first
+        // `MAX_PRINTED_FAILURES_PER_TEST` are printed in full; a footer
+        // counts anything suppressed.
         println!("{} ... FAILED", test_name);
-        for failure in ctx.failures.iter().take(MAX_PRINTED) {
+        for failure in ctx.failures.iter().take(MAX_PRINTED_FAILURES_PER_TEST) {
             let detail = match (&failure.expected, &failure.actual) {
                 (Some(e), Some(a)) => format!("expected {}, got {}", e, a),
                 _ => failure.message.clone(),
@@ -154,8 +167,8 @@ pub unsafe extern "C" fn patch_seq_test_finish(stack: Stack) -> Stack {
                 None => println!("  {}", detail),
             }
         }
-        if ctx.failures.len() > MAX_PRINTED {
-            let remaining = ctx.failures.len() - MAX_PRINTED;
+        if ctx.failures.len() > MAX_PRINTED_FAILURES_PER_TEST {
+            let remaining = ctx.failures.len() - MAX_PRINTED_FAILURES_PER_TEST;
             let s = if remaining == 1 { "" } else { "s" };
             println!("  +{} more failure{}", remaining, s);
         }

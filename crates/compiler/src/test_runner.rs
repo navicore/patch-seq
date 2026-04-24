@@ -445,10 +445,15 @@ fn sanitize_name(name: &str) -> String {
 /// An indented detail line is any line that begins with whitespace.
 /// Collection stops at the next non-indented line (typically the next
 /// test's header, or the pass/fail summary).
+///
+/// Matches the header exactly (`{name} ... FAILED`) so one test name
+/// being a substring of another (e.g. `add` vs `add-overflow`) cannot
+/// cross-attribute the block.
 fn collect_failure_block(output: &str, test_name: &str) -> Option<String> {
+    let header = format!("{} ... FAILED", test_name);
     let mut lines = output.lines().peekable();
     while let Some(line) = lines.next() {
-        if line.contains(test_name) && line.contains("FAILED") {
+        if line == header {
             let mut block = String::from(line);
             while let Some(next) = lines.peek() {
                 if next.starts_with(char::is_whitespace) {
