@@ -309,7 +309,7 @@ pub use test::{
     patch_seq_test_assert_not as test_assert_not, patch_seq_test_fail as test_fail,
     patch_seq_test_fail_count as test_fail_count, patch_seq_test_finish as test_finish,
     patch_seq_test_has_failures as test_has_failures, patch_seq_test_init as test_init,
-    patch_seq_test_pass_count as test_pass_count,
+    patch_seq_test_pass_count as test_pass_count, patch_seq_test_set_line as test_set_line,
 };
 
 // Time operations (exported for LLVM linking)

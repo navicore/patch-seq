@@ -13,6 +13,8 @@ use std::sync::Mutex;
 /// A single test failure with context
 #[derive(Debug, Clone)]
 pub struct TestFailure {
+    /// Source line of the assertion (1-indexed), if codegen set one.
+    pub line: Option<u32>,
     pub message: String,
     pub expected: Option<String>,
     pub actual: Option<String>,
@@ -23,6 +25,10 @@ pub struct TestFailure {
 pub struct TestContext {
     /// Current test name being executed
     pub current_test: Option<String>,
+    /// Source line of the assertion most recently announced by codegen.
+    /// Set by `patch_seq_test_set_line` just before each `test.assert*`
+    /// call; captured into a `TestFailure` if the assertion fails.
+    pub current_line: Option<u32>,
     /// Number of passed assertions
     pub passes: usize,
     /// Collected failures
@@ -36,6 +42,7 @@ impl TestContext {
 
     pub fn reset(&mut self, test_name: Option<String>) {
         self.current_test = test_name;
+        self.current_line = None;
         self.passes = 0;
         self.failures.clear();
     }
@@ -51,6 +58,7 @@ impl TestContext {
         actual: Option<String>,
     ) {
         self.failures.push(TestFailure {
+            line: self.current_line,
             message,
             expected,
             actual,
@@ -65,9 +73,29 @@ impl TestContext {
 /// Global test context protected by mutex
 static TEST_CONTEXT: Mutex<TestContext> = Mutex::new(TestContext {
     current_test: None,
+    current_line: None,
     passes: 0,
     failures: Vec::new(),
 });
+
+/// Announce the source line of the next `test.assert*` call.
+///
+/// Called by generated code immediately before each assertion so the
+/// runtime can attribute a failure to its source position. `line` is
+/// 1-indexed; pass 0 to clear.
+///
+/// This helper takes a raw `i64` rather than a stack argument because it
+/// is a compiler-emitted diagnostic, not a user-callable Seq builtin.
+///
+/// # Safety
+///
+/// Safe to call from any thread. Acquires the global test-context
+/// mutex; no other preconditions.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn patch_seq_test_set_line(line: i64) {
+    let mut ctx = TEST_CONTEXT.lock().unwrap();
+    ctx.current_line = if line > 0 { Some(line as u32) } else { None };
+}
 
 /// Initialize test context for a new test
 ///
@@ -113,11 +141,14 @@ pub unsafe extern "C" fn patch_seq_test_finish(stack: Stack) -> Stack {
         // preceding FAILED header on the same stream.
         println!("{} ... FAILED", test_name);
         for failure in &ctx.failures {
-            let line = match (&failure.expected, &failure.actual) {
+            let detail = match (&failure.expected, &failure.actual) {
                 (Some(e), Some(a)) => format!("expected {}, got {}", e, a),
                 _ => failure.message.clone(),
             };
-            println!("  {}", line);
+            match failure.line {
+                Some(line) => println!("  at line {}: {}", line, detail),
+                None => println!("  {}", detail),
+            }
         }
     }
 

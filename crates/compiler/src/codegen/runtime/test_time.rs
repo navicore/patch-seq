@@ -44,6 +44,11 @@ pub(super) static DECLS: &[RuntimeDecl] = &[
         decl: "declare ptr @patch_seq_test_fail_count(ptr)",
         category: None,
     },
+    // Source-line diagnostic hook: direct FFI, no stack thread.
+    RuntimeDecl {
+        decl: "declare void @patch_seq_test_set_line(i64)",
+        category: None,
+    },
     // Time operations
     RuntimeDecl {
         decl: "declare ptr @patch_seq_time_now(ptr)",
