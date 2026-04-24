@@ -12,6 +12,7 @@ pub(super) fn add_signatures(sigs: &mut HashMap<String, Effect>) {
     // =========================================================================
 
     builtin!(sigs, "test.init", (a String -- a));
+    builtin!(sigs, "test.set-name", (a String -- a));
     // Identity effect ( a -- a ). See note in concurrency.rs on chan.yield.
     sigs.insert(
         "test.finish".to_string(),
@@ -54,6 +55,11 @@ pub(super) fn add_docs(docs: &mut HashMap<&'static str, &'static str>) {
     docs.insert(
         "test.init",
         "Initialize the test framework with a test name.",
+    );
+    docs.insert(
+        "test.set-name",
+        "Update the current test's display name without clearing assertion state. \
+         Used by the `seqc test` runner to reassert the word-level name for output attribution.",
     );
     docs.insert("test.finish", "Finish testing and print results.");
     docs.insert("test.has-failures", "Check if any tests have failed.");

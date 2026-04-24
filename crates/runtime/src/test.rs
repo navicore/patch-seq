@@ -127,6 +127,32 @@ pub unsafe extern "C" fn patch_seq_test_set_line(line: i64) {
     };
 }
 
+/// Set the current test's display name without touching any other state.
+///
+/// Used by the `seqc test` runner to reassert the word-level test name
+/// after the user's test word has run, in case the user called
+/// `test.init "friendly name"` internally and overwrote the header.
+/// Unlike `test.init`, this does NOT clear `failures`, `passes`, or
+/// `current_line`.
+///
+/// Stack effect: ( ..a String -- ..a )
+///
+/// # Safety
+/// Stack must have a String (test name) on top.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn patch_seq_test_set_name(stack: Stack) -> Stack {
+    unsafe {
+        let (stack, name_val) = pop(stack);
+        let name = match name_val {
+            Value::String(s) => s.as_str().to_string(),
+            _ => panic!("test.set-name: expected String (test name) on stack"),
+        };
+        let mut ctx = TEST_CONTEXT.lock().unwrap();
+        ctx.current_test = Some(name);
+        stack
+    }
+}
+
 /// Initialize test context for a new test
 ///
 /// Stack effect: ( name -- )

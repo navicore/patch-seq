@@ -310,6 +310,7 @@ impl Program {
             "string->float",
             // Test framework operations
             "test.init",
+            "test.set-name",
             "test.finish",
             "test.has-failures",
             "test.assert",
