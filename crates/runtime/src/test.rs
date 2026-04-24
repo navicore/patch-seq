@@ -10,9 +10,27 @@ use crate::stack::{Stack, pop, push};
 use crate::value::Value;
 use std::sync::Mutex;
 
+/// Render a stack `Value` for a failure message — prefers the natural
+/// form for `Int` / `Bool`, falls back to debug for anything else.
+fn display_value(val: &Value) -> String {
+    match val {
+        Value::Bool(b) => b.to_string(),
+        Value::Int(n) => n.to_string(),
+        other => format!("{:?}", other),
+    }
+}
+
+/// Maximum number of per-test assertion failures to print in the run
+/// summary. Additional failures are rolled up into a `+N more failure(s)`
+/// footer so noisy tests (loop-like assertions over lists) don't drown
+/// the overall report. Tune here if feedback suggests a different value.
+const MAX_PRINTED_FAILURES_PER_TEST: usize = 5;
+
 /// A single test failure with context
 #[derive(Debug, Clone)]
 pub struct TestFailure {
+    /// Source line of the assertion (1-indexed), if codegen set one.
+    pub line: Option<u32>,
     pub message: String,
     pub expected: Option<String>,
     pub actual: Option<String>,
@@ -23,6 +41,10 @@ pub struct TestFailure {
 pub struct TestContext {
     /// Current test name being executed
     pub current_test: Option<String>,
+    /// Source line of the assertion most recently announced by codegen.
+    /// Set by `patch_seq_test_set_line` just before each `test.assert*`
+    /// call; captured into a `TestFailure` if the assertion fails.
+    pub current_line: Option<u32>,
     /// Number of passed assertions
     pub passes: usize,
     /// Collected failures
@@ -36,12 +58,17 @@ impl TestContext {
 
     pub fn reset(&mut self, test_name: Option<String>) {
         self.current_test = test_name;
+        self.current_line = None;
         self.passes = 0;
         self.failures.clear();
     }
 
     pub fn record_pass(&mut self) {
         self.passes += 1;
+        // Consume the line so a following assertion without a `set_line`
+        // hook (defensive — span-less `WordCall`s don't emit one) can't
+        // inherit this one's attribution.
+        self.current_line = None;
     }
 
     pub fn record_failure(
@@ -51,10 +78,14 @@ impl TestContext {
         actual: Option<String>,
     ) {
         self.failures.push(TestFailure {
+            line: self.current_line,
             message,
             expected,
             actual,
         });
+        // Same rationale as `record_pass`: don't let this line bleed into
+        // the next assertion's record.
+        self.current_line = None;
     }
 
     pub fn has_failures(&self) -> bool {
@@ -65,9 +96,36 @@ impl TestContext {
 /// Global test context protected by mutex
 static TEST_CONTEXT: Mutex<TestContext> = Mutex::new(TestContext {
     current_test: None,
+    current_line: None,
     passes: 0,
     failures: Vec::new(),
 });
+
+/// Announce the source line of the next `test.assert*` call.
+///
+/// Called by generated code immediately before each assertion so the
+/// runtime can attribute a failure to its source position. `line` is
+/// 1-indexed; pass 0 to clear.
+///
+/// This helper takes a raw `i64` rather than a stack argument because it
+/// is a compiler-emitted diagnostic, not a user-callable Seq builtin.
+///
+/// # Safety
+///
+/// Safe to call from any thread. Acquires the global test-context
+/// mutex; no other preconditions.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn patch_seq_test_set_line(line: i64) {
+    let mut ctx = TEST_CONTEXT.lock().unwrap();
+    // Reject 0 (the agreed "clear" sentinel) and any value that can't
+    // fit in a u32 (no real source file has 4B lines, but be explicit
+    // about truncation intent rather than silently wrapping).
+    ctx.current_line = if line > 0 {
+        u32::try_from(line).ok()
+    } else {
+        None
+    };
+}
 
 /// Initialize test context for a new test
 ///
@@ -108,17 +166,28 @@ pub unsafe extern "C" fn patch_seq_test_finish(stack: Stack) -> Stack {
         // Output pass in parseable format
         println!("{} ... ok", test_name);
     } else {
-        // Output failure in parseable format
+        // Output failure in parseable format. Detail lines are emitted on
+        // STDOUT, indented, so the test runner can associate them with the
+        // preceding FAILED header on the same stream.
+        // Cap the per-test output so a flood of failures (e.g. a loop-like
+        // test walking a list) doesn't drown the summary. The first
+        // `MAX_PRINTED_FAILURES_PER_TEST` are printed in full; a footer
+        // counts anything suppressed.
         println!("{} ... FAILED", test_name);
-        // Print failure details to stderr
-        for failure in &ctx.failures {
-            eprintln!("    {}", failure.message);
-            if let Some(ref expected) = failure.expected {
-                eprintln!("      expected: {}", expected);
+        for failure in ctx.failures.iter().take(MAX_PRINTED_FAILURES_PER_TEST) {
+            let detail = match (&failure.expected, &failure.actual) {
+                (Some(e), Some(a)) => format!("expected {}, got {}", e, a),
+                _ => failure.message.clone(),
+            };
+            match failure.line {
+                Some(line) => println!("  at line {}: {}", line, detail),
+                None => println!("  {}", detail),
             }
-            if let Some(ref actual) = failure.actual {
-                eprintln!("      actual: {}", actual);
-            }
+        }
+        if ctx.failures.len() > MAX_PRINTED_FAILURES_PER_TEST {
+            let remaining = ctx.failures.len() - MAX_PRINTED_FAILURES_PER_TEST;
+            let s = if remaining == 1 { "" } else { "s" };
+            println!("  +{} more failure{}", remaining, s);
         }
     }
 
@@ -163,9 +232,9 @@ pub unsafe extern "C" fn patch_seq_test_assert(stack: Stack) -> Stack {
             ctx.record_pass();
         } else {
             ctx.record_failure(
-                "assertion failed: expected truthy value".to_string(),
-                Some("non-zero".to_string()),
-                Some("0".to_string()),
+                "assertion failed".to_string(),
+                Some("true".to_string()),
+                Some(display_value(&val)),
             );
         }
 
@@ -199,9 +268,9 @@ pub unsafe extern "C" fn patch_seq_test_assert_not(stack: Stack) -> Stack {
             ctx.record_pass();
         } else {
             ctx.record_failure(
-                "assertion failed: expected falsy value".to_string(),
-                Some("0".to_string()),
-                Some(format!("{:?}", val)),
+                "assertion failed".to_string(),
+                Some("false".to_string()),
+                Some(display_value(&val)),
             );
         }
 

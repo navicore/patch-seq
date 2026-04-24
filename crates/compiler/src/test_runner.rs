@@ -296,17 +296,17 @@ impl TestRunner {
         let mut results = Vec::new();
 
         for test_name in test_names {
-            // Look for "test-name ... ok" or "test-name ... FAILED: message"
+            // Look for "test-name ... ok" or "test-name ... FAILED"
             let passed = output
                 .lines()
                 .any(|line| line.contains(test_name) && line.contains("... ok"));
 
+            // For failures, capture the FAILED header line plus any
+            // indented detail lines that immediately follow it (runtime
+            // emits `expected X, got Y`-style lines indented under the
+            // header on the same stdout stream).
             let error_output = if !passed {
-                // Find failure message
-                output
-                    .lines()
-                    .find(|line| line.contains(test_name) && line.contains("FAILED"))
-                    .map(|s| s.to_string())
+                collect_failure_block(output, test_name)
             } else {
                 None
             };
@@ -436,6 +436,38 @@ fn sanitize_name(name: &str) -> String {
     name.chars()
         .map(|c| if c.is_alphanumeric() { c } else { '_' })
         .collect()
+}
+
+/// Given the full test-wrapper stdout and a test name, find the
+/// `<name> ... FAILED` header line plus any indented detail lines
+/// that immediately follow it, and return them as a single block.
+///
+/// An indented detail line is any line that begins with whitespace.
+/// Collection stops at the next non-indented line (typically the next
+/// test's header, or the pass/fail summary).
+///
+/// Matches the header exactly (`{name} ... FAILED`) so one test name
+/// being a substring of another (e.g. `add` vs `add-overflow`) cannot
+/// cross-attribute the block.
+fn collect_failure_block(output: &str, test_name: &str) -> Option<String> {
+    let header = format!("{} ... FAILED", test_name);
+    let mut lines = output.lines().peekable();
+    while let Some(line) = lines.next() {
+        if line == header {
+            let mut block = String::from(line);
+            while let Some(next) = lines.peek() {
+                if next.starts_with(char::is_whitespace) {
+                    block.push('\n');
+                    block.push_str(next);
+                    lines.next();
+                } else {
+                    break;
+                }
+            }
+            return Some(block);
+        }
+    }
+    None
 }
 
 #[cfg(test)]

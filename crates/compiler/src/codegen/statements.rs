@@ -92,7 +92,22 @@ impl CodeGen {
                 result_var, function_name, stack_var
             )?;
         } else {
-            // Call to builtin (C calling convention)
+            // Call to builtin (C calling convention).
+            //
+            // For `test.assert*` builtins, first tell the runtime which
+            // source line this assertion came from so a failure can be
+            // attributed. The hook is a no-op at runtime outside tests
+            // (it just writes to the global test context).
+            if name.starts_with("test.assert")
+                && let Some(s) = span
+            {
+                let line = (s.line + 1) as i64; // 1-indexed for humans
+                writeln!(
+                    &mut self.output,
+                    "  call void @patch_seq_test_set_line(i64 {})",
+                    line
+                )?;
+            }
             writeln!(
                 &mut self.output,
                 "  %{} = call ptr @{}(ptr %{})",
