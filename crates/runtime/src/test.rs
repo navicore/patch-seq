@@ -139,8 +139,12 @@ pub unsafe extern "C" fn patch_seq_test_finish(stack: Stack) -> Stack {
         // Output failure in parseable format. Detail lines are emitted on
         // STDOUT, indented, so the test runner can associate them with the
         // preceding FAILED header on the same stream.
+        // Cap the per-test output so a flood of failures (e.g. a loop-like
+        // test walking a list) doesn't drown the summary. The first MAX
+        // are printed in full; a footer counts anything suppressed.
+        const MAX_PRINTED: usize = 5;
         println!("{} ... FAILED", test_name);
-        for failure in &ctx.failures {
+        for failure in ctx.failures.iter().take(MAX_PRINTED) {
             let detail = match (&failure.expected, &failure.actual) {
                 (Some(e), Some(a)) => format!("expected {}, got {}", e, a),
                 _ => failure.message.clone(),
@@ -149,6 +153,11 @@ pub unsafe extern "C" fn patch_seq_test_finish(stack: Stack) -> Stack {
                 Some(line) => println!("  at line {}: {}", line, detail),
                 None => println!("  {}", detail),
             }
+        }
+        if ctx.failures.len() > MAX_PRINTED {
+            let remaining = ctx.failures.len() - MAX_PRINTED;
+            let s = if remaining == 1 { "" } else { "s" };
+            println!("  +{} more failure{}", remaining, s);
         }
     }
 
