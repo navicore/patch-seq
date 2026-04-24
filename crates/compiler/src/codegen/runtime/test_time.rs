@@ -9,6 +9,10 @@ pub(super) static DECLS: &[RuntimeDecl] = &[
         category: Some("; Test framework operations"),
     },
     RuntimeDecl {
+        decl: "declare ptr @patch_seq_test_set_name(ptr)",
+        category: None,
+    },
+    RuntimeDecl {
         decl: "declare ptr @patch_seq_test_finish(ptr)",
         category: None,
     },
@@ -67,6 +71,7 @@ pub(super) static DECLS: &[RuntimeDecl] = &[
 pub(super) static SYMBOLS: &[(&str, &str)] = &[
     // Test framework operations
     ("test.init", "patch_seq_test_init"),
+    ("test.set-name", "patch_seq_test_set_name"),
     ("test.finish", "patch_seq_test_finish"),
     ("test.has-failures", "patch_seq_test_has_failures"),
     ("test.assert", "patch_seq_test_assert"),

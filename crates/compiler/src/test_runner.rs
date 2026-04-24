@@ -193,12 +193,18 @@ impl TestRunner {
     ) -> FileTestResults {
         let start = Instant::now();
 
-        // Generate wrapper main that runs ALL tests in sequence
+        // Generate wrapper main that runs ALL tests in sequence.
+        //
+        // `test.set-name` after the user's test word guarantees the
+        // `test.finish` header matches the word name the parser discovered,
+        // even if the user called `test.init` with a different friendly
+        // name inside their test word. Without this, `collect_failure_block`
+        // (which keys on the word name) would orphan detail lines.
         let mut test_calls = String::new();
         for test_name in test_names {
             test_calls.push_str(&format!(
-                "  \"{}\" test.init {} test.finish\n",
-                test_name, test_name
+                "  \"{0}\" test.init {0} \"{0}\" test.set-name test.finish\n",
+                test_name
             ));
         }
 
