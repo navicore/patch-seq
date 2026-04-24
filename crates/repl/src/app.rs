@@ -1265,7 +1265,7 @@ impl App {
         }
 
         // Look up in static effects table
-        crate::ir::stack_effects::get_effect(word).cloned()
+        crate::ir::stack_effects::get_effect(word)
     }
 
     /// Request completions from LSP or builtins
