@@ -105,3 +105,26 @@ include std:control
   10 true [ 5 i.+ ] unless
   10 test.assert-eq
 ;
+
+# --------------------------------------------------------------------------
+# Dynamic dispatch path
+# --------------------------------------------------------------------------
+# When the two quotations passed to `__if__` are NOT literal `[ ... ]` at
+# the call site (e.g. they come in as word arguments or are stored in
+# variables), the AST-level inlining is bypassed and the runtime
+# `patch_seq_if` dispatch handles it. This test guards the fallback path.
+
+: pick-via-arg ( Bool [ -- Int ] [ -- Int ] -- Int )
+  __if__
+;
+
+: const-7  ( -- Int ) 7 ;
+: const-13 ( -- Int ) 13 ;
+
+: test-if-dynamic-dispatch ( -- )
+  true  [ const-7 ] [ const-13 ] pick-via-arg
+  7 test.assert-eq
+
+  false [ const-7 ] [ const-13 ] pick-via-arg
+  13 test.assert-eq
+;

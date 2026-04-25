@@ -32,6 +32,7 @@ pub mod config;
 pub mod error_flag_lint;
 pub mod ffi;
 pub mod lint;
+pub mod normalize;
 pub mod parser;
 pub mod resolver;
 pub mod resource_lint;
@@ -303,6 +304,11 @@ pub fn compile_file_with_config(
     // Extract resolved arithmetic sugar for codegen
     let resolved_sugar = type_checker.take_resolved_sugar();
 
+    // Lower literal-quotation `__if__` triples to `Statement::If` so the
+    // type-specializer + codegen see the same shape they see for the
+    // parser-level `if/else/then` form. (See `normalize.rs`.)
+    normalize::lower_literal_if_combinators(&mut program, &quotation_types, &quotation_aux_depths);
+
     // Generate LLVM IR with type information and external builtins
     // Note: Mutual TCO already works via existing musttail emission for all
     // user-word tail calls. The call_graph is used by type checker for
@@ -445,6 +451,8 @@ pub fn compile_to_ir_with_config(source: &str, config: &CompilerConfig) -> Resul
     let aux_max_depths = type_checker.take_aux_max_depths();
     let quotation_aux_depths = type_checker.take_quotation_aux_depths();
     let resolved_sugar = type_checker.take_resolved_sugar();
+
+    normalize::lower_literal_if_combinators(&mut program, &quotation_types, &quotation_aux_depths);
 
     let mut codegen = CodeGen::new();
     codegen.set_aux_slot_counts(aux_max_depths);
