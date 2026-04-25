@@ -523,7 +523,7 @@ fn find_word_calls_in_line(
     }
 
     // Skip strings when looking for words
-    let is_word_char = |c: char| c.is_alphanumeric() || "-_>?!<+=*/:".contains(c);
+    let is_word_char = |c: char| c.is_alphanumeric() || "-_>?!<+=*/:.".contains(c);
 
     let mut in_string = false;
     let mut word_start: Option<usize> = None;
@@ -637,7 +637,7 @@ fn get_word_at_position(content: &str, position: Position) -> Option<String> {
     let col = position.character as usize;
 
     // Find word boundaries - Seq words can contain special chars like -, >, ?, !
-    let is_word_char = |c: char| c.is_alphanumeric() || "-_>?!<+=*/:".contains(c);
+    let is_word_char = |c: char| c.is_alphanumeric() || "-_>?!<+=*/:.".contains(c);
 
     let start = line[..col.min(line.len())]
         .char_indices()
@@ -783,4 +783,41 @@ async fn main() {
 
     let (service, socket) = LspService::new(SeqLanguageServer::new);
     Server::new(stdin, stdout, socket).serve(service).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn word_at(content: &str, line: u32, character: u32) -> Option<String> {
+        get_word_at_position(content, Position { line, character })
+    }
+
+    #[test]
+    fn dotted_builtin_extracted_as_single_word() {
+        // Regression: hovering anywhere inside `string.length` must yield
+        // the full dotted name, not just `string` or `length`. Without `.`
+        // in the word-char set, hover lookup misses every dotted builtin
+        // (string.*, int.*, f.*, crypto.*, encoding.*, regex.*, ...).
+        let content = "\"hi\" string.length";
+        for col in 5..=18 {
+            assert_eq!(
+                word_at(content, 0, col).as_deref(),
+                Some("string.length"),
+                "col {col} should resolve to string.length",
+            );
+        }
+    }
+
+    #[test]
+    fn plain_word_still_extracted() {
+        assert_eq!(word_at("dup drop", 0, 1).as_deref(), Some("dup"));
+        assert_eq!(word_at("dup drop", 0, 5).as_deref(), Some("drop"));
+    }
+
+    #[test]
+    fn predicate_and_arrow_words_extracted() {
+        assert_eq!(word_at("empty?", 0, 3).as_deref(), Some("empty?"));
+        assert_eq!(word_at(">aux", 0, 2).as_deref(), Some(">aux"));
+    }
 }
