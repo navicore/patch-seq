@@ -315,6 +315,7 @@ pub fn compile_file_with_config(
     codegen.set_aux_slot_counts(aux_max_depths);
     codegen.set_quotation_aux_slot_counts(quotation_aux_depths);
     codegen.set_resolved_sugar(resolved_sugar);
+    codegen.set_source_file(source_path.to_path_buf());
     let ir = codegen
         .codegen_program_with_ffi(
             &program,
@@ -351,6 +352,10 @@ pub fn compile_file_with_config(
     let mut clang = Command::new("clang");
     clang
         .arg(opt_flag)
+        // Preserve DWARF emitted by codegen so runtime panics resolve
+        // back to .seq:line via the standard backtrace path. Pure metadata
+        // — no runtime cost; only increases binary size.
+        .arg("-g")
         .arg(&ir_path)
         .arg("-o")
         .arg(output_path)

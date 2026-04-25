@@ -37,17 +37,22 @@ impl CodeGen {
             ""
         };
 
+        // Open a DISubprogram so backtraces resolve to .seq:line. Anchor
+        // at the word's source line if known, else line 0.
+        let dbg_line = word.source.as_ref().map(|s| s.start_line).unwrap_or(0);
+        let dbg_attr = self.dbg_open_subprogram(&word.name, dbg_line);
+
         if is_main {
             writeln!(
                 &mut self.output,
-                "define ptr @{}(ptr %stack) {{",
-                function_name
+                "define ptr @{}(ptr %stack){} {{",
+                function_name, dbg_attr
             )?;
         } else {
             writeln!(
                 &mut self.output,
-                "define tailcc ptr @{}(ptr %stack){} {{",
-                function_name, inline_attr
+                "define tailcc ptr @{}(ptr %stack){}{} {{",
+                function_name, inline_attr, dbg_attr
             )?;
         }
         writeln!(&mut self.output, "entry:")?;
@@ -147,6 +152,7 @@ impl CodeGen {
         writeln!(&mut self.output, "}}")?;
         writeln!(&mut self.output)?;
 
+        self.dbg_close_subprogram();
         self.inside_main = false;
         Ok(())
     }
@@ -295,6 +301,7 @@ impl CodeGen {
             word_name: self.current_word_name.take(),
             aux_slots: std::mem::take(&mut self.current_aux_slots),
             aux_sp: self.current_aux_sp,
+            dbg_subprogram_id: self.current_dbg_subprogram_id.take(),
         };
         self.current_aux_sp = 0;
         scope
@@ -309,6 +316,7 @@ impl CodeGen {
         self.current_word_name = scope.word_name;
         self.current_aux_slots = scope.aux_slots;
         self.current_aux_sp = scope.aux_sp;
+        self.current_dbg_subprogram_id = scope.dbg_subprogram_id;
     }
 
     /// Walk a function body, emitting each statement with the last in tail
