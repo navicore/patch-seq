@@ -69,6 +69,7 @@ impl CodeGen {
         self.emit_external_builtins(&mut ir)?;
         self.emit_quotation_functions(&mut ir)?;
         ir.push_str(&self.output);
+        self.dbg_emit_module_metadata(&mut ir);
         Ok(ir)
     }
 
@@ -98,6 +99,7 @@ impl CodeGen {
         self.emit_ffi_wrappers_section(&mut ir)?;
         self.emit_quotation_functions(&mut ir)?;
         ir.push_str(&self.output);
+        self.dbg_emit_module_metadata(&mut ir);
         Ok(ir)
     }
 

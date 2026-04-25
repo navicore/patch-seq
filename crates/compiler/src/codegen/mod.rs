@@ -75,6 +75,7 @@
 
 // Submodules
 mod control_flow;
+mod debug_info;
 mod error;
 mod ffi_wrappers;
 mod globals;

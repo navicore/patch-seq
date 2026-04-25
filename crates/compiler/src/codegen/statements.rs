@@ -75,21 +75,29 @@ impl CodeGen {
             return self.codegen_tail_call_quotation(stack_var, &result_var);
         }
 
+        // Allocate a DILocation for this call site so a runtime panic
+        // here resolves back to .seq:line:col in the backtrace. No-op when
+        // debug info is disabled or the statement has no span.
+        let dbg = self.dbg_call_suffix(span);
+
         if can_tail_call {
             // Yield check before tail call to prevent starvation in tight loops
             writeln!(&mut self.output, "  call void @patch_seq_maybe_yield()")?;
             writeln!(
                 &mut self.output,
-                "  %{} = musttail call tailcc ptr @{}(ptr %{})",
-                result_var, function_name, stack_var
+                "  %{} = musttail call tailcc ptr @{}(ptr %{}){}",
+                result_var, function_name, stack_var, dbg
             )?;
+            // Leave the `ret` bare. `musttail` requires the ret to mirror the
+            // call exactly; the !dbg on the call is enough for backtrace
+            // resolution (the call-site address is what gets symbolised).
             writeln!(&mut self.output, "  ret ptr %{}", result_var)?;
         } else if is_seq_word {
             // Non-tail call to user-defined word: must use tailcc calling convention
             writeln!(
                 &mut self.output,
-                "  %{} = call tailcc ptr @{}(ptr %{})",
-                result_var, function_name, stack_var
+                "  %{} = call tailcc ptr @{}(ptr %{}){}",
+                result_var, function_name, stack_var, dbg
             )?;
         } else {
             // Call to builtin (C calling convention).
@@ -110,8 +118,8 @@ impl CodeGen {
             }
             writeln!(
                 &mut self.output,
-                "  %{} = call ptr @{}(ptr %{})",
-                result_var, function_name, stack_var
+                "  %{} = call ptr @{}(ptr %{}){}",
+                result_var, function_name, stack_var, dbg
             )?;
         }
         Ok(result_var)

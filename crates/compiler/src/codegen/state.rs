@@ -7,6 +7,7 @@ use crate::ast::UnionDef;
 use crate::ffi::FfiBindings;
 use crate::types::Type;
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use super::specialization::SpecSignature;
 
@@ -109,6 +110,11 @@ pub(super) struct QuotationScope {
     pub word_name: Option<String>,
     pub aux_slots: Vec<String>,
     pub aux_sp: usize,
+    /// Snapshot of the enclosing word's DISubprogram. Cleared while a
+    /// quotation body is being emitted (the quotation lives in its own
+    /// LLVM function with no subprogram, so any `!dbg` attached inside
+    /// would be unverifiable), and restored when the scope exits.
+    pub dbg_subprogram_id: Option<usize>,
 }
 
 /// A value held in an LLVM virtual register instead of memory (Issue #189).
@@ -198,6 +204,40 @@ pub struct CodeGen {
     pub(super) main_returns_int: bool,
     /// Maps word name -> sequential ID for instrumentation counters
     pub(super) word_instrument_ids: HashMap<String, usize>,
+    // -------------------------------------------------------------------
+    // Debug info (DWARF) — see codegen/debug_info.rs.
+    //
+    // When enabled, emits LLVM `!DICompileUnit`, `!DIFile`, `!DISubprogram`,
+    // and per-call `!DILocation` metadata so panics in the runtime resolve
+    // back to .seq source lines via the standard Rust backtrace path.
+    // Zero runtime cost — pure metadata. The clang invocation must pass
+    // `-g` to preserve these into the final binary's DWARF section.
+    // -------------------------------------------------------------------
+    /// Source file the program was compiled from (for DIFile). When
+    /// `None`, debug info is disabled.
+    pub(super) dbg_source: Option<PathBuf>,
+    /// Accumulated DWARF metadata definitions (`!N = !DI...`). Appended to
+    /// the end of the IR file alongside the module flags.
+    pub(super) dbg_metadata: String,
+    /// Counter for unique metadata IDs. Started at 1000 to leave headroom
+    /// for any future module-level metadata that may want lower ids.
+    pub(super) dbg_md_counter: usize,
+    /// ID of the per-program `!DICompileUnit`. Set during program prologue
+    /// when debug info is enabled.
+    pub(super) dbg_cu_id: Option<usize>,
+    /// ID of the shared `!DIFile` for the source file.
+    pub(super) dbg_file_id: Option<usize>,
+    /// ID of the shared `!DISubroutineType` reused by every subprogram —
+    /// our generated functions all have the same opaque ptr-in/ptr-out
+    /// signature from a debugger's point of view.
+    pub(super) dbg_subroutine_type_id: Option<usize>,
+    /// `!DISubprogram` ID for the function currently being emitted, if any.
+    /// Call sites use this as the scope for their `!DILocation` records.
+    pub(super) current_dbg_subprogram_id: Option<usize>,
+    /// IDs of the two `!llvm.module.flags` records ("Dwarf Version",
+    /// "Debug Info Version"). Allocated through `dbg_alloc_id` at program
+    /// init so they never collide with later subprogram/location records.
+    pub(super) dbg_module_flag_ids: Option<(usize, usize)>,
 }
 
 impl Default for CodeGen {
@@ -245,7 +285,25 @@ impl CodeGen {
             instrument: false,
             word_instrument_ids: HashMap::new(),
             main_returns_int: false,
+            dbg_source: None,
+            dbg_metadata: String::new(),
+            dbg_md_counter: 1000,
+            dbg_cu_id: None,
+            dbg_file_id: None,
+            dbg_subroutine_type_id: None,
+            current_dbg_subprogram_id: None,
+            dbg_module_flag_ids: None,
         }
+    }
+
+    /// Enable DWARF debug info generation, anchored at the given source file.
+    ///
+    /// Must be called before `codegen_program*`. With debug info enabled,
+    /// every user-defined word gets a `!DISubprogram` and every call site
+    /// with a span gets a `!DILocation` — so a runtime panic backtrace
+    /// resolves the Seq frame to `.seq:line:col`. Zero runtime overhead.
+    pub fn set_source_file(&mut self, path: PathBuf) {
+        self.dbg_source = Some(path);
     }
 
     /// Create a CodeGen for pure inline testing.

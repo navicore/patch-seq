@@ -3645,6 +3645,203 @@ fn test_bi_underflow() {
     );
 }
 
+// =========================================================================
+// variant.* type safety
+//
+// Regression coverage for the `variant.*` builtins requiring Type::Variant
+// (or a Union via the Union <: Variant relaxation) on the stack.
+// =========================================================================
+
+fn check_word_with_body(
+    name: &str,
+    inputs: StackType,
+    outputs: StackType,
+    body: Vec<Statement>,
+) -> Result<(), String> {
+    let program = Program {
+        includes: vec![],
+        unions: vec![],
+        words: vec![WordDef {
+            name: name.to_string(),
+            effect: Some(Effect::new(inputs, outputs)),
+            body,
+            source: None,
+            allowed_lints: vec![],
+        }],
+    };
+    let mut checker = TypeChecker::new();
+    checker.check_program(&program).map(|_| ())
+}
+
+fn variant_call(name: &str) -> Statement {
+    Statement::WordCall {
+        name: name.to_string(),
+        span: None,
+    }
+}
+
+#[test]
+fn test_variant_field_at_rejects_string() {
+    let result = check_word_with_body(
+        "bad",
+        StackType::Empty,
+        StackType::singleton(Type::Int),
+        vec![
+            Statement::StringLiteral("alpha beta".to_string()),
+            Statement::IntLiteral(0),
+            variant_call("variant.field-at"),
+        ],
+    );
+    let err = result.expect_err("expected type error for String -> variant.field-at");
+    assert!(
+        err.contains("variant.field-at") && err.contains("String"),
+        "error should name variant.field-at and String, got: {err}"
+    );
+}
+
+#[test]
+fn test_variant_tag_rejects_int() {
+    let result = check_word_with_body(
+        "bad",
+        StackType::Empty,
+        StackType::singleton(Type::Symbol),
+        vec![Statement::IntLiteral(7), variant_call("variant.tag")],
+    );
+    let err = result.expect_err("expected type error for Int -> variant.tag");
+    assert!(err.contains("variant.tag"));
+}
+
+#[test]
+fn test_variant_field_count_rejects_string() {
+    let result = check_word_with_body(
+        "bad",
+        StackType::Empty,
+        StackType::singleton(Type::Int),
+        vec![
+            Statement::StringLiteral("x".to_string()),
+            variant_call("variant.field-count"),
+        ],
+    );
+    let err = result.expect_err("expected type error for String -> variant.field-count");
+    assert!(
+        err.contains("variant.field-count"),
+        "error should name variant.field-count, got: {err}"
+    );
+}
+
+#[test]
+fn test_variant_init_rejects_string() {
+    let result = check_word_with_body(
+        "bad",
+        StackType::Empty,
+        StackType::singleton(Type::Variant),
+        vec![
+            Statement::StringLiteral("x".to_string()),
+            variant_call("variant.init"),
+        ],
+    );
+    let err = result.expect_err("expected type error for String -> variant.init");
+    assert!(
+        err.contains("variant.init"),
+        "error should name variant.init, got: {err}"
+    );
+}
+
+#[test]
+fn test_variant_append_rejects_string_base() {
+    let result = check_word_with_body(
+        "bad",
+        StackType::Empty,
+        StackType::singleton(Type::Variant),
+        vec![
+            Statement::StringLiteral("x".to_string()),
+            Statement::IntLiteral(1),
+            variant_call("variant.append"),
+        ],
+    );
+    let err = result.expect_err("expected type error for String -> variant.append");
+    assert!(
+        err.contains("variant.append"),
+        "error should name variant.append, got: {err}"
+    );
+}
+
+#[test]
+fn test_variant_last_rejects_string() {
+    let result = check_word_with_body(
+        "bad",
+        StackType::Empty,
+        StackType::Empty.push(Type::Var("T".to_string())),
+        vec![
+            Statement::StringLiteral("x".to_string()),
+            variant_call("variant.last"),
+        ],
+    );
+    let err = result.expect_err("expected type error for String -> variant.last");
+    assert!(
+        err.contains("variant.last"),
+        "error should name variant.last, got: {err}"
+    );
+}
+
+#[test]
+fn test_union_value_accepted_by_variant_field_at() {
+    // Direct exercise of the Union(_) <: Variant relaxation rule:
+    // a value typed `Union("Box")` should be accepted by variant.field-at
+    // (which is signed against `Variant`).
+    let union_def = crate::ast::UnionDef {
+        name: "Box".to_string(),
+        variants: vec![crate::ast::UnionVariant {
+            name: "Cell".to_string(),
+            fields: vec![crate::ast::UnionField {
+                name: "x".to_string(),
+                type_name: "Int".to_string(),
+            }],
+            source: None,
+        }],
+        source: None,
+    };
+    let program = Program {
+        includes: vec![],
+        unions: vec![union_def],
+        words: vec![WordDef {
+            name: "first".to_string(),
+            effect: Some(Effect::new(
+                StackType::singleton(Type::Union("Box".to_string())),
+                StackType::singleton(Type::Int),
+            )),
+            body: vec![Statement::IntLiteral(0), variant_call("variant.field-at")],
+            source: None,
+            allowed_lints: vec![],
+        }],
+    };
+    let mut checker = TypeChecker::new();
+    checker
+        .check_program(&program)
+        .expect("Union(Box) should be accepted by variant.field-at");
+}
+
+#[test]
+fn test_variant_make_then_field_at_typechecks() {
+    let result = check_word_with_body(
+        "ok",
+        StackType::Empty,
+        StackType::singleton(Type::Int),
+        vec![
+            Statement::IntLiteral(42),
+            Statement::Symbol("Foo".to_string()),
+            variant_call("variant.make-1"),
+            Statement::IntLiteral(0),
+            variant_call("variant.field-at"),
+        ],
+    );
+    assert!(
+        result.is_ok(),
+        "variant.make-1 -> variant.field-at should typecheck, got: {:?}",
+        result
+    );
+}
+
 #[test]
 fn test_bi_polymorphic_quotations() {
     // : test ( Int -- Int String )  [ 2 i.* ] [ int->string ] bi ;

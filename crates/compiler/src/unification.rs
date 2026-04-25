@@ -109,7 +109,8 @@ fn occurs_in_type(var: &str, ty: &Type) -> bool {
         | Type::String
         | Type::Symbol
         | Type::Channel
-        | Type::Union(_) => false,
+        | Type::Union(_)
+        | Type::Variant => false,
         Type::Quotation(effect) => {
             // Check if var occurs in quotation's input or output stack types
             occurs_in_stack(var, &effect.inputs) || occurs_in_stack(var, &effect.outputs)
@@ -158,6 +159,25 @@ pub fn unify_types(t1: &Type, t2: &Type) -> Result<Subst, String> {
                 ))
             }
         }
+
+        // Variant matches itself
+        (Type::Variant, Type::Variant) => Ok(Subst::empty()),
+
+        // Union <: Variant relaxation — a named union value is a variant.
+        // This lets `variant.*` builtins (typed against `Variant`) accept
+        // user values typed as `Union(name)` without losing union safety
+        // elsewhere: the rule applies only when one side is the bare
+        // `Variant` placeholder. Mirrors the Closure <: Quotation rule
+        // below; the symmetric form is a minor unsoundness in the reverse
+        // direction (a `Variant` flowing back into a `Union(name)` slot)
+        // that we accept for now.
+        //
+        // TODO: tighten to a directional rule once the typechecker tracks
+        // which side of a unification is "expected" vs "actual". Today a
+        // `Variant` (e.g. the result of `variant.append`) silently
+        // satisfies a `Union(name)` constraint without checking the tag —
+        // intended pragmatic loophole, not a permanent stance.
+        (Type::Union(_), Type::Variant) | (Type::Variant, Type::Union(_)) => Ok(Subst::empty()),
 
         // Type variable unifies with anything (with occurs check)
         (Type::Var(name), ty) | (ty, Type::Var(name)) => {

@@ -65,6 +65,13 @@ pub enum Type {
     /// Example: Message in `union Message { Get { ... } Increment { ... } }`
     /// The full definition is looked up in the type environment
     Union(String),
+    /// Anonymous variant value — a tagged variant of unspecified union shape.
+    /// This is the compile-time mate of the runtime `Value::Variant` for cases
+    /// where we know the value is a variant but not which union it belongs to.
+    /// Used by the low-level `variant.*` builtins (variant.field-at, variant.tag,
+    /// variant.make-N, etc.). A `Type::Union(name)` is accepted where `Variant`
+    /// is expected (one-way relaxation, see unification).
+    Variant,
     /// Type variable (for polymorphism)
     /// Example: T in ( ..a T -- ..a T T )
     Var(String),
@@ -284,6 +291,7 @@ impl std::fmt::Display for Type {
                 write!(f, "Closure[{}, captures=({})]", effect, cap_str.join(", "))
             }
             Type::Union(name) => write!(f, "{}", name),
+            Type::Variant => write!(f, "Variant"),
             Type::Var(name) => write!(f, "{}", name),
         }
     }

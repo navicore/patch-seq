@@ -396,6 +396,7 @@ pub(crate) fn format_type(ty: &seqc::Type) -> String {
         Type::Channel => "Channel".to_string(),
         Type::Var(name) => name.clone(),
         Type::Union(name) => name.clone(),
+        Type::Variant => "Variant".to_string(),
         Type::Quotation(effect) => format!("[ {} ]", format_effect(effect)),
         Type::Closure { effect, .. } => format!("{{ {} }}", format_effect(effect)),
     }
