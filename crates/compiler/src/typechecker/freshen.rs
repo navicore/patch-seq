@@ -75,9 +75,13 @@ impl TypeChecker {
         row_map: &mut HashMap<String, String>,
     ) -> Type {
         match ty {
-            Type::Int | Type::Float | Type::Bool | Type::String | Type::Symbol | Type::Channel => {
-                ty.clone()
-            }
+            Type::Int
+            | Type::Float
+            | Type::Bool
+            | Type::String
+            | Type::Symbol
+            | Type::Channel
+            | Type::Variant => ty.clone(),
             Type::Var(name) => {
                 let fresh_name = type_map
                     .entry(name.clone())

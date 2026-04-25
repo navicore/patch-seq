@@ -99,9 +99,13 @@ impl TypeChecker {
                 Ok(())
             }
             // Concrete types are always valid
-            Type::Int | Type::Float | Type::Bool | Type::String | Type::Symbol | Type::Channel => {
-                Ok(())
-            }
+            Type::Int
+            | Type::Float
+            | Type::Bool
+            | Type::String
+            | Type::Symbol
+            | Type::Channel
+            | Type::Variant => Ok(()),
             // Union types are valid if they're registered
             Type::Union(name) => {
                 if !self.unions.contains_key(name) {

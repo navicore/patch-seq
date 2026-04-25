@@ -11,19 +11,19 @@ pub(super) fn add_signatures(sigs: &mut HashMap<String, Effect>) {
     // Variant Operations
     // =========================================================================
 
-    builtin!(sigs, "variant.field-count", (a V -- a Int));
-    builtin!(sigs, "variant.tag", (a V -- a Symbol));
-    builtin!(sigs, "variant.field-at", (a V Int -- a T));
-    builtin!(sigs, "variant.append", (a V T -- a V2));
-    builtin!(sigs, "variant.last", (a V -- a T));
-    builtin!(sigs, "variant.init", (a V -- a V2));
+    builtin!(sigs, "variant.field-count", (a Variant -- a Int));
+    builtin!(sigs, "variant.tag", (a Variant -- a Symbol));
+    builtin!(sigs, "variant.field-at", (a Variant Int -- a T));
+    builtin!(sigs, "variant.append", (a Variant T -- a Variant));
+    builtin!(sigs, "variant.last", (a Variant -- a T));
+    builtin!(sigs, "variant.init", (a Variant -- a Variant));
 
     // Type-safe variant constructors with fixed arity (symbol tags for SON support)
-    builtin!(sigs, "variant.make-0", (a Symbol -- a V));
-    builtin!(sigs, "variant.make-1", (a T1 Symbol -- a V));
-    builtin!(sigs, "variant.make-2", (a T1 T2 Symbol -- a V));
-    builtin!(sigs, "variant.make-3", (a T1 T2 T3 Symbol -- a V));
-    builtin!(sigs, "variant.make-4", (a T1 T2 T3 T4 Symbol -- a V));
+    builtin!(sigs, "variant.make-0", (a Symbol -- a Variant));
+    builtin!(sigs, "variant.make-1", (a T1 Symbol -- a Variant));
+    builtin!(sigs, "variant.make-2", (a T1 T2 Symbol -- a Variant));
+    builtin!(sigs, "variant.make-3", (a T1 T2 T3 Symbol -- a Variant));
+    builtin!(sigs, "variant.make-4", (a T1 T2 T3 T4 Symbol -- a Variant));
     // variant.make-5 through variant.make-12 defined manually (macro only supports up to 5 inputs)
     for n in 5..=12 {
         let mut input = StackType::RowVar("a".to_string());
@@ -31,16 +31,16 @@ pub(super) fn add_signatures(sigs: &mut HashMap<String, Effect>) {
             input = input.push(Type::Var(format!("T{}", i)));
         }
         input = input.push(Type::Symbol);
-        let output = StackType::RowVar("a".to_string()).push(Type::Var("V".to_string()));
+        let output = StackType::RowVar("a".to_string()).push(Type::Variant);
         sigs.insert(format!("variant.make-{}", n), Effect::new(input, output));
     }
 
     // Aliases for dynamic variant construction (SON-friendly names)
-    builtin!(sigs, "wrap-0", (a Symbol -- a V));
-    builtin!(sigs, "wrap-1", (a T1 Symbol -- a V));
-    builtin!(sigs, "wrap-2", (a T1 T2 Symbol -- a V));
-    builtin!(sigs, "wrap-3", (a T1 T2 T3 Symbol -- a V));
-    builtin!(sigs, "wrap-4", (a T1 T2 T3 T4 Symbol -- a V));
+    builtin!(sigs, "wrap-0", (a Symbol -- a Variant));
+    builtin!(sigs, "wrap-1", (a T1 Symbol -- a Variant));
+    builtin!(sigs, "wrap-2", (a T1 T2 Symbol -- a Variant));
+    builtin!(sigs, "wrap-3", (a T1 T2 T3 Symbol -- a Variant));
+    builtin!(sigs, "wrap-4", (a T1 T2 T3 T4 Symbol -- a Variant));
     // wrap-5 through wrap-12 defined manually
     for n in 5..=12 {
         let mut input = StackType::RowVar("a".to_string());
@@ -48,7 +48,7 @@ pub(super) fn add_signatures(sigs: &mut HashMap<String, Effect>) {
             input = input.push(Type::Var(format!("T{}", i)));
         }
         input = input.push(Type::Symbol);
-        let output = StackType::RowVar("a".to_string()).push(Type::Var("V".to_string()));
+        let output = StackType::RowVar("a".to_string()).push(Type::Variant);
         sigs.insert(format!("wrap-{}", n), Effect::new(input, output));
     }
 }

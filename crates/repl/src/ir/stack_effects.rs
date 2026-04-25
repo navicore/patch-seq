@@ -58,6 +58,7 @@ fn type_to_value(ty: &Type) -> StackValue {
         Type::Symbol => StackValue::ty("Symbol"),
         Type::Channel => StackValue::ty("Channel"),
         Type::Union(name) => StackValue::ty(name.clone()),
+        Type::Variant => StackValue::ty("Variant"),
         Type::Quotation(_) => StackValue::ty("Quot"),
         Type::Closure { .. } => StackValue::ty("Closure"),
     }

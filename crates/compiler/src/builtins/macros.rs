@@ -24,6 +24,9 @@ macro_rules! ty {
     (Channel) => {
         Type::Channel
     };
+    (Variant) => {
+        Type::Variant
+    };
     // Single uppercase letter = type variable
     (T) => {
         Type::Var("T".to_string())
