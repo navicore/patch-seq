@@ -209,14 +209,18 @@ pub(crate) fn check_document_with_quotations(
     (diagnostics, quotation_info)
 }
 
-/// Get code actions for lint diagnostics that overlap with the given range.
+/// Get code actions for diagnostics that overlap with the given range.
 ///
-/// This re-runs the linter to find applicable fixes for the requested range.
+/// Two sources contribute:
+/// - lint diagnostics (re-derived by re-running the linter on the source);
+/// - cached typecheck/parse diagnostics (passed in by the caller, so we
+///   don't re-typecheck on every lightbulb click).
 pub(crate) fn get_code_actions(
     source: &str,
     range: Range,
     uri: &Url,
     file_path: Option<&Path>,
+    cached_diagnostics: &[Diagnostic],
 ) -> Vec<CodeAction> {
     let mut actions = Vec::new();
 
@@ -249,6 +253,16 @@ pub(crate) fn get_code_actions(
                 actions.push(action);
             }
         }
+    }
+
+    // Sugar-resolution failures emit type-error diagnostics whose message
+    // names the operator. When the cursor overlaps one, offer typed-form
+    // rewrites (`i.+`, `f.+`, `string.concat`, …).
+    for diag in cached_diagnostics {
+        if !ranges_overlap(&diag.range, &range) {
+            continue;
+        }
+        actions.extend(sugar_code_actions(diag, &source, uri));
     }
 
     actions
@@ -396,6 +410,100 @@ fn unchecked_error_code_action(
         disabled: None,
         data: None,
     })
+}
+
+/// Typed alternatives offered for each unresolved-sugar operator.
+///
+/// Order is from-most-likely to least-likely so the quick-fix picker
+/// surfaces sensible defaults. `None` for `is_preferred` because none of
+/// the alternatives is uniquely correct without the context the LSP
+/// can't reproduce.
+const SUGAR_ALTERNATIVES: &[(&str, &[&str])] = &[
+    ("+", &["i.+", "f.+", "string.concat"]),
+    ("-", &["i.-", "f.-"]),
+    ("*", &["i.*", "f.*"]),
+    ("/", &["i./", "f./"]),
+    ("%", &["i.%"]),
+    ("=", &["i.=", "f.=", "string.equal?"]),
+    ("<", &["i.<", "f.<"]),
+    (">", &["i.>", "f.>"]),
+    ("<=", &["i.<=", "f.<="]),
+    (">=", &["i.>=", "f.>="]),
+    ("<>", &["i.<>", "f.<>"]),
+];
+
+/// If the diagnostic looks like an unresolved-sugar failure, emit a
+/// `Replace `+` with `i.+`` quick-fix per typed alternative.
+fn sugar_code_actions(diag: &Diagnostic, source: &str, uri: &Url) -> Vec<CodeAction> {
+    let msg = &diag.message;
+    if !msg.contains("can't resolve here") && !msg.contains("requires matching types") {
+        return Vec::new();
+    }
+    let Some(op) = first_backticked(msg) else {
+        return Vec::new();
+    };
+    let Some((_, alternatives)) = SUGAR_ALTERNATIVES.iter().find(|(o, _)| *o == op) else {
+        return Vec::new();
+    };
+    let Some(op_range) = locate_token_in_line(source, diag.range.start.line, op) else {
+        return Vec::new();
+    };
+
+    alternatives
+        .iter()
+        .map(|replacement| {
+            let title = format!("Replace `{}` with `{}`", op, replacement);
+            let edit = single_file_workspace_edit(uri, op_range, (*replacement).to_string());
+            CodeAction {
+                title,
+                kind: Some(CodeActionKind::QUICKFIX),
+                diagnostics: None,
+                edit: Some(edit),
+                command: None,
+                is_preferred: None,
+                disabled: None,
+                data: None,
+            }
+        })
+        .collect()
+}
+
+/// Return the contents of the first ` `…` ` (backtick-bounded) span in `s`.
+fn first_backticked(s: &str) -> Option<&str> {
+    let start = s.find('`')? + 1;
+    let rest = &s[start..];
+    let end = rest.find('`')?;
+    Some(&rest[..end])
+}
+
+/// Find the first whitespace-bounded occurrence of `tok` on `line_idx`
+/// in `source` and return its range. Returns `None` if not found.
+fn locate_token_in_line(source: &str, line_idx: u32, tok: &str) -> Option<Range> {
+    let line = source.lines().nth(line_idx as usize)?;
+    let bytes = line.as_bytes();
+    let tok_bytes = tok.as_bytes();
+    let mut idx = 0;
+    while idx + tok_bytes.len() <= bytes.len() {
+        if &bytes[idx..idx + tok_bytes.len()] == tok_bytes {
+            let before_ok = idx == 0 || bytes[idx - 1].is_ascii_whitespace();
+            let after_ok = idx + tok_bytes.len() == bytes.len()
+                || bytes[idx + tok_bytes.len()].is_ascii_whitespace();
+            if before_ok && after_ok {
+                return Some(Range {
+                    start: Position {
+                        line: line_idx,
+                        character: idx as u32,
+                    },
+                    end: Position {
+                        line: line_idx,
+                        character: (idx + tok_bytes.len()) as u32,
+                    },
+                });
+            }
+        }
+        idx += 1;
+    }
+    None
 }
 
 /// Convert a lint diagnostic to an LSP diagnostic.
@@ -831,6 +939,95 @@ union Shape { Circle { radius: Int } Rectangle { width: Int, height: Int } }
             diag.range.start.line, 6,
             "Expected error on line 6 (0-indexed), got line {}. Message: {}",
             diag.range.start.line, diag.message
+        );
+    }
+
+    /// Pin the wording coupling between the typechecker's sugar-failure
+    /// errors and `sugar_code_actions`. If the typechecker error wording
+    /// drifts away from "can't resolve here" / "requires matching types"
+    /// the LSP code action would silently disappear; this test breaks
+    /// loudly instead.
+    #[test]
+    fn sugar_code_action_recognizes_known_wordings() {
+        let uri: Url = "file:///fake/path.seq".parse().unwrap();
+
+        // Quotation-body case (post-#420 wording).
+        let source = "3 4 [ + ] call\n";
+        let diag = Diagnostic {
+            range: Range {
+                start: Position {
+                    line: 0,
+                    character: 0,
+                },
+                end: Position {
+                    line: 0,
+                    character: source.len() as u32,
+                },
+            },
+            message: "at line 1: `+` can't resolve here — operand types not in scope. \
+                      Use `i.+`, `f.+`, or `string.concat`."
+                .to_string(),
+            ..Default::default()
+        };
+        let actions = sugar_code_actions(&diag, source, &uri);
+        assert_eq!(
+            actions.len(),
+            3,
+            "expected 3 typed alternatives for `+`, got {}",
+            actions.len()
+        );
+        assert!(actions.iter().any(|a| a.title.contains("i.+")));
+        assert!(actions.iter().any(|a| a.title.contains("f.+")));
+        assert!(actions.iter().any(|a| a.title.contains("string.concat")));
+
+        // Type-mismatch case (legacy wording).
+        let source2 = "3 \"hi\" +\n";
+        let diag2 = Diagnostic {
+            range: Range {
+                start: Position {
+                    line: 0,
+                    character: 0,
+                },
+                end: Position {
+                    line: 0,
+                    character: source2.len() as u32,
+                },
+            },
+            message: "at line 1: `+` requires matching types (Int+Int, Float+Float, \
+                      or String+String), got (Int, String). Use `i.+`, `f.+`, or \
+                      `string.concat`."
+                .to_string(),
+            ..Default::default()
+        };
+        let actions2 = sugar_code_actions(&diag2, source2, &uri);
+        assert_eq!(
+            actions2.len(),
+            3,
+            "expected 3 alternatives in mismatch case"
+        );
+    }
+
+    #[test]
+    fn sugar_code_action_ignores_unrelated_diagnostic() {
+        let uri: Url = "file:///fake/path.seq".parse().unwrap();
+        let diag = Diagnostic {
+            range: Range {
+                start: Position {
+                    line: 0,
+                    character: 0,
+                },
+                end: Position {
+                    line: 0,
+                    character: 10,
+                },
+            },
+            message: "Parse error: unexpected token".to_string(),
+            ..Default::default()
+        };
+        let actions = sugar_code_actions(&diag, "anything\n", &uri);
+        assert!(
+            actions.is_empty(),
+            "non-sugar diagnostic should produce no code actions"
         );
     }
 }
