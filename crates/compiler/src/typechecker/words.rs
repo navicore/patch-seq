@@ -60,6 +60,20 @@ impl TypeChecker {
                     "Use the `i.` or `f.` prefixed variant.",
                 ),
             };
+            // When both operands are out of scope (top_desc/second_desc
+            // both "empty") the most likely cause is sugar appearing
+            // inside a quotation body, where the stack is empty from the
+            // resolver's perspective. Lead with the typed-form suggestion
+            // rather than the generic "requires matching types" wording.
+            if top_desc == "empty" && second_desc == "empty" {
+                return Err(format!(
+                    "{}`{}` can't resolve here — operand types not in scope \
+                     (this commonly happens inside a quotation body, where \
+                     the body's stack is empty from the resolver's view). \
+                     {}",
+                    line_prefix, name, suggestion,
+                ));
+            }
             return Err(format!(
                 "{}`{}` requires matching types ({}), got ({}, {}). {}",
                 line_prefix, name, type_options, second_desc, top_desc, suggestion,
