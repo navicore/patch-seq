@@ -231,6 +231,7 @@ impl Program {
             "dip",
             "keep",
             "bi",
+            "__if__",
             "strand.spawn",
             "strand.weave",
             "strand.resume",

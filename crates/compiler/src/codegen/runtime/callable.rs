@@ -1,6 +1,6 @@
 //! Runtime declarations for first-class callables: quotations, dataflow
-//! combinators (dip, keep, bi), strand spawning, `cond`, and the peek
-//! helpers used by the codegen to inspect quotation values.
+//! combinators (dip, keep, bi, __if__), strand spawning, `cond`, and the
+//! peek helpers used by the codegen to inspect quotation values.
 
 use super::RuntimeDecl;
 
@@ -25,6 +25,10 @@ pub(super) static DECLS: &[RuntimeDecl] = &[
     },
     RuntimeDecl {
         decl: "declare ptr @patch_seq_bi(ptr)",
+        category: None,
+    },
+    RuntimeDecl {
+        decl: "declare ptr @patch_seq_if(ptr)",
         category: None,
     },
     RuntimeDecl {
@@ -67,6 +71,7 @@ pub(super) static SYMBOLS: &[(&str, &str)] = &[
     ("dip", "patch_seq_dip"),
     ("keep", "patch_seq_keep"),
     ("bi", "patch_seq_bi"),
+    ("__if__", "patch_seq_if"),
     ("strand.spawn", "patch_seq_spawn"),
     ("strand.weave", "patch_seq_weave"),
     ("strand.resume", "patch_seq_resume"),

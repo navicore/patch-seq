@@ -232,7 +232,7 @@ pub use closures::{
 };
 
 // Dataflow combinators (exported for LLVM linking)
-pub use combinators::{bi, dip, keep};
+pub use combinators::{bi, dip, if_combinator, keep};
 
 // Conditional combinator (exported for LLVM linking)
 pub use cond::patch_seq_cond as cond;

@@ -1,0 +1,107 @@
+# Integration tests for `__if__`, `when`, `unless`.
+#
+# `__if__` is the temporary scaffold name for the 6.0 `if`-as-combinator
+# migration. `when` / `unless` are stdlib combinators built on top of it.
+# Once `if/else/then` are removed from the parser (phase 3), `__if__`
+# becomes `if` and these tests are renamed accordingly.
+
+include std:control
+
+# --------------------------------------------------------------------------
+# __if__ ( ..a Bool [..a -- ..b] [..a -- ..b] -- ..b )
+# --------------------------------------------------------------------------
+
+: test-if-combinator-true ( -- )
+  # True selects the first quotation (then-branch).
+  true [ 1 ] [ 2 ] __if__
+  1 test.assert-eq
+;
+
+: test-if-combinator-false ( -- )
+  # False selects the second quotation (else-branch).
+  false [ 1 ] [ 2 ] __if__
+  2 test.assert-eq
+;
+
+: test-if-combinator-consumes-stack ( -- )
+  # Both quotations may consume from below themselves.
+  10 5 true  [ i.+ ] [ i.- ] __if__
+  15 test.assert-eq
+
+  10 5 false [ i.+ ] [ i.- ] __if__
+  5 test.assert-eq
+;
+
+: test-if-combinator-empty-quotation ( -- )
+  # Empty quotation is the natural no-op for unchanged stack shape.
+  42 true  [ ] [ drop 99 ] __if__
+  42 test.assert-eq
+
+  42 false [ ] [ drop 99 ] __if__
+  99 test.assert-eq
+;
+
+: test-if-combinator-from-comparison ( -- )
+  # The Bool can come from any boolean-producing expression.
+  5 3 i.> [ "yes" ] [ "no" ] __if__
+  "yes" test.assert-eq-str
+
+  3 5 i.> [ "yes" ] [ "no" ] __if__
+  "no" test.assert-eq-str
+;
+
+# --------------------------------------------------------------------------
+# when ( ..a Bool [ ..a -- ..a ] -- ..a )
+# --------------------------------------------------------------------------
+
+: test-when-true-fires ( -- )
+  0 true [ drop 1 ] when
+  1 test.assert-eq
+;
+
+: test-when-false-skips ( -- )
+  0 false [ drop 1 ] when
+  0 test.assert-eq
+;
+
+: test-when-preserves-stack ( -- )
+  # When the quotation is a no-op (preserves shape), `when` is a no-op
+  # whether the condition is true or false.
+  42 true  [ ] when
+  42 test.assert-eq
+
+  42 false [ ] when
+  42 test.assert-eq
+;
+
+: test-when-transforms-value ( -- )
+  # ( Int -- Int ) quotation, applied conditionally
+  5 dup 0 i.> [ 1 i.+ ] when
+  6 test.assert-eq
+
+  -3 dup 0 i.> [ 1 i.+ ] when
+  -3 test.assert-eq
+;
+
+# --------------------------------------------------------------------------
+# unless ( ..a Bool [ ..a -- ..a ] -- ..a )
+# --------------------------------------------------------------------------
+
+: test-unless-false-fires ( -- )
+  0 false [ drop 1 ] unless
+  1 test.assert-eq
+;
+
+: test-unless-true-skips ( -- )
+  0 true [ drop 1 ] unless
+  0 test.assert-eq
+;
+
+: test-unless-mirror-of-when ( -- )
+  # `unless` is `when` with the condition negated.
+  10 false [ 5 i.+ ] unless
+  15 test.assert-eq
+
+  10 true [ 5 i.+ ] unless
+  10 test.assert-eq
+;

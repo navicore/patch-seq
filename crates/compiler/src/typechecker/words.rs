@@ -109,6 +109,9 @@ impl TypeChecker {
         if name == "bi" {
             return self.infer_bi(span, current_stack);
         }
+        if name == "__if__" {
+            return self.infer_if_combinator(span, current_stack);
+        }
 
         // Look up word's effect
         let effect = self

@@ -5,12 +5,16 @@
 //! or auxiliary stack usage (>aux / aux>).
 //!
 //! These follow the concatenative tradition from Factor/Joy:
-//! - `dip`  — hide top value, run quotation, restore value
-//! - `keep` — run quotation on top value, but preserve the original
-//! - `bi`   — apply two quotations to the same value
+//! - `dip`    — hide top value, run quotation, restore value
+//! - `keep`   — run quotation on top value, but preserve the original
+//! - `bi`     — apply two quotations to the same value
+//! - `__if__` — branch on a Bool, invoking one of two quotations
+//!   (temporary scaffold name for the 6.0 `if`-as-combinator migration;
+//!   renamed to `if` once `if/else/then` are removed from the parser)
 
 use crate::quotations::invoke_callable;
 use crate::stack::{Stack, pop, push};
+use crate::value::Value;
 
 /// `dip`: Hide top value, run quotation on the rest, restore value.
 ///
@@ -84,7 +88,41 @@ pub unsafe extern "C" fn patch_seq_bi(stack: Stack) -> Stack {
     }
 }
 
+/// `__if__`: Branch on a Bool, invoking one of two quotations.
+///
+/// Stack effect: ( ..a Bool [..a -- ..b] [..a -- ..b] -- ..b )
+///   The two quotations must have identical effects (the typechecker
+///   enforces this); whichever runs leaves the stack in the same shape.
+///
+/// Layout at entry (top → bottom): else-quot, then-quot, cond.
+///
+/// This is the temporary scaffold name for the 6.0 migration. Once
+/// `if/else/then` are removed from the parser (phase 3), this is renamed
+/// to `if` and exposed as the user-facing combinator.
+///
+/// # Safety
+/// - Stack must have at least 3 values (else-quot on top, then-quot below,
+///   Bool below that).
+/// - The top two values must be Quotations or Closures.
+/// - The third value must be a Bool.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn patch_seq_if(stack: Stack) -> Stack {
+    // SAFETY: Caller guarantees the stack layout above. invoke_callable's
+    // safety contract is documented in quotations.rs.
+    unsafe {
+        let (stack, else_quot) = pop(stack);
+        let (stack, then_quot) = pop(stack);
+        let (stack, cond) = pop(stack);
+        match cond {
+            Value::Bool(true) => invoke_callable(stack, &then_quot),
+            Value::Bool(false) => invoke_callable(stack, &else_quot),
+            other => panic!("__if__: expected Bool condition, got {:?}", other),
+        }
+    }
+}
+
 // Public re-exports with short names for internal use
 pub use patch_seq_bi as bi;
 pub use patch_seq_dip as dip;
+pub use patch_seq_if as if_combinator;
 pub use patch_seq_keep as keep;

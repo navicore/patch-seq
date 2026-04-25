@@ -1,0 +1,36 @@
+# Control-flow combinators for Seq
+#
+# Built on top of `__if__`, the conditional combinator. (During the 6.0
+# migration `__if__` is the temporary scaffold name; once `if/else/then`
+# are removed from the parser it becomes `if`.)
+#
+# ## Available Words
+#
+# - when:   ( ..a Bool [ ..a -- ..a ] -- ..a )   Run quotation only when condition is true
+# - unless: ( ..a Bool [ ..a -- ..a ] -- ..a )   Run quotation only when condition is false
+#
+# ## Examples
+#
+#   x 0 i.> [ "positive" io.write-line ] when
+#   x 0 i.= [ "zero!"    io.write-line ] unless
+#
+# ## Notes
+#
+# - The quotation must leave the stack shape unchanged (same in/out row).
+#   This is what makes `when` and `unless` one-armed: there's no else
+#   branch to unify against, so the no-op `[ ]` empty quotation must be
+#   compatible with the active branch.
+
+# --------------------------------------------------------------------------
+# when — run quotation only when condition is true
+# --------------------------------------------------------------------------
+: when ( ..a Bool [ ..a -- ..a ] -- ..a )
+  [ ] __if__
+;
+
+# --------------------------------------------------------------------------
+# unless — run quotation only when condition is false
+# --------------------------------------------------------------------------
+: unless ( ..a Bool [ ..a -- ..a ] -- ..a )
+  [ ] swap __if__
+;
