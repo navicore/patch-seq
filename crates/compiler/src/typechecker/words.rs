@@ -29,8 +29,16 @@ impl TypeChecker {
                 // Proceed as if the user wrote the resolved name
                 return self.infer_word_call(&resolved, span, current_stack);
             }
-            // Sugar op but types don't match — give a helpful error
-            let line_prefix = self.line_prefix();
+            // Sugar op but types don't match — give a helpful error.
+            //
+            // When `span` is set, emit `at line N col M: ` so the LSP can
+            // recover the operator's exact source position even when the
+            // line contains multiple sugar tokens. Falls back to the
+            // word-level `line_prefix` (line only) otherwise.
+            let position_prefix = match span {
+                Some(s) => format!("at line {} col {}: ", s.line + 1, s.column + 1),
+                None => self.line_prefix(),
+            };
             let (top_desc, second_desc) = {
                 let top = current_stack.clone().pop().map(|(_, t)| format!("{}", t));
                 let second = current_stack
@@ -71,12 +79,12 @@ impl TypeChecker {
                      (this commonly happens inside a quotation body, where \
                      the body's stack is empty from the resolver's view). \
                      {}",
-                    line_prefix, name, suggestion,
+                    position_prefix, name, suggestion,
                 ));
             }
             return Err(format!(
                 "{}`{}` requires matching types ({}), got ({}, {}). {}",
-                line_prefix, name, type_options, second_desc, top_desc, suggestion,
+                position_prefix, name, type_options, second_desc, top_desc, suggestion,
             ));
         }
 

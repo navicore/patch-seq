@@ -434,7 +434,13 @@ const SUGAR_ALTERNATIVES: &[(&str, &[&str])] = &[
 
 /// If the diagnostic looks like an unresolved-sugar failure, emit a
 /// `Replace `+` with `i.+`` quick-fix per typed alternative.
-fn sugar_code_actions(diag: &Diagnostic, source: &str, uri: &Url) -> Vec<CodeAction> {
+///
+/// Position info comes from the `at line N col M:` prefix the typechecker
+/// embeds in sugar errors when a span is available — using that lets us
+/// pinpoint the right token even when a line has multiple sugar
+/// occurrences. (Note: `character` here is a UTF-8 byte offset because
+/// the server declares `PositionEncodingKind::UTF8` in its capabilities.)
+fn sugar_code_actions(diag: &Diagnostic, _source: &str, uri: &Url) -> Vec<CodeAction> {
     let msg = &diag.message;
     if !msg.contains("can't resolve here") && !msg.contains("requires matching types") {
         return Vec::new();
@@ -445,8 +451,18 @@ fn sugar_code_actions(diag: &Diagnostic, source: &str, uri: &Url) -> Vec<CodeAct
     let Some((_, alternatives)) = SUGAR_ALTERNATIVES.iter().find(|(o, _)| *o == op) else {
         return Vec::new();
     };
-    let Some(op_range) = locate_token_in_line(source, diag.range.start.line, op) else {
+    let Some((line, col)) = parse_position_prefix(msg) else {
         return Vec::new();
+    };
+    let op_range = Range {
+        start: Position {
+            line,
+            character: col,
+        },
+        end: Position {
+            line,
+            character: col + op.len() as u32,
+        },
     };
 
     alternatives
@@ -468,7 +484,9 @@ fn sugar_code_actions(diag: &Diagnostic, source: &str, uri: &Url) -> Vec<CodeAct
         .collect()
 }
 
-/// Return the contents of the first ` `…` ` (backtick-bounded) span in `s`.
+/// Return the contents of the first backtick-bounded span in `s`. The
+/// typechecker's sugar-failure messages always lead with the operator
+/// name in backticks (e.g. `` `+` can't resolve... ``).
 fn first_backticked(s: &str) -> Option<&str> {
     let start = s.find('`')? + 1;
     let rest = &s[start..];
@@ -476,34 +494,17 @@ fn first_backticked(s: &str) -> Option<&str> {
     Some(&rest[..end])
 }
 
-/// Find the first whitespace-bounded occurrence of `tok` on `line_idx`
-/// in `source` and return its range. Returns `None` if not found.
-fn locate_token_in_line(source: &str, line_idx: u32, tok: &str) -> Option<Range> {
-    let line = source.lines().nth(line_idx as usize)?;
-    let bytes = line.as_bytes();
-    let tok_bytes = tok.as_bytes();
-    let mut idx = 0;
-    while idx + tok_bytes.len() <= bytes.len() {
-        if &bytes[idx..idx + tok_bytes.len()] == tok_bytes {
-            let before_ok = idx == 0 || bytes[idx - 1].is_ascii_whitespace();
-            let after_ok = idx + tok_bytes.len() == bytes.len()
-                || bytes[idx + tok_bytes.len()].is_ascii_whitespace();
-            if before_ok && after_ok {
-                return Some(Range {
-                    start: Position {
-                        line: line_idx,
-                        character: idx as u32,
-                    },
-                    end: Position {
-                        line: line_idx,
-                        character: (idx + tok_bytes.len()) as u32,
-                    },
-                });
-            }
-        }
-        idx += 1;
-    }
-    None
+/// Parse `at line N col M:` from a typechecker error message. Returns
+/// 0-indexed (line, col) suitable for an LSP `Position`.
+fn parse_position_prefix(msg: &str) -> Option<(u32, u32)> {
+    let after_line = msg.strip_prefix("at line ")?;
+    let line_end = after_line.find(' ')?;
+    let line_1: u32 = after_line[..line_end].parse().ok()?;
+    let after = &after_line[line_end + 1..];
+    let after_col = after.strip_prefix("col ")?;
+    let col_end = after_col.find(':')?;
+    let col_1: u32 = after_col[..col_end].parse().ok()?;
+    Some((line_1.saturating_sub(1), col_1.saturating_sub(1)))
 }
 
 /// Convert a lint diagnostic to an LSP diagnostic.
@@ -964,7 +965,7 @@ union Shape { Circle { radius: Int } Rectangle { width: Int, height: Int } }
                     character: source.len() as u32,
                 },
             },
-            message: "at line 1: `+` can't resolve here — operand types not in scope. \
+            message: "at line 1 col 7: `+` can't resolve here — operand types not in scope. \
                       Use `i.+`, `f.+`, or `string.concat`."
                 .to_string(),
             ..Default::default()
@@ -979,6 +980,13 @@ union Shape { Circle { radius: Int } Rectangle { width: Int, height: Int } }
         assert!(actions.iter().any(|a| a.title.contains("i.+")));
         assert!(actions.iter().any(|a| a.title.contains("f.+")));
         assert!(actions.iter().any(|a| a.title.contains("string.concat")));
+        // Edit range must target just the `+` operator at col 7 (1-indexed),
+        // not the whole diagnostic line.
+        let edit = actions[0].edit.as_ref().unwrap();
+        let changes = edit.changes.as_ref().unwrap();
+        let text_edit = &changes.values().next().unwrap()[0];
+        assert_eq!(text_edit.range.start.character, 6);
+        assert_eq!(text_edit.range.end.character, 7);
 
         // Type-mismatch case (legacy wording).
         let source2 = "3 \"hi\" +\n";
@@ -993,7 +1001,7 @@ union Shape { Circle { radius: Int } Rectangle { width: Int, height: Int } }
                     character: source2.len() as u32,
                 },
             },
-            message: "at line 1: `+` requires matching types (Int+Int, Float+Float, \
+            message: "at line 1 col 8: `+` requires matching types (Int+Int, Float+Float, \
                       or String+String), got (Int, String). Use `i.+`, `f.+`, or \
                       `string.concat`."
                 .to_string(),
