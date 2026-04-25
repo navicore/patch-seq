@@ -253,7 +253,11 @@ fn make_word_completion(
     let doc_value = format!("```seq\n: {} {}\n```\n\n{}", name, detail, source_trailer);
     CompletionItem {
         label: name.to_string(),
-        kind: Some(CompletionItemKind::FUNCTION),
+        // OPERATOR — not FUNCTION. Seq is concatenative: words consume
+        // the stack and have no parenthesised argument list. Many editors
+        // (nvim-cmp, VS Code) auto-insert `()` on confirm when the kind
+        // is FUNCTION/METHOD; OPERATOR keeps the inserted text bare.
+        kind: Some(CompletionItemKind::OPERATOR),
         detail: Some(detail),
         documentation: Some(Documentation::MarkupContent(MarkupContent {
             kind: MarkupKind::Markdown,
@@ -306,7 +310,8 @@ fn get_builtin_completions() -> Vec<CompletionItem> {
         let doc_value = format!("```seq\n{} {}\n```\n\n*Built-in*", name, signature);
         items.push(CompletionItem {
             label: name.clone(),
-            kind: Some(CompletionItemKind::FUNCTION),
+            // OPERATOR — see make_word_completion for rationale.
+            kind: Some(CompletionItemKind::OPERATOR),
             detail: Some(signature),
             documentation: Some(Documentation::MarkupContent(MarkupContent {
                 kind: MarkupKind::Markdown,
@@ -344,7 +349,8 @@ fn get_builtin_completions() -> Vec<CompletionItem> {
         }
         items.push(CompletionItem {
             label: name.to_string(),
-            kind: Some(CompletionItemKind::FUNCTION),
+            // OPERATOR — see make_word_completion for rationale.
+            kind: Some(CompletionItemKind::OPERATOR),
             detail: Some(sig.to_string()),
             documentation: Some(Documentation::String(desc.to_string())),
             sort_text: Some(format!("2_{}", name)),
@@ -478,6 +484,25 @@ mod tests {
             has_dotted,
             "Builtin completions should include dotted names like int.add"
         );
+    }
+
+    #[test]
+    fn test_word_completion_kind_is_operator() {
+        // Regression: word completions must use OPERATOR (not FUNCTION /
+        // METHOD) so editors don't auto-insert `()` on confirm. Seq is
+        // concatenative — words never take parenthesised arguments.
+        for item in get_builtin_completions() {
+            if item.kind == Some(CompletionItemKind::KEYWORD) {
+                continue; // if/else/then/include/true/false — fine as KEYWORD
+            }
+            assert_eq!(
+                item.kind,
+                Some(CompletionItemKind::OPERATOR),
+                "completion item {:?} should be OPERATOR, got {:?}",
+                item.label,
+                item.kind,
+            );
+        }
     }
 
     #[test]

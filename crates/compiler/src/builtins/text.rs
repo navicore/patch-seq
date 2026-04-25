@@ -115,16 +115,25 @@ pub(super) fn add_docs(docs: &mut HashMap<&'static str, &'static str>) {
     );
     docs.insert(
         "string.find",
-        "Find substring. Returns index or -1 if not found.",
+        "Find substring. Returns index or -1 if not found. ( str substring -- Int )",
     );
-    docs.insert("string.split", "Split string by delimiter. Returns a list.");
-    docs.insert("string.contains", "Check if string contains a substring.");
+    docs.insert(
+        "string.split",
+        "Split string by delimiter. Returns a list. ( str delimiter -- list )",
+    );
+    docs.insert(
+        "string.contains",
+        "Check if string contains substring. ( str substring -- Bool )",
+    );
     docs.insert(
         "string.starts-with",
-        "Check if string starts with a prefix.",
+        "Check if string starts with prefix. ( str prefix -- Bool )",
     );
-    docs.insert("string.empty?", "Check if string is empty.");
-    docs.insert("string.equal?", "Check if two strings are equal.");
+    docs.insert("string.empty?", "Check if string is empty. ( str -- Bool )");
+    docs.insert(
+        "string.equal?",
+        "Check if two strings are equal. ( str str -- Bool )",
+    );
     docs.insert(
         "string.join",
         "Join a list of values with a separator string. ( list sep -- string )",
