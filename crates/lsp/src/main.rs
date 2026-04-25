@@ -31,6 +31,9 @@ struct DocumentState {
     local_words: Vec<LocalWord>,
     /// Quotation info for hover support
     quotations: Vec<QuotationInfo>,
+    /// Most recent diagnostics from the typechecker + linter, kept so
+    /// `code_action` can offer fixes without re-running the full pipeline.
+    diagnostics: Vec<tower_lsp::lsp_types::Diagnostic>,
 }
 
 struct SeqLanguageServer {
@@ -100,6 +103,7 @@ impl SeqLanguageServer {
             includes: resolved,
             local_words,
             quotations,
+            diagnostics: diagnostics.clone(),
         };
 
         if let Ok(mut docs) = self.documents.write() {
@@ -338,13 +342,25 @@ impl LanguageServer for SeqLanguageServer {
         let uri = params.text_document.uri;
         let range = params.range;
 
-        let Some((content, file_path)) = self.with_document(uri.as_str(), |state| {
-            (state.content.clone(), state.file_path.clone())
-        }) else {
+        let Some((content, file_path, cached_diagnostics)) =
+            self.with_document(uri.as_str(), |state| {
+                (
+                    state.content.clone(),
+                    state.file_path.clone(),
+                    state.diagnostics.clone(),
+                )
+            })
+        else {
             return Ok(None);
         };
 
-        let actions = diagnostics::get_code_actions(&content, range, &uri, file_path.as_deref());
+        let actions = diagnostics::get_code_actions(
+            &content,
+            range,
+            &uri,
+            file_path.as_deref(),
+            &cached_diagnostics,
+        );
 
         if actions.is_empty() {
             Ok(None)

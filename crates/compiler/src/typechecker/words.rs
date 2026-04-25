@@ -29,8 +29,13 @@ impl TypeChecker {
                 // Proceed as if the user wrote the resolved name
                 return self.infer_word_call(&resolved, span, current_stack);
             }
-            // Sugar op but types don't match — give a helpful error
-            let line_prefix = self.line_prefix();
+            // Sugar op but types don't match — give a helpful error.
+            // When `span` is set, emit `at line N col M: ` so the LSP can
+            // pinpoint the operator even on lines with multiple sugar tokens.
+            let position_prefix = match span {
+                Some(s) => format!("at line {} col {}: ", s.line + 1, s.column + 1),
+                None => self.line_prefix(),
+            };
             let (top_desc, second_desc) = {
                 let top = current_stack.clone().pop().map(|(_, t)| format!("{}", t));
                 let second = current_stack
@@ -60,9 +65,23 @@ impl TypeChecker {
                     "Use the `i.` or `f.` prefixed variant.",
                 ),
             };
+            // When both operands are out of scope (top_desc/second_desc
+            // both "empty") the most likely cause is sugar appearing
+            // inside a quotation body, where the stack is empty from the
+            // resolver's perspective. Lead with the typed-form suggestion
+            // rather than the generic "requires matching types" wording.
+            if top_desc == "empty" && second_desc == "empty" {
+                return Err(format!(
+                    "{}`{}` can't resolve here — operand types not in scope \
+                     (this commonly happens inside a quotation body, where \
+                     the body's stack is empty from the resolver's view). \
+                     {}",
+                    position_prefix, name, suggestion,
+                ));
+            }
             return Err(format!(
                 "{}`{}` requires matching types ({}), got ({}, {}). {}",
-                line_prefix, name, type_options, second_desc, top_desc, suggestion,
+                position_prefix, name, type_options, second_desc, top_desc, suggestion,
             ));
         }
 

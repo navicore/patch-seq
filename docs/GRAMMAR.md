@@ -261,6 +261,23 @@ be inferred unambiguously the program fails to type-check. Writing the
 explicit form (`i.+`, `f.<`, etc.) is always valid and suppresses the
 sugar resolution.
 
+Sugar resolves only when the operand types are visible on the
+typechecker's stack at the use site. **Inside a quotation body the body
+is typed against its own fresh effect, so its stack is empty from the
+resolver's perspective and sugar cannot resolve.** Use the typed form
+inside quotations:
+
+```seq
+3 4 [ + ] call         # error: + can't resolve, operands not in scope
+3 4 [ i.+ ] call       # idiomatic — works regardless of caller context
+```
+
+The typed form (`i.+`, `f.+`, `string.concat`, …) is the always-works
+idiom; sugar is a top-level convenience that's nice for short
+expressions but should be expanded when writing words intended to be
+passed to combinators like `dip`, `keep`, `bi`, `times`, or
+`each-integer`.
+
 ---
 
 ## Examples
