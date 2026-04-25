@@ -111,38 +111,38 @@ union SensorReading {
   # Test various temperatures
   "Processing reading 1 (75F - should be Hot):" io.write-line
   75 unclassified strand.resume
-  if
+  [
     show-reading
-  else
+  ] [
     drop "Unexpected completion" io.write-line
-  then
+  ] if
   "" io.write-line
 
   "Processing reading 2 (95F - should be Critical):" io.write-line
   95 unclassified strand.resume
-  if
+  [
     show-reading
-  else
+  ] [
     drop "Unexpected completion" io.write-line
-  then
+  ] if
   "" io.write-line
 
   "Processing reading 3 (-10F - should be DANGER):" io.write-line
   -10 unclassified strand.resume
-  if
+  [
     show-reading
-  else
+  ] [
     drop "Unexpected completion" io.write-line
-  then
+  ] if
   "" io.write-line
 
   "Processing reading 4 (55F - should be Warm):" io.write-line
   55 unclassified strand.resume
-  if
+  [
     show-reading
-  else
+  ] [
     drop "Unexpected completion" io.write-line
-  then
+  ] if
   "" io.write-line
 
   # Clean up

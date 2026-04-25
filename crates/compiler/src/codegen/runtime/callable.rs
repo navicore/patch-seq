@@ -1,5 +1,5 @@
 //! Runtime declarations for first-class callables: quotations, dataflow
-//! combinators (dip, keep, bi, __if__), strand spawning, `cond`, and the
+//! combinators (dip, keep, bi, if), strand spawning, `cond`, and the
 //! peek helpers used by the codegen to inspect quotation values.
 
 use super::RuntimeDecl;
@@ -71,7 +71,7 @@ pub(super) static SYMBOLS: &[(&str, &str)] = &[
     ("dip", "patch_seq_dip"),
     ("keep", "patch_seq_keep"),
     ("bi", "patch_seq_bi"),
-    ("__if__", "patch_seq_if"),
+    ("if", "patch_seq_if"),
     ("strand.spawn", "patch_seq_spawn"),
     ("strand.weave", "patch_seq_weave"),
     ("strand.resume", "patch_seq_resume"),

@@ -20,29 +20,29 @@
 
 : handle-key ( Int -- Bool )
   dup is-quit-key
-  if
+  [
     drop false
-  else
+  ] [
     "Key code: " io.write
     int->string io.write
     "\r\n" io.write
     terminal.flush
     true
-  then
+  ] if
 ;
 
 : read-loop ( -- )
   terminal.read-char
   dup 0 i.<
-  if
+  [
     drop
-  else
+  ] [
     handle-key
-    if
+    [
       read-loop
-    else
-    then
-  then
+    ] [
+    ] if
+  ] if
 ;
 
 : main ( -- )

@@ -80,7 +80,7 @@ union Record {
 # Generator that yields records until id reaches 0
 # Returns Ctx when done (weave completes naturally)
 : countdown-gen ( Ctx Record -- Ctx | Yield Record )
-  dup record-id 0 i.> if
+  dup record-id 0 i.> [
     # id > 0: yield record with Some(id)
     # Stack: (Ctx Record)
     dup record-id              # (Ctx Record id)
@@ -90,10 +90,10 @@ union Record {
     yield                      # yields record, gets next record
     # Stack: (Ctx next-Record)
     countdown-gen
-  else
+  ] [
     # id <= 0: drop record, keep Ctx, weave completes
     drop
-  then
+  ] if
 ;
 
 # Test weave completion with records

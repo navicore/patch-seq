@@ -109,7 +109,7 @@ impl TypeChecker {
         if name == "bi" {
             return self.infer_bi(span, current_stack);
         }
-        if name == "__if__" {
+        if name == "if" {
             return self.infer_if_combinator(span, current_stack);
         }
 

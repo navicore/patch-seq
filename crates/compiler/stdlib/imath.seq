@@ -40,31 +40,31 @@
 # Absolute value
 # Both branches must have identical stack effects for type checker
 : abs ( Int -- Int )
-  dup dup 0 i.< if
+  dup dup 0 i.< [
     # Stack: n n, n < 0, so compute 0 - n
     nip 0 swap i.subtract
-  else
+  ] [
     # Stack: n n, n >= 0, keep original
     drop
-  then
+  ] if
 ;
 
 # Maximum of two values
 : max ( Int Int -- Int )
-  2dup i.> if
+  2dup i.> [
     drop
-  else
+  ] [
     nip
-  then
+  ] if
 ;
 
 # Minimum of two values
 : min ( Int Int -- Int )
-  2dup i.< if
+  2dup i.< [
     drop
-  else
+  ] [
     nip
-  then
+  ] if
 ;
 
 # Modulo operation: a mod b
@@ -76,43 +76,43 @@
 # Greatest common divisor (Euclidean algorithm)
 # Note: mod returns (Int Bool), we assume valid inputs (non-zero divisor)
 : gcd ( Int Int -- Int )
-  dup 0 i.= if
+  dup 0 i.= [
     drop
-  else
+  ] [
     2dup mod           # ( a b r success )
     drop               # drop success flag (assume valid)
     rot drop           # ( b r )
     gcd
-  then
+  ] if
 ;
 
 # Power (base^exp using recursion)
 : pow ( Int Int -- Int )
-  dup 0 i.= if
+  dup 0 i.= [
     drop drop 1
-  else
-    dup 1 i.= if
+  ] [
+    dup 1 i.= [
       drop
-    else
+    ] [
       over
       swap 1 i.subtract
       pow
       i.multiply
-    then
-  then
+    ] if
+  ] if
 ;
 
 # Sign function: returns -1, 0, or 1
 : sign ( Int -- Int )
-  dup 0 i.= if
+  dup 0 i.= [
     drop 0
-  else
-    dup 0 i.< if
+  ] [
+    dup 0 i.< [
       drop 0 1 i.subtract
-    else
+    ] [
       drop 1
-    then
-  then
+    ] if
+  ] if
 ;
 
 # Square
@@ -127,19 +127,19 @@
   # Stack: value min max
   rot rot
   # Stack: max value min
-  2dup i.< if
+  2dup i.< [
     # value < min, return min
     nip nip
-  else
+  ] [
     # value >= min
     drop
     # Stack: max value
-    2dup i.> if
+    2dup i.> [
       # value > max, return max
       nip
-    else
+    ] [
       # min <= value <= max, return value
       drop
-    then
-  then
+    ] if
+  ] if
 ;

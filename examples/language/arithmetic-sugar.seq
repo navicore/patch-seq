@@ -17,11 +17,11 @@
 : demo-int-comparison ( -- )
   "" io.write-line
   "--- Integer Comparison ---" io.write-line
-  3 4 < if "3 < 4: true" else "3 < 4: false" then io.write-line
-  5 5 = if "5 = 5: true" else "5 = 5: false" then io.write-line
-  7 3 > if "7 > 3: true" else "7 > 3: false" then io.write-line
-  2 2 <= if "2 <= 2: true" else "2 <= 2: false" then io.write-line
-  8 5 <> if "8 <> 5: true" else "8 <> 5: false" then io.write-line
+  3 4 < [ "3 < 4: true" ] [ "3 < 4: false" ] if io.write-line
+  5 5 = [ "5 = 5: true" ] [ "5 = 5: false" ] if io.write-line
+  7 3 > [ "7 > 3: true" ] [ "7 > 3: false" ] if io.write-line
+  2 2 <= [ "2 <= 2: true" ] [ "2 <= 2: false" ] if io.write-line
+  8 5 <> [ "8 <> 5: true" ] [ "8 <> 5: false" ] if io.write-line
 ;
 
 : demo-float-arithmetic ( -- )
@@ -37,8 +37,8 @@
   "" io.write-line
   "--- String Operations ---" io.write-line
   "hello" " " + "world" + io.write-line
-  "abc" "abc" = if "abc = abc: true" else "abc = abc: false" then io.write-line
-  "abc" "xyz" = if "abc = xyz: true" else "abc = xyz: false" then io.write-line
+  "abc" "abc" = [ "abc = abc: true" ] [ "abc = abc: false" ] if io.write-line
+  "abc" "xyz" = [ "abc = xyz: true" ] [ "abc = xyz: false" ] if io.write-line
 ;
 
 : main ( -- Int )

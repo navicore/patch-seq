@@ -2,11 +2,11 @@
 
 # Factorial using recursion
 : factorial ( Int -- Int )
-  dup 1 i.<= if
+  dup 1 i.<= [
     drop 1
-  else
+  ] [
     dup 1 i.subtract factorial i.multiply
-  then
+  ] if
 ;
 
 : test-factorial ( -- )
@@ -17,13 +17,13 @@
 
 # Fibonacci using recursion
 : fib ( Int -- Int )
-  dup 2 i.< if
+  dup 2 i.< [
     drop 1
-  else
+  ] [
     dup 1 i.subtract fib
     swap 2 i.subtract fib
     i.add
-  then
+  ] if
 ;
 
 : test-fibonacci ( -- )
@@ -34,11 +34,11 @@
 
 # Tail-recursive countdown for TCO stress test
 : countdown ( Int -- Int )
-  dup 0 i.<= if
+  dup 0 i.<= [
     drop 0
-  else
+  ] [
     1 i.subtract countdown
-  then
+  ] if
 ;
 
 : test-tco-stress ( -- )

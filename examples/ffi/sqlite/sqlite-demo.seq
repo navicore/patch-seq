@@ -35,33 +35,33 @@
   "" io.write-line
 
   # Open (or create) test database
-  "test_seq.db" open-db if
+  "test_seq.db" open-db [
     "Database opened successfully" io.write-line
 
     # Create a table
-    dup "CREATE TABLE IF NOT EXISTS greetings (id INTEGER PRIMARY KEY, msg TEXT)" exec-sql if
+    dup "CREATE TABLE IF NOT EXISTS greetings (id INTEGER PRIMARY KEY, msg TEXT)" exec-sql [
       "Table created" io.write-line
-    else
+    ] [
       "Table creation failed (may already exist)" io.write-line
-    then
+    ] if
 
     # Insert some data
-    dup "INSERT INTO greetings (msg) VALUES ('Hello from Seq!')" exec-sql if
+    dup "INSERT INTO greetings (msg) VALUES ('Hello from Seq!')" exec-sql [
       "Data inserted" io.write-line
-    else
+    ] [
       "Insert failed" io.write-line
-    then
+    ] if
 
     # Clean up
-    db-close db-ok? if
+    db-close db-ok? [
       "Database closed" io.write-line
-    else
+    ] [
       "Close failed" io.write-line
-    then
-  else
+    ] if
+  ] [
     drop  # drop the db handle (will be 0/null)
     "Failed to open database" io.write-line
-  then
+  ] if
 
   "" io.write-line
   "Done! Check test_seq.db with: sqlite3 test_seq.db 'SELECT * FROM greetings'" io.write-line

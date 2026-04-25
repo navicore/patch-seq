@@ -4,31 +4,31 @@
 # Helper to safely get a boolean field
 : get-bool-field ( Map String -- Bool Bool )
   map.get
-  if
+  [
     true
-  else
+  ] [
     drop false false
-  then
+  ] if
 ;
 
 # Helper to safely get an int field
 : get-int-field ( Map String -- Int Bool )
   map.get
-  if
+  [
     true
-  else
+  ] [
     drop 0 false
-  then
+  ] if
 ;
 
 # Helper to safely get a string field
 : get-string-field ( Map String -- String Bool )
   map.get
-  if
+  [
     true
-  else
+  ] [
     drop "" false
-  then
+  ] if
 ;
 
 # Test GET request response structure (uses httpbin.org for reliable testing)
@@ -43,60 +43,60 @@
 # Helper: verify status is in 2xx range
 : assert-status-2xx ( Map -- )
   "status" get-int-field
-  if
+  [
     dup 200 i.>= swap 299 i.<= and test.assert
-  else
+  ] [
     drop true test.assert  # Field missing, pass
-  then
+  ] if
 ;
 
 # Test GET request on success returns ok=true
 : test-http-get-ok-on-success ( -- )
   "https://httpbin.org/get" http.get
   dup "ok" get-bool-field
-  if
-    if
+  [
+    [
       assert-status-2xx
-    else
+    ] [
       # ok=false means request failed, acceptable for network tests
       drop true test.assert
-    then
-  else
+    ] if
+  ] [
     # ok field missing - network might have failed
     drop drop true test.assert
-  then
+  ] if
 ;
 
 # Helper: verify status is 404 or network error (status=0)
 : assert-status-404-or-network-error ( Map -- )
   "status" get-int-field
-  if
-    dup 0 i.= if
+  [
+    dup 0 i.= [
       drop true test.assert  # Network error - acceptable
-    else
+    ] [
       404 i.= test.assert    # Got status, verify it's 404
-    then
-  else
+    ] if
+  ] [
     drop true test.assert    # Status field missing, pass
-  then
+  ] if
 ;
 
 # Test GET request 404 returns ok=false
 : test-http-get-404 ( -- )
   "https://httpbin.org/status/404" http.get
   dup "ok" get-bool-field
-  if
-    if
+  [
+    [
       # ok=true, should not happen for 404
       drop false test.assert
-    else
+    ] [
       # ok=false (correct) - verify status
       assert-status-404-or-network-error
-    then
-  else
+    ] if
+  ] [
     # ok field missing - network error, acceptable
     drop drop true test.assert
-  then
+  ] if
 ;
 
 # Test POST request structure
@@ -131,17 +131,17 @@
   # Use a non-routable IP to trigger connection error
   "http://192.0.2.1:12345/test" http.get
   dup "ok" get-bool-field
-  if
+  [
     test.assert-not  # ok should be false
-  else
+  ] [
     drop true test.assert  # Field missing, pass (drop the sentinel, keep Map)
-  then
+  ] if
   dup "status" get-int-field
-  if
+  [
     0 test.assert-eq  # status should be 0
-  else
+  ] [
     drop true test.assert  # Field missing, pass (drop the sentinel, keep Map)
-  then
+  ] if
   "error" map.has? test.assert  # should have error key
 ;
 
@@ -149,9 +149,9 @@
 : test-http-response-body-is-string ( -- )
   "https://httpbin.org/get" http.get
   "body" get-string-field
-  if
+  [
     string.length 0 i.>= test.assert
-  else
+  ] [
     drop true test.assert  # Field missing, pass
-  then
+  ] if
 ;

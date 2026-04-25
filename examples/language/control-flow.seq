@@ -3,38 +3,38 @@
 # Basic if-then-else
 : sign ( Int -- String )
   dup 0 i.>
-  if
+  [
     drop "positive"
-  else
+  ] [
     0 i.<
-    if
+    [
       "negative"
-    else
+    ] [
       "zero"
-    then
-  then
+    ] if
+  ] if
 ;
 
 # Countdown using recursion (TCO optimized)
 : countdown ( Int -- )
   dup 0 i.>
-  if
+  [
     dup int->string io.write-line
     1 i.- countdown
-  else
+  ] [
     drop
-  then
+  ] if
 ;
 
 # Say hello N times using recursion
 : say-hello ( Int -- )
   dup 0 i.>
-  if
+  [
     "Hello!" io.write-line
     1 i.- say-hello
-  else
+  ] [
     drop
-  then
+  ] if
 ;
 
 # Nested conditionals using cond
@@ -52,7 +52,7 @@
 : sum-range-loop ( Int Int Int -- Int )
   rot rot          # acc start end
   2dup i.<=        # acc start end (start <= end)
-  if
+  [
     over           # acc start end start
     3 roll         # start end start acc
     i.add          # start end acc'
@@ -60,9 +60,9 @@
     swap 1 i.add   # acc' end start+1
     swap           # acc' start+1 end
     sum-range-loop
-  else
+  ] [
     drop drop      # acc
-  then
+  ] if
 ;
 
 : sum-range ( Int Int -- Int )

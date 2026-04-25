@@ -1,8 +1,6 @@
 # Control-flow combinators for Seq
 #
-# Built on top of `__if__`, the conditional combinator. (During the 6.0
-# migration `__if__` is the temporary scaffold name; once `if/else/then`
-# are removed from the parser it becomes `if`.)
+# Built on top of `if`, the conditional combinator.
 #
 # ## Available Words
 #
@@ -25,12 +23,12 @@
 # when — run quotation only when condition is true
 # --------------------------------------------------------------------------
 : when ( ..a Bool [ ..a -- ..a ] -- ..a )
-  [ ] __if__
+  [ ] if
 ;
 
 # --------------------------------------------------------------------------
 # unless — run quotation only when condition is false
 # --------------------------------------------------------------------------
 : unless ( ..a Bool [ ..a -- ..a ] -- ..a )
-  [ ] swap __if__
+  [ ] swap if
 ;

@@ -23,14 +23,14 @@
 : ztail ( Variant -- Variant ) 1 variant.field-at ;
 
 : zreverse-onto ( Variant Variant -- Variant )
-  over znil? if
+  over znil? [
     nip
-  else
+  ] [
     over zhead over zcons
     nip
     swap ztail swap
     zreverse-onto
-  then
+  ] if
 ;
 
 : zreverse ( Variant -- Variant )
@@ -52,16 +52,16 @@
 # === Conversion helpers ===
 
 : list->zcons-loop ( Variant Int Variant -- Variant )
-  over 0 i.< if
+  over 0 i.< [
     nip nip
-  else
+  ] [
     # Stack: ( list idx acc )
     2 pick 2 pick         # ( list idx acc list idx )
     list.get drop         # ( list idx acc elem )
     swap zcons            # ( list idx new-acc )
     swap 1 i.- swap       # ( list idx-1 new-acc )
     list->zcons-loop
-  then
+  ] if
 ;
 
 : list->zcons ( Variant -- Variant )
@@ -71,12 +71,12 @@
 ;
 
 : zcons->list-loop ( Variant Variant -- Variant )
-  dup znil? if
+  dup znil? [
     drop
-  else
+  ] [
     dup zhead rot swap list.push swap ztail
     zcons->list-loop
-  then
+  ] if
 ;
 
 : zcons->list ( Variant -- Variant )
@@ -84,31 +84,31 @@
 ;
 
 : zcons->list-append ( Variant Variant -- Variant )
-  dup znil? if
+  dup znil? [
     drop
-  else
+  ] [
     dup zhead rot swap list.push swap ztail
     zcons->list-append
-  then
+  ] if
 ;
 
 # === Construction ===
 
 : zipper.from-list ( Variant -- Variant )
-  dup list.length 0 i.= if
+  dup list.length 0 i.= [
     drop zipper.make-empty
-  else
+  ] [
     list->zcons
     dup zhead swap ztail
     znil rot rot
     zipper.make-zip
-  then
+  ] if
 ;
 
 : zipper.to-list ( Variant -- Variant )
-  dup zipper.empty? if
+  dup zipper.empty? [
     drop list.make
-  else
+  ] [
     dup zipper.get-left
     over zipper.get-focus
     rot zipper.get-right
@@ -121,18 +121,18 @@
     zcons->list         # ( right [list-from-left-and-focus] )
     swap                # ( [list-from-left-and-focus] right )
     zcons->list-append
-  then
+  ] if
 ;
 
 # === Navigation ===
 
 : zipper.right ( Variant -- Variant )
-  dup zipper.empty? if
+  dup zipper.empty? [
     # stay empty
-  else
-    dup zipper.get-right znil? if
+  ] [
+    dup zipper.get-right znil? [
       # At end, stay put
-    else
+    ] [
       # Get components and discard original
       dup zipper.get-left
       over zipper.get-focus
@@ -146,17 +146,17 @@
       swap zcons           # ( new-focus new-right new-left )
       rot rot              # ( new-left new-focus new-right )
       zipper.make-zip
-    then
-  then
+    ] if
+  ] if
 ;
 
 : zipper.left ( Variant -- Variant )
-  dup zipper.empty? if
+  dup zipper.empty? [
     # stay empty
-  else
-    dup zipper.get-left znil? if
+  ] [
+    dup zipper.get-left znil? [
       # At start, stay put
-    else
+    ] [
       # Get components
       dup zipper.get-left
       over zipper.get-focus
@@ -172,91 +172,91 @@
       rot                  # ( new-left new-right new-focus )
       swap                 # ( new-left new-focus new-right )
       zipper.make-zip
-    then
-  then
+    ] if
+  ] if
 ;
 
 : zipper.start ( Variant -- Variant )
-  dup zipper.empty? if
+  dup zipper.empty? [
     # already empty
-  else
-    dup zipper.get-left znil? if
+  ] [
+    dup zipper.get-left znil? [
       # already at start
-    else
+    ] [
       zipper.left zipper.start
-    then
-  then
+    ] if
+  ] if
 ;
 
 : zipper.end ( Variant -- Variant )
-  dup zipper.empty? if
+  dup zipper.empty? [
     # already empty
-  else
-    dup zipper.get-right znil? if
+  ] [
+    dup zipper.get-right znil? [
       # already at end
-    else
+    ] [
       zipper.right zipper.end
-    then
-  then
+    ] if
+  ] if
 ;
 
 # === Query ===
 
 : zipper.focus ( Variant -- Variant )
-  dup zipper.empty? if
+  dup zipper.empty? [
     drop :ZipperEmpty wrap-0
-  else
+  ] [
     zipper.get-focus
-  then
+  ] if
 ;
 
 : zipper.at-start? ( Variant -- Variant Bool )
-  dup dup zipper.empty? if
+  dup dup zipper.empty? [
     drop true
-  else
+  ] [
     zipper.get-left znil?
-  then
+  ] if
 ;
 
 : zipper.at-end? ( Variant -- Variant Bool )
-  dup dup zipper.empty? if
+  dup dup zipper.empty? [
     drop true
-  else
+  ] [
     zipper.get-right znil?
-  then
+  ] if
 ;
 
 # === Modification ===
 
 : zipper.set ( Variant Variant -- Variant )
-  over zipper.empty? if
+  over zipper.empty? [
     drop  # drop new value, return empty
-  else
+  ] [
     # Stack: ( zipper value )
     swap dup zipper.get-left   # ( value zipper left )
     swap zipper.get-right      # ( value left right )
     rot swap                   # ( left value right )
     zipper.make-zip
-  then
+  ] if
 ;
 
 : zipper.insert-left ( Variant Variant -- Variant )
-  over zipper.empty? if
+  over zipper.empty? [
     nip znil swap znil zipper.make-zip
-  else
+  ] [
     # Stack: ( zipper value )
     swap dup zipper.get-left    # ( value zipper left )
     rot swap zcons              # ( zipper new-left )
     over zipper.get-focus       # ( zipper new-left focus )
     rot zipper.get-right        # ( new-left focus right )
     zipper.make-zip
-  then
+  ] if
 ;
 
 : zipper.insert-right ( Variant Variant -- Variant )
-  over zipper.empty? if
+  over zipper.empty? [
     nip znil swap znil zipper.make-zip
-  else
+  ] [
     # Stack: ( zipper value )
     swap dup zipper.get-right   # ( value zipper right )
     rot swap zcons              # ( zipper new-right )
@@ -264,19 +264,19 @@
     rot zipper.get-focus        # ( new-right left focus )
     rot                         # ( left focus new-right )
     zipper.make-zip
-  then
+  ] if
 ;
 
 : zipper.delete ( Variant -- Variant )
-  dup zipper.empty? if
+  dup zipper.empty? [
     # already empty
-  else
-    dup zipper.get-right znil? if
+  ] [
+    dup zipper.get-right znil? [
       # right is empty
-      dup zipper.get-left znil? if
+      dup zipper.get-left znil? [
         # both empty
         drop zipper.make-empty
-      else
+      ] [
         # move focus from left
         zipper.get-left
         dup zhead swap ztail
@@ -284,8 +284,8 @@
         swap znil
         # Stack: ( new-left new-focus znil )
         zipper.make-zip
-      then
-    else
+      ] if
+    ] [
       # move focus from right
       dup zipper.get-left
       swap zipper.get-right
@@ -293,36 +293,36 @@
       dup zhead swap ztail
       # Stack: ( left new-focus new-right )
       zipper.make-zip
-    then
-  then
+    ] if
+  ] if
 ;
 
 # === Utility ===
 
 : zipper.zcons-length ( Int Variant -- Int )
-  dup znil? if
+  dup znil? [
     drop
-  else
+  ] [
     ztail swap 1 i.+ swap
     zipper.zcons-length
-  then
+  ] if
 ;
 
 : zipper.length ( Variant -- Int )
-  dup zipper.empty? if
+  dup zipper.empty? [
     drop 0
-  else
+  ] [
     dup zipper.get-left 0 swap zipper.zcons-length
     over zipper.get-right 0 swap zipper.zcons-length
     i.+ 1 i.+
     nip
-  then
+  ] if
 ;
 
 : zipper.index ( Variant -- Int )
-  dup zipper.empty? if
+  dup zipper.empty? [
     drop 0
-  else
+  ] [
     zipper.get-left 0 swap zipper.zcons-length
-  then
+  ] if
 ;

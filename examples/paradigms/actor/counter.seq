@@ -41,36 +41,36 @@
 
   # Resume with initial value 10
   10 strand.resume                 # ( handle yielded-value has-more )
-  if
+  [
     "First yield: " swap int->string string.concat io.write-line
-  else
+  ] [
     drop "Weave ended unexpectedly" io.write-line
-  then
+  ] if
   # Stack: ( handle )
 
   # Resume with increment 1
   1 strand.resume                  # ( handle yielded-value has-more )
-  if
+  [
     "After +1: " swap int->string string.concat io.write-line
-  else
+  ] [
     drop "Weave ended unexpectedly" io.write-line
-  then
+  ] if
 
   # Resume with increment 5
   5 strand.resume
-  if
+  [
     "After +5: " swap int->string string.concat io.write-line
-  else
+  ] [
     drop "Weave ended unexpectedly" io.write-line
-  then
+  ] if
 
   # Resume with increment 10
   10 strand.resume
-  if
+  [
     "After +10: " swap int->string string.concat io.write-line
-  else
+  ] [
     drop "Weave ended unexpectedly" io.write-line
-  then
+  ] if
 
   drop  # drop handle
 

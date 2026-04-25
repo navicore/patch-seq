@@ -1,4 +1,4 @@
-//! Dataflow combinators: dip, keep, bi, __if__.
+//! Dataflow combinators: dip, keep, bi, if.
 
 use crate::types::{SideEffect, StackType, Type};
 use crate::unification::{Subst, unify_stacks};
@@ -250,7 +250,7 @@ impl TypeChecker {
         Ok((result_stack, subst, effects))
     }
 
-    /// Infer the stack effect of `__if__`: ( ..a Bool [..a -- ..b] [..a -- ..b] -- ..b )
+    /// Infer the stack effect of `if`: ( ..a Bool [..a -- ..b] [..a -- ..b] -- ..b )
     ///
     /// Branch on a Bool, invoking one of two quotations whose effects must
     /// be identical. Mirrors the semantics of `if/else/then` but as a
@@ -265,19 +265,19 @@ impl TypeChecker {
         // Pop else-quotation (top), then-quotation (below), condition (below that).
         let (stack1, else_quot_type) = current_stack.clone().pop().ok_or_else(|| {
             format!(
-                "{}__if__: stack underflow - expected else-quotation on stack",
+                "{}if: stack underflow - expected else-quotation on stack",
                 line_prefix
             )
         })?;
         let (stack2, then_quot_type) = stack1.clone().pop().ok_or_else(|| {
             format!(
-                "{}__if__: stack underflow - expected then-quotation below else-quotation",
+                "{}if: stack underflow - expected then-quotation below else-quotation",
                 line_prefix
             )
         })?;
         let (stack_after_cond, cond_type) = stack2.clone().pop().ok_or_else(|| {
             format!(
-                "{}__if__: stack underflow - expected Bool below the two quotations",
+                "{}if: stack underflow - expected Bool below the two quotations",
                 line_prefix
             )
         })?;
@@ -287,7 +287,7 @@ impl TypeChecker {
             &StackType::singleton(Type::Bool),
             &StackType::singleton(cond_type),
         )
-        .map_err(|e| format!("{}__if__: condition must be Bool: {}", line_prefix, e))?;
+        .map_err(|e| format!("{}if: condition must be Bool: {}", line_prefix, e))?;
         let stack_after_cond = cond_subst.apply_stack(&stack_after_cond);
 
         // Extract both quotation effects, mirroring the dip/keep/bi pattern:
@@ -299,16 +299,16 @@ impl TypeChecker {
             Type::Closure { effect, .. } => (**effect).clone(),
             Type::Var(_) => {
                 let effect = self
-                    .lookup_word_effect("__if__")
-                    .ok_or_else(|| "Unknown word: '__if__'".to_string())?;
+                    .lookup_word_effect("if")
+                    .ok_or_else(|| "Unknown word: 'if'".to_string())?;
                 let fresh_effect = self.freshen_effect(&effect);
                 let (result_stack, subst) =
-                    self.apply_effect(&fresh_effect, current_stack, "__if__", span)?;
+                    self.apply_effect(&fresh_effect, current_stack, "if", span)?;
                 return Ok((result_stack, subst, vec![]));
             }
             _ => {
                 return Err(format!(
-                    "{}__if__: expected quotation or closure as then-branch, got {}",
+                    "{}if: expected quotation or closure as then-branch, got {}",
                     line_prefix, then_quot_type
                 ));
             }
@@ -319,16 +319,16 @@ impl TypeChecker {
             Type::Closure { effect, .. } => (**effect).clone(),
             Type::Var(_) => {
                 let effect = self
-                    .lookup_word_effect("__if__")
-                    .ok_or_else(|| "Unknown word: '__if__'".to_string())?;
+                    .lookup_word_effect("if")
+                    .ok_or_else(|| "Unknown word: 'if'".to_string())?;
                 let fresh_effect = self.freshen_effect(&effect);
                 let (result_stack, subst) =
-                    self.apply_effect(&fresh_effect, current_stack, "__if__", span)?;
+                    self.apply_effect(&fresh_effect, current_stack, "if", span)?;
                 return Ok((result_stack, subst, vec![]));
             }
             _ => {
                 return Err(format!(
-                    "{}__if__: expected quotation or closure as else-branch, got {}",
+                    "{}if: expected quotation or closure as else-branch, got {}",
                     line_prefix, else_quot_type
                 ));
             }
@@ -347,30 +347,30 @@ impl TypeChecker {
         let (then_result, then_subst) = self.apply_effect(
             &fresh_then,
             stack_after_cond.clone(),
-            "__if__ (then branch)",
+            "if (then branch)",
             span,
         )?;
 
         let fresh_else = self.freshen_effect(&else_effect);
         let else_input = then_subst.apply_stack(&stack_after_cond);
         let (else_result, else_subst) =
-            self.apply_effect(&fresh_else, else_input, "__if__ (else branch)", span)?;
+            self.apply_effect(&fresh_else, else_input, "if (else branch)", span)?;
 
         let then_result_after_else = else_subst.apply_stack(&then_result);
         let if_line = span.as_ref().map(|s| s.line + 1).unwrap_or(0);
         let merge_subst = unify_stacks(&then_result_after_else, &else_result).map_err(|e| {
             if if_line > 0 {
                 format!(
-                    "at line {}: __if__ branches have incompatible stack effects:\n\
+                    "at line {}: if branches have incompatible stack effects:\n\
                      \x20 then branch produces: {}\n\
                      \x20 else branch produces: {}\n\
-                     \x20 Both quotations of `__if__` must produce the same stack shape.\n\
+                     \x20 Both quotations of `if` must produce the same stack shape.\n\
                      \x20 Error: {}",
                     if_line, then_result_after_else, else_result, e
                 )
             } else {
                 format!(
-                    "__if__ branches have incompatible stack effects:\n\
+                    "if branches have incompatible stack effects:\n\
                      \x20 then branch produces: {}\n\
                      \x20 else branch produces: {}\n\
                      \x20 Error: {}",

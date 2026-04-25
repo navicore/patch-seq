@@ -158,7 +158,7 @@
 # Example: "/echo/hello" "/echo/" -> "hello"
 : string-suffix-after ( String String -- String )
   # Stack: ( str prefix )
-  2dup string.starts-with if
+  2dup string.starts-with [
     # String starts with prefix, extract suffix
     # Stack: ( str prefix )
 
@@ -168,17 +168,17 @@
     # The split result is a Variant with fields
     # For "/echo/hello" split on "/echo/", we get ["", "hello"]
     # We want field 1 (the part after the prefix)
-    dup variant.field-count 2 i.< if
+    dup variant.field-count 2 i.< [
       # Not enough parts, return empty string
       drop ""
-    else
+    ] [
       # Get field 1 (the suffix)
       1 variant.field-at
-    then
-  else
+    ] if
+  ] [
     # Doesn't start with prefix, return empty string
     drop drop ""
-  then
+  ] if
 ;
 
 # Extract the part of the path after a prefix

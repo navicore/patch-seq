@@ -13,12 +13,6 @@ This document is the **transformation spec** — the rules below are
 sufficient for a careful human or an LLM collaborator to migrate any
 existing Seq source. No tool is required.
 
-> **In-repo cutover note.** During the phased cutover of this repository
-> the new word is temporarily named `__if__` while the old keyword is
-> still in flight elsewhere in the codebase. Substitute `__if__` for
-> `if` in the rules below until the final rename lands. End users of
-> 6.0 see `if`.
-
 ## Rule 1 — two-armed `if`
 
 ```

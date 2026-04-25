@@ -39,13 +39,13 @@
 
 # Internal recursive helper — use `times` instead.
 : times-loop ( Int [ -- ] -- )
-  over 0 i.<= if
+  over 0 i.<= [
     drop drop                 # base case: drop count and quotation
-  else
+  ] [
     dup call                  # call the quotation (dup preserves it)
     swap 1 i.- swap           # decrement count
     times-loop                # tail recurse
-  then
+  ] if
 ;
 
 : times ( Int [ -- ] -- )
@@ -66,10 +66,10 @@
 #   pos 1: lim  = upper bound (exclusive)
 #   pos 0: acc  = accumulator (top of stack)
 : integer-fold-loop ( [ Int Int -- Int ] Int Int Int -- Int )
-  2 pick 2 pick i.>= if
+  2 pick 2 pick i.>= [
     # cur >= lim: done. Return acc.
     nip nip nip               # drop lim, cur, quot; leave acc
-  else
+  ] [
     # Call quot(acc, cur). Stack: ( quot cur lim acc )
     dup                       # ( quot cur lim acc acc )
     3 pick                    # ( quot cur lim acc acc cur )
@@ -79,7 +79,7 @@
     # Increment cur: rot brings cur to top, add 1, rot rot restores layout
     rot 1 i.+ rot rot         # ( quot cur+1 lim acc' )
     integer-fold-loop         # tail recurse
-  then
+  ] if
 ;
 
 : integer-fold ( Int Int [ Int Int -- Int ] -- Int )
@@ -99,16 +99,16 @@
 
 # Internal recursive helper — use `each-integer` instead.
 : ei-loop ( Int Int [ Int -- ] -- )
-  2 pick 2 pick i.>= if
+  2 pick 2 pick i.>= [
     drop drop drop            # base case: current >= limit, drop all three
-  else
+  ] [
     # call quot with current index:
     # 2 pick copies current to top, over copies quot, call runs quot(current)
     2 pick over call
     # increment current: rot brings current to top, add 1, rot rot restores layout
     rot 1 i.+ rot rot         # ( current+1 limit quot )
     ei-loop                   # tail recurse
-  then
+  ] if
 ;
 
 # Insert current=0 below limit and quot to produce ( 0 limit quot )

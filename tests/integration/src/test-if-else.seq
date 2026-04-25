@@ -3,22 +3,22 @@
 : test-if-else-true ( -- )
   # When condition is true, true branch executes
   5 3 i.>
-  if
+  [
     1
-  else
+  ] [
     0
-  then
+  ] if
   1 test.assert-eq
 ;
 
 : test-if-else-false ( -- )
   # When condition is false, else branch executes
   3 5 i.>
-  if
+  [
     1
-  else
+  ] [
     0
-  then
+  ] if
   0 test.assert-eq
 ;
 

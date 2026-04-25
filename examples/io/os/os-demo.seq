@@ -36,107 +36,107 @@
 
   # Test os.current-dir
   "Current directory:" io.write-line
-  os.current-dir if
+  os.current-dir [
     "  " swap string.concat io.write-line
-  else
+  ] [
     drop "  Error getting current directory" io.write-line
-  then
+  ] if
   "" io.write-line
 
   # Test os.home-dir
   "Home directory:" io.write-line
-  os.home-dir if
+  os.home-dir [
     "  " swap string.concat io.write-line
-  else
+  ] [
     drop "  Error getting home directory" io.write-line
-  then
+  ] if
   "" io.write-line
 
   # Test os.getenv with common variables
   "Environment variables:" io.write-line
 
-  "USER" os.getenv if
+  "USER" os.getenv [
     "  USER = " swap string.concat io.write-line
-  else
+  ] [
     drop "  USER not set" io.write-line
-  then
+  ] if
 
-  "SHELL" os.getenv if
+  "SHELL" os.getenv [
     "  SHELL = " swap string.concat io.write-line
-  else
+  ] [
     drop "  SHELL not set" io.write-line
-  then
+  ] if
 
-  "PATH" os.getenv if
+  "PATH" os.getenv [
     # PATH is usually very long, just show its length
     string.length int->string
     "  PATH = (set, " swap string.concat " chars)" string.concat io.write-line
-  else
+  ] [
     drop "  PATH not set" io.write-line
-  then
+  ] if
   "" io.write-line
 
   # Test os.getenv with non-existent variable
   "Non-existent variable:" io.write-line
-  "THIS_DOES_NOT_EXIST_12345" os.getenv if
+  "THIS_DOES_NOT_EXIST_12345" os.getenv [
     drop "  Found (unexpected)" io.write-line
-  else
+  ] [
     drop "  Not found (expected)" io.write-line
-  then
+  ] if
   "" io.write-line
 
   # Test path operations
   "Path operations:" io.write-line
 
   # Test with current directory (should exist and be a directory)
-  "." os.path-exists if
+  "." os.path-exists [
     "  '.' exists: yes" io.write-line
-  else
+  ] [
     "  '.' exists: no (unexpected)" io.write-line
-  then
+  ] if
 
-  "." os.path-is-dir if
+  "." os.path-is-dir [
     "  '.' is directory: yes" io.write-line
-  else
+  ] [
     "  '.' is directory: no (unexpected)" io.write-line
-  then
+  ] if
 
-  "." os.path-is-file if
+  "." os.path-is-file [
     "  '.' is file: yes (unexpected)" io.write-line
-  else
+  ] [
     "  '.' is file: no" io.write-line
-  then
+  ] if
   "" io.write-line
 
   # Test with a path that shouldn't exist
-  "/this/path/does/not/exist/12345" os.path-exists if
+  "/this/path/does/not/exist/12345" os.path-exists [
     "  Non-existent path exists: yes (unexpected)" io.write-line
-  else
+  ] [
     "  Non-existent path exists: no" io.write-line
-  then
+  ] if
   "" io.write-line
 
   # Test with home directory (should exist and be a directory)
-  os.home-dir if
+  os.home-dir [
     dup "  Testing home dir: " swap string.concat io.write-line
-    dup os.path-exists if
+    dup os.path-exists [
       "    exists: yes" io.write-line
-    else
+    ] [
       "    exists: no (unexpected)" io.write-line
-    then
-    dup os.path-is-dir if
+    ] if
+    dup os.path-is-dir [
       "    is directory: yes" io.write-line
-    else
+    ] [
       "    is directory: no (unexpected)" io.write-line
-    then
-    os.path-is-file if
+    ] if
+    os.path-is-file [
       "    is file: yes (unexpected)" io.write-line
-    else
+    ] [
       "    is file: no" io.write-line
-    then
-  else
+    ] if
+  ] [
     drop "  Could not get home directory" io.write-line
-  then
+  ] if
   "" io.write-line
 
   # Test path manipulation
@@ -151,31 +151,31 @@
   "" io.write-line
 
   # Test os.path-parent
-  "/home/user/documents/file.txt" os.path-parent if
+  "/home/user/documents/file.txt" os.path-parent [
     "  os.path-parent '/home/user/documents/file.txt' = " swap string.concat io.write-line
-  else
+  ] [
     drop "  os.path-parent failed (unexpected)" io.write-line
-  then
+  ] if
 
-  "/" os.path-parent if
+  "/" os.path-parent [
     "  os.path-parent '/' = '" swap string.concat "'" string.concat io.write-line
-  else
+  ] [
     drop "  os.path-parent '/' = (no parent)" io.write-line
-  then
+  ] if
   "" io.write-line
 
   # Test os.path-filename
-  "/home/user/documents/file.txt" os.path-filename if
+  "/home/user/documents/file.txt" os.path-filename [
     "  os.path-filename '/home/user/documents/file.txt' = " swap string.concat io.write-line
-  else
+  ] [
     drop "  os.path-filename failed (unexpected)" io.write-line
-  then
+  ] if
 
-  "/home/user/" os.path-filename if
+  "/home/user/" os.path-filename [
     "  os.path-filename '/home/user/' = " swap string.concat io.write-line
-  else
+  ] [
     drop "  os.path-filename '/home/user/' = (no filename)" io.write-line
-  then
+  ] if
 
   "" io.write-line
   "Demo complete!" io.write-line

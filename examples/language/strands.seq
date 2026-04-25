@@ -21,25 +21,25 @@
   "Created counter weave" io.write-line
 
   10 strand.resume
-  if
+  [
     "First yield: " swap int->string string.concat io.write-line
-  else
+  ] [
     drop "Weave ended unexpectedly" io.write-line
-  then
+  ] if
 
   1 strand.resume
-  if
+  [
     "After +1: " swap int->string string.concat io.write-line
-  else
+  ] [
     drop "Weave ended unexpectedly" io.write-line
-  then
+  ] if
 
   5 strand.resume
-  if
+  [
     "After +5: " swap int->string string.concat io.write-line
-  else
+  ] [
     drop "Weave ended unexpectedly" io.write-line
-  then
+  ] if
 
   drop
 ;

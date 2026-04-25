@@ -1,22 +1,21 @@
 //! AST normalization passes that run after parse + include resolution
 //! and before type-checking.
 //!
-//! ## `__if__` literal-quotation lowering
+//! ## `if` literal-quotation lowering
 //!
-//! The 6.0 migration introduces `__if__` as the conditional combinator
-//! (renamed to `if` once `if/else/then` are removed from the parser).
-//! At the source level a typical use is:
+//! `if` is a stack-consuming conditional combinator. At the source level
+//! a typical use is:
 //!
 //! ```seq
-//! cond [ then-body ] [ else-body ] __if__
+//! cond [ then-body ] [ else-body ] if
 //! ```
 //!
 //! When both operands are literal `[ ... ]` quotations at the call site,
-//! this triple is semantically identical to the (now-removed)
-//! parser-level `cond if then-body else else-body then` form. Rewriting
-//! it to `Statement::If` here — *before* the type-checker runs — means
-//! every downstream pass (typechecker, codegen, lints, the
-//! type-specializer) sees the same shape it sees for the keyword form.
+//! this triple is semantically identical to a parser-level if/else
+//! conditional. Rewriting it to `Statement::If` here — *before* the
+//! type-checker runs — means every downstream pass (typechecker,
+//! codegen, lints, the type-specializer) sees the same shape it sees
+//! for any other inline conditional.
 //!
 //! Doing this purely syntactically (no consultation of inferred types)
 //! is sound: lifting a literal quotation's body into the enclosing word
@@ -29,13 +28,10 @@
 //! comes from a word argument or is constructed at runtime), the
 //! triple is left alone and the runtime `patch_seq_if` dispatch
 //! handles the call.
-//!
-//! Removed once the `__if__` → `if` rename completes (final phase of
-//! the 6.0 cutover).
 
 use crate::ast::{Program, Statement};
 
-/// Rewrite every `[Quotation, Quotation, WordCall("__if__")]` triple in
+/// Rewrite every `[Quotation, Quotation, WordCall("if")]` triple in
 /// the program to a `Statement::If`. Runs after parse + include
 /// resolution, before type-checking.
 pub fn lower_literal_if_combinators(program: &mut Program) {
@@ -111,6 +107,6 @@ fn is_inline_triple(triple: &[Statement]) -> bool {
             Statement::Quotation { .. },
             Statement::Quotation { .. },
             Statement::WordCall { name, .. },
-        ) if name == "__if__"
+        ) if name == "if"
     )
 }

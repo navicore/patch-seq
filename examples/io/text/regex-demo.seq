@@ -5,7 +5,7 @@
 
 # Helper to print bool result
 : bool->str ( Bool -- String )
-  if "true" else "false" then
+  [ "true" ] [ "false" ] if
 ;
 
 # Helper to print label + value
@@ -38,11 +38,11 @@
 
   # Find first number in text
   "Order #42 shipped" "[0-9]+" regex.find
-  if
+  [
     "  First number in 'Order #42 shipped': " show
-  else
+  ] [
     drop "  No number found" io.write-line
-  then
+  ] if
 
   # Find all numbers
   "Items: 10, 20, 30" "[0-9]+" regex.find-all
@@ -82,7 +82,7 @@
 
   # Parse a date
   "2024-01-15" "(\\d{4})-(\\d{2})-(\\d{2})" regex.captures
-  if
+  [
     dup 0 list.get drop
     "  Year: " show
 
@@ -91,9 +91,9 @@
 
     2 list.get drop
     "  Day: " show
-  else
+  ] [
     drop "  No match" io.write-line
-  then
+  ] if
 
   "" io.write-line
 ;

@@ -21,51 +21,50 @@
 #   Fedora: dnf install libedit-devel
 
 include ffi:libedit
-
 # History file path - uses os.home-dir to get user's home directory
 : history-file ( -- String )
-  os.home-dir if
+  os.home-dir [
     "/.seq-demo-history" string.concat
-  else
+  ] [
     drop "/tmp/.seq-demo-history"  # Fallback if os.home-dir fails
-  then
+  ] if
 ;
 
 # Simple command handler
 : process-command ( String -- )
-  dup "quit" string.equal? if
+  dup "quit" string.equal? [
     drop "Goodbye!" io.write-line
-  else
-    dup "help" string.equal? if
+  ] [
+    dup "help" string.equal? [
       drop
       "Commands:" io.write-line
       "  help  - Show this message" io.write-line
       "  quit  - Exit the program" io.write-line
       "  <any> - Echo your input" io.write-line
-    else
+    ] [
       "You said: " swap string.concat io.write-line
-    then
-  then
+    ] if
+  ] if
 ;
 
 # Main REPL loop
 : repl ( -- )
   "seq> " readline
-  dup string.empty? if
+  dup string.empty? [
     # Empty string means EOF (Ctrl+D) - exit
     drop
     "" io.write-line
     "Goodbye!" io.write-line
-  else
+  ] [
     # Add non-empty input to history
     dup add-history
     # Process the command
     dup process-command
     # Continue unless quit
-    "quit" string.equal? not if
+    "quit" string.equal? not [
       repl
-    then
-  then
+    ] [ ] if
+  ] if
 ;
 
 : main ( -- )

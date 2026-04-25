@@ -22,11 +22,11 @@ include std:yaml
   "" io.write-line
 
   yaml-parse
-  if
+  [
     "PASS nested: " swap yaml-serialize string.concat io.write-line
-  else
+  ] [
     drop "FAIL: nested object" io.write-line
-  then
+  ] if
 
   # Test 2: Nested with sibling
   "server:" newline-str string.concat
@@ -38,11 +38,11 @@ include std:yaml
   "" io.write-line
 
   yaml-parse
-  if
+  [
     "PASS nested+sibling: " swap yaml-serialize string.concat io.write-line
-  else
+  ] [
     drop "FAIL: nested with sibling" io.write-line
-  then
+  ] if
 
   "" io.write-line
   "Nested tests completed!" io.write-line

@@ -43,20 +43,20 @@
 # Using if/else/then for control flow
 : abs ( Int -- Int )
   dup 0 i.<
-  if
+  [
     0 swap i.-
-  then
+  ] [ ] if
 ;
 
 # Recursion as loop (using TCO)
 : sum-to-loop ( Int Int -- Int )
   # acc n
   dup 0 i.>
-  if
+  [
     tuck i.add swap 1 i.- sum-to-loop
-  else
+  ] [
     drop
-  then
+  ] if
 ;
 
 : sum-to ( Int -- Int )

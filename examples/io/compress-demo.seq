@@ -19,20 +19,20 @@
 
   # Compress
   compress.gzip
-  if
+  [
     dup string.length int->string "  Compressed (base64) length: " show
 
     # Decompress
     compress.gunzip
-    if
+    [
       "  Decompressed: " show
       "  Status: Success" io.write-line
-    else
+    ] [
       drop "  Decompress failed" io.write-line
-    then
-  else
+    ] if
+  ] [
     drop "  Compress failed" io.write-line
-  then
+  ] if
 
   "" io.write-line
 ;
@@ -48,25 +48,25 @@
   dup "  Original length: " swap string.length int->string string.concat io.write-line
 
   dup 1 compress.gzip-level
-  if
+  [
     string.length int->string "  Level 1 (fastest): " show
-  else
+  ] [
     drop "  Level 1 failed" io.write-line
-  then
+  ] if
 
   dup 6 compress.gzip-level
-  if
+  [
     string.length int->string "  Level 6 (default): " show
-  else
+  ] [
     drop "  Level 6 failed" io.write-line
-  then
+  ] if
 
   9 compress.gzip-level
-  if
+  [
     string.length int->string "  Level 9 (best): " show
-  else
+  ] [
     drop "  Level 9 failed" io.write-line
-  then
+  ] if
 
   "" io.write-line
 ;
@@ -82,20 +82,20 @@
 
   # Compress
   compress.zstd
-  if
+  [
     dup string.length int->string "  Compressed (base64) length: " show
 
     # Decompress
     compress.unzstd
-    if
+    [
       "  Decompressed: " show
       "  Status: Success" io.write-line
-    else
+    ] [
       drop "  Decompress failed" io.write-line
-    then
-  else
+    ] if
+  ] [
     drop "  Compress failed" io.write-line
-  then
+  ] if
 
   "" io.write-line
 ;
@@ -111,32 +111,32 @@
   dup "  Original length: " swap string.length int->string string.concat io.write-line
 
   dup 1 compress.zstd-level
-  if
+  [
     string.length int->string "  Level 1 (fastest): " show
-  else
+  ] [
     drop "  Level 1 failed" io.write-line
-  then
+  ] if
 
   dup 3 compress.zstd-level
-  if
+  [
     string.length int->string "  Level 3 (default): " show
-  else
+  ] [
     drop "  Level 3 failed" io.write-line
-  then
+  ] if
 
   dup 10 compress.zstd-level
-  if
+  [
     string.length int->string "  Level 10: " show
-  else
+  ] [
     drop "  Level 10 failed" io.write-line
-  then
+  ] if
 
   22 compress.zstd-level
-  if
+  [
     string.length int->string "  Level 22 (best): " show
-  else
+  ] [
     drop "  Level 22 failed" io.write-line
-  then
+  ] if
 
   "" io.write-line
 ;
@@ -153,18 +153,18 @@
   dup "  Original length: " swap string.length int->string string.concat io.write-line
 
   dup compress.gzip
-  if
+  [
     string.length int->string "  Gzip compressed: " show
-  else
+  ] [
     drop "  Gzip failed" io.write-line
-  then
+  ] if
 
   compress.zstd
-  if
+  [
     string.length int->string "  Zstd compressed: " show
-  else
+  ] [
     drop "  Zstd failed" io.write-line
-  then
+  ] if
 
   "" io.write-line
 ;
@@ -176,19 +176,19 @@
 
   # Invalid base64
   "not-valid-base64!!!" compress.gunzip
-  if
+  [
     drop "  Invalid base64: Unexpected success" io.write-line
-  else
+  ] [
     drop "  Invalid base64: Correctly failed" io.write-line
-  then
+  ] if
 
   # Valid base64 but not gzip
   "aGVsbG8gd29ybGQ=" compress.gunzip  # base64("hello world")
-  if
+  [
     drop "  Not gzip: Unexpected success" io.write-line
-  else
+  ] [
     drop "  Not gzip: Correctly failed" io.write-line
-  then
+  ] if
 
   "" io.write-line
 ;

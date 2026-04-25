@@ -36,42 +36,42 @@
 
 # Absolute value for floats
 : f.abs ( Float -- Float )
-  dup dup 0.0 f.< if
+  dup dup 0.0 f.< [
     nip 0.0 swap f.subtract
-  else
+  ] [
     drop
-  then
+  ] if
 ;
 
 # Maximum of two float values
 : f.max ( Float Float -- Float )
-  2dup f.> if
+  2dup f.> [
     drop
-  else
+  ] [
     nip
-  then
+  ] if
 ;
 
 # Minimum of two float values
 : f.min ( Float Float -- Float )
-  2dup f.< if
+  2dup f.< [
     drop
-  else
+  ] [
     nip
-  then
+  ] if
 ;
 
 # Sign function: returns -1.0, 0.0, or 1.0
 : f.sign ( Float -- Float )
-  dup 0.0 f.= if
+  dup 0.0 f.= [
     drop 0.0
-  else
-    dup 0.0 f.< if
+  ] [
+    dup 0.0 f.< [
       drop -1.0
-    else
+    ] [
       drop 1.0
-    then
-  then
+    ] if
+  ] if
 ;
 
 # Square a float
@@ -91,19 +91,19 @@
   # Stack: value min max
   rot rot
   # Stack: max value min
-  2dup f.< if
+  2dup f.< [
     # value < min, return min
     nip nip
-  else
+  ] [
     # value >= min
     drop
     # Stack: max value
-    2dup f.> if
+    2dup f.> [
       # value > max, return max
       nip
-    else
+    ] [
       # min <= value <= max, return value
       drop
-    then
-  then
+    ] if
+  ] if
 ;

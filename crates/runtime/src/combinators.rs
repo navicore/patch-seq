@@ -5,12 +5,10 @@
 //! or auxiliary stack usage (>aux / aux>).
 //!
 //! These follow the concatenative tradition from Factor/Joy:
-//! - `dip`    — hide top value, run quotation, restore value
-//! - `keep`   — run quotation on top value, but preserve the original
-//! - `bi`     — apply two quotations to the same value
-//! - `__if__` — branch on a Bool, invoking one of two quotations
-//!   (temporary scaffold name for the 6.0 `if`-as-combinator migration;
-//!   renamed to `if` once `if/else/then` are removed from the parser)
+//! - `dip`  — hide top value, run quotation, restore value
+//! - `keep` — run quotation on top value, but preserve the original
+//! - `bi`   — apply two quotations to the same value
+//! - `if`   — branch on a Bool, invoking one of two quotations
 
 use crate::quotations::invoke_callable;
 use crate::stack::{Stack, pop, push};
@@ -88,17 +86,13 @@ pub unsafe extern "C" fn patch_seq_bi(stack: Stack) -> Stack {
     }
 }
 
-/// `__if__`: Branch on a Bool, invoking one of two quotations.
+/// `if`: Branch on a Bool, invoking one of two quotations.
 ///
 /// Stack effect: ( ..a Bool [..a -- ..b] [..a -- ..b] -- ..b )
 ///   The two quotations must have identical effects (the typechecker
 ///   enforces this); whichever runs leaves the stack in the same shape.
 ///
 /// Layout at entry (top → bottom): else-quot, then-quot, cond.
-///
-/// This is the temporary scaffold name for the 6.0 migration. Once
-/// `if/else/then` are removed from the parser (phase 3), this is renamed
-/// to `if` and exposed as the user-facing combinator.
 ///
 /// # Safety
 /// - Stack must have at least 3 values (else-quot on top, then-quot below,
@@ -116,7 +110,7 @@ pub unsafe extern "C" fn patch_seq_if(stack: Stack) -> Stack {
         match cond {
             Value::Bool(true) => invoke_callable(stack, &then_quot),
             Value::Bool(false) => invoke_callable(stack, &else_quot),
-            other => panic!("__if__: expected Bool condition, got {:?}", other),
+            other => panic!("if: expected Bool condition, got {:?}", other),
         }
     }
 }

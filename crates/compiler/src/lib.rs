@@ -237,7 +237,7 @@ pub fn compile_file_with_config(
     // Always done here to consolidate constructor generation in one place
     program.generate_constructors()?;
 
-    // Lower literal-quotation `__if__` triples to `Statement::If` so the
+    // Lower literal-quotation `if` triples to `Statement::If` so the
     // typechecker, codegen, type-specializer, and lints all see the
     // same shape they see for the keyword form. (See `normalize.rs`.)
     normalize::lower_literal_if_combinators(&mut program);

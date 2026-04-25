@@ -1,52 +1,50 @@
-# Integration tests for `__if__`, `when`, `unless`.
+# Integration tests for `if`, `when`, `unless`.
 #
-# `__if__` is the temporary scaffold name for the 6.0 `if`-as-combinator
-# migration. `when` / `unless` are stdlib combinators built on top of it.
-# Once `if/else/then` are removed from the parser (phase 3), `__if__`
-# becomes `if` and these tests are renamed accordingly.
+# `if` is the conditional combinator (Seq 6.0). `when` / `unless` are
+# stdlib combinators built on top of it.
 
 include std:control
 
 # --------------------------------------------------------------------------
-# __if__ ( ..a Bool [..a -- ..b] [..a -- ..b] -- ..b )
+# if ( ..a Bool [..a -- ..b] [..a -- ..b] -- ..b )
 # --------------------------------------------------------------------------
 
 : test-if-combinator-true ( -- )
   # True selects the first quotation (then-branch).
-  true [ 1 ] [ 2 ] __if__
+  true [ 1 ] [ 2 ] if
   1 test.assert-eq
 ;
 
 : test-if-combinator-false ( -- )
   # False selects the second quotation (else-branch).
-  false [ 1 ] [ 2 ] __if__
+  false [ 1 ] [ 2 ] if
   2 test.assert-eq
 ;
 
 : test-if-combinator-consumes-stack ( -- )
   # Both quotations may consume from below themselves.
-  10 5 true  [ i.+ ] [ i.- ] __if__
+  10 5 true  [ i.+ ] [ i.- ] if
   15 test.assert-eq
 
-  10 5 false [ i.+ ] [ i.- ] __if__
+  10 5 false [ i.+ ] [ i.- ] if
   5 test.assert-eq
 ;
 
 : test-if-combinator-empty-quotation ( -- )
   # Empty quotation is the natural no-op for unchanged stack shape.
-  42 true  [ ] [ drop 99 ] __if__
+  42 true  [ ] [ drop 99 ] if
   42 test.assert-eq
 
-  42 false [ ] [ drop 99 ] __if__
+  42 false [ ] [ drop 99 ] if
   99 test.assert-eq
 ;
 
 : test-if-combinator-from-comparison ( -- )
   # The Bool can come from any boolean-producing expression.
-  5 3 i.> [ "yes" ] [ "no" ] __if__
+  5 3 i.> [ "yes" ] [ "no" ] if
   "yes" test.assert-eq-str
 
-  3 5 i.> [ "yes" ] [ "no" ] __if__
+  3 5 i.> [ "yes" ] [ "no" ] if
   "no" test.assert-eq-str
 ;
 
@@ -109,13 +107,13 @@ include std:control
 # --------------------------------------------------------------------------
 # Dynamic dispatch path
 # --------------------------------------------------------------------------
-# When the two quotations passed to `__if__` are NOT literal `[ ... ]` at
+# When the two quotations passed to `if` are NOT literal `[ ... ]` at
 # the call site (e.g. they come in as word arguments or are stored in
 # variables), the AST-level inlining is bypassed and the runtime
 # `patch_seq_if` dispatch handles it. This test guards the fallback path.
 
 : pick-via-arg ( Bool [ -- Int ] [ -- Int ] -- Int )
-  __if__
+  if
 ;
 
 : const-7  ( -- Int ) 7 ;

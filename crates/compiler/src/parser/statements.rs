@@ -100,16 +100,17 @@ impl Parser {
             return Ok(Statement::StringLiteral(unescaped));
         }
 
-        // `if` / `else` / `then` are no longer parser keywords (Seq 6.0).
-        // Conditional control flow is now expressed via the `__if__`
-        // combinator (renamed to `if` once the migration is complete) and
-        // its `when` / `unless` library variants. Reject the old syntax
-        // with an explicit pointer at the migration doc.
-        if token == "if" || token == "else" || token == "then" {
+        // `else` and `then` are no longer parser keywords (Seq 6.0).
+        // `if` is now a stack-consuming combinator word — let it fall
+        // through to the regular WordCall path. Bare `else`/`then`
+        // tokens are almost always remnants of the pre-6.0 keyword
+        // form, so reject them with an explicit pointer at the
+        // migration doc.
+        if token == "else" || token == "then" {
             return Err(format!(
                 "at line {}: '{}' is no longer a parser keyword in Seq 6.0.\n  \
-                 Conditionals are now expressed with the `__if__` combinator:\n  \
-                   `cond if A else B then`  →  `cond [ A ] [ B ] __if__`\n  \
+                 Conditionals are now expressed with the `if` combinator:\n  \
+                   `cond if A else B then`  →  `cond [ A ] [ B ] if`\n  \
                    `cond if A then`         →  `cond [ A ] when`\n  \
                  See docs/MIGRATION_6_0.md for the full transformation rules.",
                 tok_line + 1,

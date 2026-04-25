@@ -66,13 +66,11 @@ pub(super) fn add_signatures(sigs: &mut HashMap<String, Effect>) {
         ),
     );
 
-    // __if__: ( ..a Bool [..a -- ..b] [..a -- ..b] -- ..b )
+    // if: ( ..a Bool [..a -- ..b] [..a -- ..b] -- ..b )
     // Conditional combinator. Both quotations must have identical effects.
-    // Temporary scaffold name during the 6.0 migration; renamed to `if`
-    // once `if/else/then` are removed from the parser.
     // Type-checked specially in typechecker; this is a placeholder.
     sigs.insert(
-        "__if__".to_string(),
+        "if".to_string(),
         Effect::new(
             StackType::RowVar("a".to_string())
                 .push(Type::Bool)
@@ -114,7 +112,7 @@ pub(super) fn add_docs(docs: &mut HashMap<&'static str, &'static str>) {
         "Apply two quotations to the same value. ( ..a x [q1] [q2] -- ..c )",
     );
     docs.insert(
-        "__if__",
-        "Conditional combinator: branch on a Bool, invoking one of two quotations with identical effects. ( ..a Bool [..a -- ..b] [..a -- ..b] -- ..b ). Temporary scaffold name during 6.0 migration; will become `if`.",
+        "if",
+        "Conditional combinator: branch on a Bool, invoking one of two quotations with identical effects. ( ..a Bool [..a -- ..b] [..a -- ..b] -- ..b )",
     );
 }

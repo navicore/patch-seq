@@ -67,13 +67,13 @@ union Result {
 # Safe division that returns a Result
 # seq:allow(unchecked-div)
 : safe-divide ( Int Int -- Result )
-  dup 0 i.= if
+  dup 0 i.= [
     drop drop
     "division by zero" Make-Err
-  else
+  ] [
     i./ drop    # i./ returns (result success), we checked already
     Make-Ok
-  then
+  ] if
 ;
 
 # Unwrap Result or return default on error
