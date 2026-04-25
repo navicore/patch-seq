@@ -334,11 +334,12 @@ impl TypeChecker {
             }
         };
 
-        if then_effect.has_yield() || else_effect.has_yield() {
-            return Err("__if__: branch quotations must not have Yield effects.\n\
-                 Use strand.weave for quotations that yield."
-                .to_string());
-        }
+        // Yield-bearing branches are allowed (matches `Statement::If`
+        // semantics). For literal-quotation calls the AST normalization
+        // pass rewrites the triple to `Statement::If` before this code
+        // runs; for the dynamic-dispatch path the runtime invokes the
+        // chosen quotation through the same machinery used everywhere
+        // else, and yields propagate naturally.
 
         // Apply each branch independently to the post-condition stack, then
         // unify the two result stacks — matching `Statement::If` semantics.

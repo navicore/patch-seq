@@ -237,6 +237,11 @@ pub fn compile_file_with_config(
     // Always done here to consolidate constructor generation in one place
     program.generate_constructors()?;
 
+    // Lower literal-quotation `__if__` triples to `Statement::If` so the
+    // typechecker, codegen, type-specializer, and lints all see the
+    // same shape they see for the keyword form. (See `normalize.rs`.)
+    normalize::lower_literal_if_combinators(&mut program);
+
     // Check for word name collisions
     check_collisions(&program.words)?;
 
@@ -303,11 +308,6 @@ pub fn compile_file_with_config(
     let quotation_aux_depths = type_checker.take_quotation_aux_depths();
     // Extract resolved arithmetic sugar for codegen
     let resolved_sugar = type_checker.take_resolved_sugar();
-
-    // Lower literal-quotation `__if__` triples to `Statement::If` so the
-    // type-specializer + codegen see the same shape they see for the
-    // parser-level `if/else/then` form. (See `normalize.rs`.)
-    normalize::lower_literal_if_combinators(&mut program, &quotation_types, &quotation_aux_depths);
 
     // Generate LLVM IR with type information and external builtins
     // Note: Mutual TCO already works via existing musttail emission for all
@@ -419,6 +419,8 @@ pub fn compile_to_ir_with_config(source: &str, config: &CompilerConfig) -> Resul
         program.generate_constructors()?;
     }
 
+    normalize::lower_literal_if_combinators(&mut program);
+
     let external_names = config.external_names();
     program.validate_word_calls_with_externals(&external_names)?;
 
@@ -451,8 +453,6 @@ pub fn compile_to_ir_with_config(source: &str, config: &CompilerConfig) -> Resul
     let aux_max_depths = type_checker.take_aux_max_depths();
     let quotation_aux_depths = type_checker.take_quotation_aux_depths();
     let resolved_sugar = type_checker.take_resolved_sugar();
-
-    normalize::lower_literal_if_combinators(&mut program, &quotation_types, &quotation_aux_depths);
 
     let mut codegen = CodeGen::new();
     codegen.set_aux_slot_counts(aux_max_depths);

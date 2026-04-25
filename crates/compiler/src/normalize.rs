@@ -1,5 +1,5 @@
-//! AST normalization passes that run after type-checking and before
-//! codegen / specialization.
+//! AST normalization passes that run after parse + include resolution
+//! and before type-checking.
 //!
 //! ## `__if__` literal-quotation lowering
 //!
@@ -11,52 +11,43 @@
 //! cond [ then-body ] [ else-body ] __if__
 //! ```
 //!
-//! When both branches are literal quotations with no captures and no
-//! `>aux`/`aux>` operations, this triple is semantically identical to
-//! the parser-level `cond if then-body else else-body then` form.
-//! Rewriting the triple to a `Statement::If` here lets every downstream
-//! pass — codegen, the type-specializer, lints — see the same shape it
-//! sees today, which is the perf gate the design doc calls out.
+//! When both operands are literal `[ ... ]` quotations at the call site,
+//! this triple is semantically identical to the (now-removed)
+//! parser-level `cond if then-body else else-body then` form. Rewriting
+//! it to `Statement::If` here — *before* the type-checker runs — means
+//! every downstream pass (typechecker, codegen, lints, the
+//! type-specializer) sees the same shape it sees for the keyword form.
 //!
-//! When either quotation has captures (it's a `Type::Closure`) or its
-//! body uses `>aux`/`aux>` (the per-quotation aux frame is allocated by
-//! the wrapper, which inlining skips), the triple is left alone and the
-//! runtime `patch_seq_if` dispatch handles it.
+//! Doing this purely syntactically (no consultation of inferred types)
+//! is sound: lifting a literal quotation's body into the enclosing word
+//! is semantically equivalent to invoking the quotation, because
+//! captures resolve in the same lexical scope and `>aux`/`aux>` slot
+//! allocation falls naturally to the enclosing word's slot table once
+//! the body is no longer wrapped in its own quotation function.
 //!
-//! Removed once `if/else/then` keywords go away (phase 3) — at that
-//! point this rewrite *is* how `if` becomes a parser-emitted control
-//! structure.
+//! When at least one operand is *not* a literal `[ ... ]` (e.g. it
+//! comes from a word argument or is constructed at runtime), the
+//! triple is left alone and the runtime `patch_seq_if` dispatch
+//! handles the call.
+//!
+//! Removed once the `__if__` → `if` rename completes (final phase of
+//! the 6.0 cutover).
 
 use crate::ast::{Program, Statement};
-use crate::types::Type;
-use std::collections::HashMap;
 
-/// Rewrite `[Quotation, Quotation, WordCall("__if__")]` triples to
-/// `Statement::If` where it's safe (both quotations have no captures
-/// and use no aux operations). All other `__if__` calls are left
-/// untouched and go through the runtime dispatch path.
-pub fn lower_literal_if_combinators(
-    program: &mut Program,
-    quotation_types: &HashMap<usize, Type>,
-    quotation_aux_depths: &HashMap<usize, usize>,
-) {
+/// Rewrite every `[Quotation, Quotation, WordCall("__if__")]` triple in
+/// the program to a `Statement::If`. Runs after parse + include
+/// resolution, before type-checking.
+pub fn lower_literal_if_combinators(program: &mut Program) {
     for word in &mut program.words {
-        rewrite_statements(&mut word.body, quotation_types, quotation_aux_depths);
+        rewrite_statements(&mut word.body);
     }
 }
 
-fn rewrite_statements(
-    statements: &mut Vec<Statement>,
-    quotation_types: &HashMap<usize, Type>,
-    quotation_aux_depths: &HashMap<usize, usize>,
-) {
+fn rewrite_statements(statements: &mut Vec<Statement>) {
     let mut i = 0;
     while i < statements.len() {
-        if i + 2 < statements.len()
-            && let Some((then_id, else_id)) = match_inline_triple(&statements[i..i + 3])
-            && quotation_inlineable(then_id, quotation_types, quotation_aux_depths)
-            && quotation_inlineable(else_id, quotation_types, quotation_aux_depths)
-        {
+        if i + 2 < statements.len() && is_inline_triple(&statements[i..i + 3]) {
             let if_span = match &statements[i + 2] {
                 Statement::WordCall { span, .. } => span.clone(),
                 _ => None,
@@ -67,14 +58,14 @@ fn rewrite_statements(
 
             let mut then_body = match &mut then_quot {
                 Statement::Quotation { body, .. } => std::mem::take(body),
-                _ => unreachable!("guarded by match_inline_triple"),
+                _ => unreachable!("guarded by is_inline_triple"),
             };
             let mut else_body = match &mut else_quot {
                 Statement::Quotation { body, .. } => std::mem::take(body),
-                _ => unreachable!("guarded by match_inline_triple"),
+                _ => unreachable!("guarded by is_inline_triple"),
             };
-            rewrite_statements(&mut then_body, quotation_types, quotation_aux_depths);
-            rewrite_statements(&mut else_body, quotation_types, quotation_aux_depths);
+            rewrite_statements(&mut then_body);
+            rewrite_statements(&mut else_body);
 
             statements.insert(
                 i,
@@ -94,18 +85,18 @@ fn rewrite_statements(
                 else_branch,
                 ..
             } => {
-                rewrite_statements(then_branch, quotation_types, quotation_aux_depths);
+                rewrite_statements(then_branch);
                 if let Some(eb) = else_branch.as_mut() {
-                    rewrite_statements(eb, quotation_types, quotation_aux_depths);
+                    rewrite_statements(eb);
                 }
             }
             Statement::Match { arms, .. } => {
                 for arm in arms {
-                    rewrite_statements(&mut arm.body, quotation_types, quotation_aux_depths);
+                    rewrite_statements(&mut arm.body);
                 }
             }
             Statement::Quotation { body, .. } => {
-                rewrite_statements(body, quotation_types, quotation_aux_depths);
+                rewrite_statements(body);
             }
             _ => {}
         }
@@ -113,29 +104,13 @@ fn rewrite_statements(
     }
 }
 
-fn match_inline_triple(triple: &[Statement]) -> Option<(usize, usize)> {
-    let (
-        Statement::Quotation { id: then_id, .. },
-        Statement::Quotation { id: else_id, .. },
-        Statement::WordCall { name, .. },
-    ) = (&triple[0], &triple[1], &triple[2])
-    else {
-        return None;
-    };
-    if name != "__if__" {
-        return None;
-    }
-    Some((*then_id, *else_id))
-}
-
-fn quotation_inlineable(
-    id: usize,
-    quotation_types: &HashMap<usize, Type>,
-    quotation_aux_depths: &HashMap<usize, usize>,
-) -> bool {
-    match quotation_types.get(&id) {
-        Some(Type::Quotation(_)) => {}
-        _ => return false,
-    }
-    matches!(quotation_aux_depths.get(&id).copied(), None | Some(0))
+fn is_inline_triple(triple: &[Statement]) -> bool {
+    matches!(
+        (&triple[0], &triple[1], &triple[2]),
+        (
+            Statement::Quotation { .. },
+            Statement::Quotation { .. },
+            Statement::WordCall { name, .. },
+        ) if name == "__if__"
+    )
 }
