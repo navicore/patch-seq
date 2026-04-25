@@ -487,6 +487,25 @@ mod tests {
     }
 
     #[test]
+    fn test_word_completion_kind_is_operator() {
+        // Regression: word completions must use OPERATOR (not FUNCTION /
+        // METHOD) so editors don't auto-insert `()` on confirm. Seq is
+        // concatenative — words never take parenthesised arguments.
+        for item in get_builtin_completions() {
+            if item.kind == Some(CompletionItemKind::KEYWORD) {
+                continue; // if/else/then/include/true/false — fine as KEYWORD
+            }
+            assert_eq!(
+                item.kind,
+                Some(CompletionItemKind::OPERATOR),
+                "completion item {:?} should be OPERATOR, got {:?}",
+                item.label,
+                item.kind,
+            );
+        }
+    }
+
+    #[test]
     fn test_is_in_string() {
         assert!(!is_in_string("hello"));
         assert!(is_in_string("\"hello"));
