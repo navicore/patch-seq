@@ -262,7 +262,7 @@ pub(crate) fn get_code_actions(
         if !ranges_overlap(&diag.range, &range) {
             continue;
         }
-        actions.extend(sugar_code_actions(diag, &source, uri));
+        actions.extend(sugar_code_actions(diag, uri));
     }
 
     actions
@@ -414,10 +414,10 @@ fn unchecked_error_code_action(
 
 /// Typed alternatives offered for each unresolved-sugar operator.
 ///
-/// Order is from-most-likely to least-likely so the quick-fix picker
-/// surfaces sensible defaults. `None` for `is_preferred` because none of
-/// the alternatives is uniquely correct without the context the LSP
-/// can't reproduce.
+/// `is_preferred` is `None` on the resulting actions because no
+/// alternative is uniquely correct without type context the LSP can't
+/// reproduce. The list order (most-likely first) is therefore the only
+/// tiebreaker — most editors render quick-fixes in arrival order.
 const SUGAR_ALTERNATIVES: &[(&str, &[&str])] = &[
     ("+", &["i.+", "f.+", "string.concat"]),
     ("-", &["i.-", "f.-"]),
@@ -440,7 +440,7 @@ const SUGAR_ALTERNATIVES: &[(&str, &[&str])] = &[
 /// pinpoint the right token even when a line has multiple sugar
 /// occurrences. (Note: `character` here is a UTF-8 byte offset because
 /// the server declares `PositionEncodingKind::UTF8` in its capabilities.)
-fn sugar_code_actions(diag: &Diagnostic, _source: &str, uri: &Url) -> Vec<CodeAction> {
+fn sugar_code_actions(diag: &Diagnostic, uri: &Url) -> Vec<CodeAction> {
     let msg = &diag.message;
     if !msg.contains("can't resolve here") && !msg.contains("requires matching types") {
         return Vec::new();
@@ -451,6 +451,9 @@ fn sugar_code_actions(diag: &Diagnostic, _source: &str, uri: &Url) -> Vec<CodeAc
     let Some((_, alternatives)) = SUGAR_ALTERNATIVES.iter().find(|(o, _)| *o == op) else {
         return Vec::new();
     };
+    // No `at line N col M:` prefix means the typechecker had no span (e.g.
+    // a programmatically constructed call). Skip rather than risk editing
+    // the wrong occurrence — the legacy `line N` fallback is intentional.
     let Some((line, col)) = parse_position_prefix(msg) else {
         return Vec::new();
     };
@@ -496,6 +499,10 @@ fn first_backticked(s: &str) -> Option<&str> {
 
 /// Parse `at line N col M:` from a typechecker error message. Returns
 /// 0-indexed (line, col) suitable for an LSP `Position`.
+///
+/// `line`/`col` in the message are 1-indexed; `0` would mean a malformed
+/// message, so `checked_sub` bails out rather than mapping to (0, 0) and
+/// risking a phantom edit at the start of the file.
 fn parse_position_prefix(msg: &str) -> Option<(u32, u32)> {
     let after_line = msg.strip_prefix("at line ")?;
     let line_end = after_line.find(' ')?;
@@ -504,7 +511,7 @@ fn parse_position_prefix(msg: &str) -> Option<(u32, u32)> {
     let after_col = after.strip_prefix("col ")?;
     let col_end = after_col.find(':')?;
     let col_1: u32 = after_col[..col_end].parse().ok()?;
-    Some((line_1.saturating_sub(1), col_1.saturating_sub(1)))
+    Some((line_1.checked_sub(1)?, col_1.checked_sub(1)?))
 }
 
 /// Convert a lint diagnostic to an LSP diagnostic.
@@ -970,7 +977,7 @@ union Shape { Circle { radius: Int } Rectangle { width: Int, height: Int } }
                 .to_string(),
             ..Default::default()
         };
-        let actions = sugar_code_actions(&diag, source, &uri);
+        let actions = sugar_code_actions(&diag, &uri);
         assert_eq!(
             actions.len(),
             3,
@@ -1007,11 +1014,43 @@ union Shape { Circle { radius: Int } Rectangle { width: Int, height: Int } }
                 .to_string(),
             ..Default::default()
         };
-        let actions2 = sugar_code_actions(&diag2, source2, &uri);
+        let actions2 = sugar_code_actions(&diag2, &uri);
         assert_eq!(
             actions2.len(),
             3,
             "expected 3 alternatives in mismatch case"
+        );
+    }
+
+    /// When the typechecker emits the legacy `at line N:` prefix (no
+    /// column — happens when no AST span is available), we can't pinpoint
+    /// the operator, so no code action fires. Better than risking a
+    /// phantom edit at file start.
+    #[test]
+    fn sugar_code_action_no_column_prefix_yields_no_actions() {
+        let uri: Url = "file:///fake/path.seq".parse().unwrap();
+        let diag = Diagnostic {
+            range: Range {
+                start: Position {
+                    line: 0,
+                    character: 0,
+                },
+                end: Position {
+                    line: 0,
+                    character: 16,
+                },
+            },
+            // Legacy `at line N:` form — no `col M:`.
+            message: "at line 1: `+` can't resolve here — operand types not in scope. \
+                      Use `i.+`, `f.+`, or `string.concat`."
+                .to_string(),
+            ..Default::default()
+        };
+        let actions = sugar_code_actions(&diag, &uri);
+        assert!(
+            actions.is_empty(),
+            "no-column message should produce no code actions, got {} action(s)",
+            actions.len()
         );
     }
 
@@ -1032,7 +1071,7 @@ union Shape { Circle { radius: Int } Rectangle { width: Int, height: Int } }
             message: "Parse error: unexpected token".to_string(),
             ..Default::default()
         };
-        let actions = sugar_code_actions(&diag, "anything\n", &uri);
+        let actions = sugar_code_actions(&diag, &uri);
         assert!(
             actions.is_empty(),
             "non-sugar diagnostic should produce no code actions"

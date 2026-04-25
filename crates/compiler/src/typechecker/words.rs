@@ -30,11 +30,8 @@ impl TypeChecker {
                 return self.infer_word_call(&resolved, span, current_stack);
             }
             // Sugar op but types don't match — give a helpful error.
-            //
             // When `span` is set, emit `at line N col M: ` so the LSP can
-            // recover the operator's exact source position even when the
-            // line contains multiple sugar tokens. Falls back to the
-            // word-level `line_prefix` (line only) otherwise.
+            // pinpoint the operator even on lines with multiple sugar tokens.
             let position_prefix = match span {
                 Some(s) => format!("at line {} col {}: ", s.line + 1, s.column + 1),
                 None => self.line_prefix(),
