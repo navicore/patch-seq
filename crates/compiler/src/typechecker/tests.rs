@@ -3722,7 +3722,11 @@ fn test_variant_field_count_rejects_string() {
             variant_call("variant.field-count"),
         ],
     );
-    assert!(result.is_err());
+    let err = result.expect_err("expected type error for String -> variant.field-count");
+    assert!(
+        err.contains("variant.field-count"),
+        "error should name variant.field-count, got: {err}"
+    );
 }
 
 #[test]
@@ -3736,7 +3740,11 @@ fn test_variant_init_rejects_string() {
             variant_call("variant.init"),
         ],
     );
-    assert!(result.is_err());
+    let err = result.expect_err("expected type error for String -> variant.init");
+    assert!(
+        err.contains("variant.init"),
+        "error should name variant.init, got: {err}"
+    );
 }
 
 #[test]
@@ -3751,7 +3759,66 @@ fn test_variant_append_rejects_string_base() {
             variant_call("variant.append"),
         ],
     );
-    assert!(result.is_err());
+    let err = result.expect_err("expected type error for String -> variant.append");
+    assert!(
+        err.contains("variant.append"),
+        "error should name variant.append, got: {err}"
+    );
+}
+
+#[test]
+fn test_variant_last_rejects_string() {
+    let result = check_word_with_body(
+        "bad",
+        StackType::Empty,
+        StackType::Empty.push(Type::Var("T".to_string())),
+        vec![
+            Statement::StringLiteral("x".to_string()),
+            variant_call("variant.last"),
+        ],
+    );
+    let err = result.expect_err("expected type error for String -> variant.last");
+    assert!(
+        err.contains("variant.last"),
+        "error should name variant.last, got: {err}"
+    );
+}
+
+#[test]
+fn test_union_value_accepted_by_variant_field_at() {
+    // Direct exercise of the Union(_) <: Variant relaxation rule:
+    // a value typed `Union("Box")` should be accepted by variant.field-at
+    // (which is signed against `Variant`).
+    let union_def = crate::ast::UnionDef {
+        name: "Box".to_string(),
+        variants: vec![crate::ast::UnionVariant {
+            name: "Cell".to_string(),
+            fields: vec![crate::ast::UnionField {
+                name: "x".to_string(),
+                type_name: "Int".to_string(),
+            }],
+            source: None,
+        }],
+        source: None,
+    };
+    let program = Program {
+        includes: vec![],
+        unions: vec![union_def],
+        words: vec![WordDef {
+            name: "first".to_string(),
+            effect: Some(Effect::new(
+                StackType::singleton(Type::Union("Box".to_string())),
+                StackType::singleton(Type::Int),
+            )),
+            body: vec![Statement::IntLiteral(0), variant_call("variant.field-at")],
+            source: None,
+            allowed_lints: vec![],
+        }],
+    };
+    let mut checker = TypeChecker::new();
+    checker
+        .check_program(&program)
+        .expect("Union(Box) should be accepted by variant.field-at");
 }
 
 #[test]

@@ -171,6 +171,12 @@ pub fn unify_types(t1: &Type, t2: &Type) -> Result<Subst, String> {
         // below; the symmetric form is a minor unsoundness in the reverse
         // direction (a `Variant` flowing back into a `Union(name)` slot)
         // that we accept for now.
+        //
+        // TODO: tighten to a directional rule once the typechecker tracks
+        // which side of a unification is "expected" vs "actual". Today a
+        // `Variant` (e.g. the result of `variant.append`) silently
+        // satisfies a `Union(name)` constraint without checking the tag —
+        // intended pragmatic loophole, not a permanent stance.
         (Type::Union(_), Type::Variant) | (Type::Variant, Type::Union(_)) => Ok(Subst::empty()),
 
         // Type variable unifies with anything (with occurs check)

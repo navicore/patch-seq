@@ -234,6 +234,10 @@ pub struct CodeGen {
     /// `!DISubprogram` ID for the function currently being emitted, if any.
     /// Call sites use this as the scope for their `!DILocation` records.
     pub(super) current_dbg_subprogram_id: Option<usize>,
+    /// IDs of the two `!llvm.module.flags` records ("Dwarf Version",
+    /// "Debug Info Version"). Allocated through `dbg_alloc_id` at program
+    /// init so they never collide with later subprogram/location records.
+    pub(super) dbg_module_flag_ids: Option<(usize, usize)>,
 }
 
 impl Default for CodeGen {
@@ -288,6 +292,7 @@ impl CodeGen {
             dbg_file_id: None,
             dbg_subroutine_type_id: None,
             current_dbg_subprogram_id: None,
+            dbg_module_flag_ids: None,
         }
     }
 

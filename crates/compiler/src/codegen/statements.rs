@@ -88,7 +88,10 @@ impl CodeGen {
                 "  %{} = musttail call tailcc ptr @{}(ptr %{}){}",
                 result_var, function_name, stack_var, dbg
             )?;
-            writeln!(&mut self.output, "  ret ptr %{}{}", result_var, dbg)?;
+            // Leave the `ret` bare. `musttail` requires the ret to mirror the
+            // call exactly; the !dbg on the call is enough for backtrace
+            // resolution (the call-site address is what gets symbolised).
+            writeln!(&mut self.output, "  ret ptr %{}", result_var)?;
         } else if is_seq_word {
             // Non-tail call to user-defined word: must use tailcc calling convention
             writeln!(

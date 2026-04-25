@@ -57,6 +57,10 @@ impl CodeGen {
         let file_id = self.dbg_alloc_id();
         let cu_id = self.dbg_alloc_id();
         let sub_ty_id = self.dbg_alloc_id();
+        // Reserve module-flag IDs through the same counter so they never
+        // collide with later subprogram/location records on big programs.
+        let dwarf_ver_id = self.dbg_alloc_id();
+        let debug_info_ver_id = self.dbg_alloc_id();
 
         let _ = writeln!(
             &mut self.dbg_metadata,
@@ -81,6 +85,7 @@ impl CodeGen {
         self.dbg_file_id = Some(file_id);
         self.dbg_cu_id = Some(cu_id);
         self.dbg_subroutine_type_id = Some(sub_ty_id);
+        self.dbg_module_flag_ids = Some((dwarf_ver_id, debug_info_ver_id));
     }
 
     /// Allocate a `DISubprogram` for the function currently being emitted.
@@ -136,12 +141,12 @@ impl CodeGen {
     /// back to the originating .seq line. Returns `""` when debug info is
     /// disabled, no subprogram is open, or the statement has no span.
     pub(super) fn dbg_call_suffix(&mut self, span: Option<&Span>) -> String {
-        let (Some(scope), Some(sp)) = (self.current_dbg_subprogram_id, span) else {
-            return String::new();
-        };
         if !self.dbg_enabled() {
             return String::new();
         }
+        let (Some(scope), Some(sp)) = (self.current_dbg_subprogram_id, span) else {
+            return String::new();
+        };
         let loc_id = self.dbg_alloc_id();
         let _ = writeln!(
             &mut self.dbg_metadata,
@@ -158,10 +163,14 @@ impl CodeGen {
     /// Called once at the end of `codegen_program*` after `self.output`
     /// has been concatenated.
     pub(super) fn dbg_emit_module_metadata(&self, ir: &mut String) {
-        if !self.dbg_enabled() || self.dbg_cu_id.is_none() {
+        let (Some(cu_id), Some((dwarf_ver_id, debug_info_ver_id))) =
+            (self.dbg_cu_id, self.dbg_module_flag_ids)
+        else {
+            return;
+        };
+        if !self.dbg_enabled() {
             return;
         }
-        let cu_id = self.dbg_cu_id.unwrap();
         let _ = writeln!(ir);
         let _ = writeln!(ir, "!llvm.dbg.cu = !{{!{}}}", cu_id);
         // Dwarf Version + Debug Info Version are required by the verifier
@@ -169,18 +178,17 @@ impl CodeGen {
         let _ = writeln!(
             ir,
             "!llvm.module.flags = !{{!{}, !{}}}",
-            cu_id + 1000,
-            cu_id + 1001,
+            dwarf_ver_id, debug_info_ver_id,
         );
         let _ = writeln!(
             ir,
             "!{} = !{{i32 7, !\"Dwarf Version\", i32 4}}",
-            cu_id + 1000
+            dwarf_ver_id,
         );
         let _ = writeln!(
             ir,
             "!{} = !{{i32 2, !\"Debug Info Version\", i32 3}}",
-            cu_id + 1001,
+            debug_info_ver_id,
         );
         ir.push_str(&self.dbg_metadata);
     }

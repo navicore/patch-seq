@@ -1,6 +1,6 @@
 # Variant-op Type Safety + Locatable Runtime Panics
 
-Status: design · 2026-04-25
+Status: implemented (Part A and Part B) · 2026-04-25
 
 ## Intent
 
