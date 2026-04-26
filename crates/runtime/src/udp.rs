@@ -32,10 +32,17 @@ use std::sync::Mutex;
 // Same cap as `tcp.rs`.
 const MAX_SOCKETS: usize = 10_000;
 
-// Maximum bytes to read per datagram. UDP datagrams are practically
-// limited to ~64 KB by the protocol; 1 MB is a generous ceiling that
-// matches `tcp.rs`'s `MAX_READ_SIZE` for consistency.
-const MAX_READ_SIZE: usize = 1_048_576;
+// Maximum bytes to read per datagram.
+//
+// UDP datagrams are protocol-capped at 65,507 bytes for IPv4 (the
+// `udp.length` header is 16-bit, minus IP+UDP headers), and 65,535
+// for IPv6 base-headered datagrams. We use the next power of two
+// (65,536) as the receive buffer size — anything larger cannot
+// arrive on the wire, so allocating more would be pure waste.
+//
+// This intentionally diverges from `tcp.rs`'s 1 MB cap, which makes
+// sense for streaming reads but not for one-datagram-per-call recv.
+const MAX_READ_SIZE: usize = 65_536;
 
 // Socket registry with ID reuse via free list.
 //
@@ -156,8 +163,12 @@ unsafe fn push_bind_failure(stack: Stack) -> Stack {
 pub unsafe extern "C" fn patch_seq_udp_send_to(stack: Stack) -> Stack {
     unsafe {
         let (stack, socket_val) = pop(stack);
+        // Reject negative ids before the `as usize` cast: a negative
+        // i64 wraps to usize::MAX, which would silently fall through
+        // to a benign `None` lookup. Catching it here is a clearer
+        // signal than the indirect not-found path.
         let socket_id = match socket_val {
-            Value::Int(id) => id as usize,
+            Value::Int(id) if id >= 0 => id as usize,
             _ => return push(stack, Value::Bool(false)),
         };
 
@@ -218,7 +229,7 @@ pub unsafe extern "C" fn patch_seq_udp_receive_from(stack: Stack) -> Stack {
     unsafe {
         let (stack, socket_val) = pop(stack);
         let socket_id = match socket_val {
-            Value::Int(id) => id as usize,
+            Value::Int(id) if id >= 0 => id as usize,
             _ => return push_receive_failure(stack),
         };
 
@@ -274,6 +285,21 @@ unsafe fn push_receive_failure(stack: Stack) -> Stack {
 /// Returns `true` if the socket existed (and is now closed), `false`
 /// if the handle was already invalid.
 ///
+/// ## Race with in-flight I/O
+///
+/// `send_to` and `receive_from` use a take-and-restore pattern: they
+/// remove the socket from the registry while running I/O, so the
+/// registry lock isn't held across syscalls. If a strand calls
+/// `close` on a handle whose socket is currently *taken* by another
+/// strand's in-flight I/O, the slot looks empty (`is_some()` is
+/// `false`), and `close` returns `false` as if the handle were
+/// invalid — even though the I/O strand will restore the socket
+/// moments later. This matches `tcp_close`'s behaviour and is
+/// considered acceptable for the current concurrency model: callers
+/// shouldn't be racing close against I/O on the same handle. If we
+/// ever support that pattern, the registry needs a richer state
+/// machine (taken-but-marked-for-close).
+///
 /// # Safety
 /// Stack must have an Int (socket) on top.
 #[unsafe(no_mangle)]
@@ -281,7 +307,7 @@ pub unsafe extern "C" fn patch_seq_udp_close(stack: Stack) -> Stack {
     unsafe {
         let (stack, socket_val) = pop(stack);
         let socket_id = match socket_val {
-            Value::Int(id) => id as usize,
+            Value::Int(id) if id >= 0 => id as usize,
             _ => return push(stack, Value::Bool(false)),
         };
 
@@ -299,7 +325,9 @@ pub unsafe extern "C" fn patch_seq_udp_close(stack: Stack) -> Stack {
     }
 }
 
-// Public re-exports with short names for internal use.
+// Public re-exports with short names for in-module callers — the
+// `tests` submodule below imports them via `use super::*`. The
+// crate-root re-exports in `lib.rs` are the linker-facing aliases.
 pub use patch_seq_udp_bind as udp_bind;
 pub use patch_seq_udp_close as udp_close;
 pub use patch_seq_udp_receive_from as udp_receive_from;
