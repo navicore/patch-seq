@@ -1550,3 +1550,117 @@ fn test_parse_symbol_special_chars_allowed() {
         _ => panic!("Expected Symbol statement"),
     }
 }
+
+#[test]
+fn test_comment_no_space_after_hash() {
+    // `#xxx` (no space) should be a line comment, just like `# xxx`.
+    // Without this, `#drop` would tokenize as one identifier and fail
+    // word-call validation later.
+    let source = r#"
+: main ( -- Int )
+    #drop drop 0
+    42
+;
+"#;
+
+    let mut parser = Parser::new(source);
+    let program = parser.parse().unwrap();
+    assert_eq!(program.words.len(), 1);
+    assert_eq!(program.words[0].body.len(), 1);
+    assert_eq!(program.words[0].body[0], Statement::IntLiteral(42));
+}
+
+#[test]
+fn test_comment_with_space_after_hash() {
+    // The space variant must continue to work — both forms parse to
+    // the same thing.
+    let source = r#"
+: main ( -- Int )
+    # this is a comment with a space
+    42
+;
+"#;
+
+    let mut parser = Parser::new(source);
+    let program = parser.parse().unwrap();
+    assert_eq!(program.words.len(), 1);
+    assert_eq!(program.words[0].body.len(), 1);
+    assert_eq!(program.words[0].body[0], Statement::IntLiteral(42));
+}
+
+#[test]
+fn test_inline_comment_after_code() {
+    // A `#` mid-line, after real code, ends the line as a comment.
+    let source = r#"
+: main ( -- Int )
+    42 #commented-out drop drop drop
+;
+"#;
+
+    let mut parser = Parser::new(source);
+    let program = parser.parse().unwrap();
+    assert_eq!(program.words[0].body.len(), 1);
+    assert_eq!(program.words[0].body[0], Statement::IntLiteral(42));
+}
+
+#[test]
+fn test_shebang_still_recognized() {
+    // `#!/usr/bin/env seqc` is just `#` followed by tokens until newline,
+    // so the same comment-skipping path handles it. No regression on the
+    // pre-existing shebang support.
+    let source = "#!/usr/bin/env seqc\n: main ( -- Int ) 7 ;\n";
+
+    let mut parser = Parser::new(source);
+    let program = parser.parse().unwrap();
+    assert_eq!(program.words.len(), 1);
+    assert_eq!(program.words[0].name, "main");
+    assert_eq!(program.words[0].body[0], Statement::IntLiteral(7));
+}
+
+#[test]
+fn test_seq_allow_annotation_with_space() {
+    // The canonical `# seq:allow(...)` form (with a space) must keep
+    // working. This guards the parser path explicitly — the existing
+    // `error_flag_lint` tests build the AST directly and don't
+    // exercise tokenization or `skip_comments`.
+    let source = r#"
+# seq:allow(unchecked-list-get)
+: main ( -- Int )
+    99
+;
+"#;
+
+    let mut parser = Parser::new(source);
+    let program = parser.parse().unwrap();
+    assert!(
+        program.words[0]
+            .allowed_lints
+            .contains(&"unchecked-list-get".to_string()),
+        "expected `unchecked-list-get` in allowed_lints (space variant), got {:?}",
+        program.words[0].allowed_lints
+    );
+}
+
+#[test]
+fn test_seq_allow_annotation_no_space() {
+    // `#seq:allow(...)` (no space) must still register the lint
+    // suppression. The annotation has to immediately precede the word
+    // def — that's how `pending_allowed_lints` flushes into the next
+    // `parse_word_def`.
+    let source = r#"
+#seq:allow(unchecked-list-get)
+: main ( -- Int )
+    99
+;
+"#;
+
+    let mut parser = Parser::new(source);
+    let program = parser.parse().unwrap();
+    assert!(
+        program.words[0]
+            .allowed_lints
+            .contains(&"unchecked-list-get".to_string()),
+        "expected `unchecked-list-get` in allowed_lints, got {:?}",
+        program.words[0].allowed_lints
+    );
+}
