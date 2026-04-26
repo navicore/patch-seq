@@ -294,43 +294,29 @@ impl TypeChecker {
         // if either quotation is a still-unresolved type variable, fall back
         // to the placeholder builtin signature so the caller gets *some*
         // shape rather than a hard failure.
-        let then_effect = match &then_quot_type {
-            Type::Quotation(effect) => (**effect).clone(),
-            Type::Closure { effect, .. } => (**effect).clone(),
-            Type::Var(_) => {
-                let effect = self
-                    .lookup_word_effect("if")
-                    .ok_or_else(|| "Unknown word: 'if'".to_string())?;
-                let fresh_effect = self.freshen_effect(&effect);
-                let (result_stack, subst) =
-                    self.apply_effect(&fresh_effect, current_stack, "if", span)?;
+        let then_effect = match self.if_branch_effect(
+            &then_quot_type,
+            "then-branch",
+            current_stack.clone(),
+            span,
+            &line_prefix,
+        )? {
+            IfBranchEffect::Concrete(effect) => effect,
+            IfBranchEffect::Fallback(result_stack, subst) => {
                 return Ok((result_stack, subst, vec![]));
-            }
-            _ => {
-                return Err(format!(
-                    "{}if: expected quotation or closure as then-branch, got {}",
-                    line_prefix, then_quot_type
-                ));
             }
         };
 
-        let else_effect = match &else_quot_type {
-            Type::Quotation(effect) => (**effect).clone(),
-            Type::Closure { effect, .. } => (**effect).clone(),
-            Type::Var(_) => {
-                let effect = self
-                    .lookup_word_effect("if")
-                    .ok_or_else(|| "Unknown word: 'if'".to_string())?;
-                let fresh_effect = self.freshen_effect(&effect);
-                let (result_stack, subst) =
-                    self.apply_effect(&fresh_effect, current_stack, "if", span)?;
+        let else_effect = match self.if_branch_effect(
+            &else_quot_type,
+            "else-branch",
+            current_stack,
+            span,
+            &line_prefix,
+        )? {
+            IfBranchEffect::Concrete(effect) => effect,
+            IfBranchEffect::Fallback(result_stack, subst) => {
                 return Ok((result_stack, subst, vec![]));
-            }
-            _ => {
-                return Err(format!(
-                    "{}if: expected quotation or closure as else-branch, got {}",
-                    line_prefix, else_quot_type
-                ));
             }
         };
 
@@ -394,4 +380,48 @@ impl TypeChecker {
 
         Ok((result_stack, subst, effects))
     }
+
+    /// Resolve a single `if` branch's effect, applying the same
+    /// type-variable fallback strategy used by `dip`/`keep`/`bi`:
+    ///   - Concrete `Quotation` or `Closure` types yield their effect.
+    ///   - Unresolved `Var` types fall back to the placeholder signature
+    ///     so the surrounding word still has *some* inferred shape.
+    ///   - Anything else is a type error pinpointing the offending slot.
+    ///
+    /// `slot_label` is "then-branch" or "else-branch" — used only in
+    /// the error message.
+    fn if_branch_effect(
+        &self,
+        quot_type: &Type,
+        slot_label: &str,
+        current_stack: StackType,
+        span: &Option<crate::ast::Span>,
+        line_prefix: &str,
+    ) -> Result<IfBranchEffect, String> {
+        match quot_type {
+            Type::Quotation(effect) => Ok(IfBranchEffect::Concrete((**effect).clone())),
+            Type::Closure { effect, .. } => Ok(IfBranchEffect::Concrete((**effect).clone())),
+            Type::Var(_) => {
+                let effect = self
+                    .lookup_word_effect("if")
+                    .ok_or_else(|| "Unknown word: 'if'".to_string())?;
+                let fresh_effect = self.freshen_effect(&effect);
+                let (result_stack, subst) =
+                    self.apply_effect(&fresh_effect, current_stack, "if", span)?;
+                Ok(IfBranchEffect::Fallback(result_stack, subst))
+            }
+            other => Err(format!(
+                "{}if: expected quotation or closure as {}, got {}",
+                line_prefix, slot_label, other
+            )),
+        }
+    }
+}
+
+/// Result of resolving an `if` branch's effect — either a concrete
+/// quotation/closure effect to feed into branch unification, or a
+/// caller-must-return placeholder result for the unresolved-var case.
+enum IfBranchEffect {
+    Concrete(crate::types::Effect),
+    Fallback(StackType, Subst),
 }

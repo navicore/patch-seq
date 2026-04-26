@@ -3888,3 +3888,136 @@ fn test_bi_polymorphic_quotations() {
     let mut checker = TypeChecker::new();
     assert!(checker.check_program(&program).is_ok());
 }
+
+// `if`-combinator tests. These exercise `infer_if_combinator` directly
+// (the dynamic-dispatch path) rather than going through the AST
+// normalization pass — `check_program` doesn't run normalization, so a
+// `[Quotation, Quotation, WordCall("if")]` AST reaches the combinator
+// inference path the same way runtime-built quotations would.
+
+#[test]
+fn test_if_combinator_basic() {
+    // : test ( Bool -- Int )  [ 1 ] [ 2 ] if ;
+    let program = Program {
+        includes: vec![],
+        unions: vec![],
+        words: vec![WordDef {
+            name: "test".to_string(),
+            effect: Some(Effect::new(
+                StackType::singleton(Type::Bool),
+                StackType::singleton(Type::Int),
+            )),
+            body: vec![
+                Statement::Quotation {
+                    id: 0,
+                    body: vec![Statement::IntLiteral(1)],
+                    span: None,
+                },
+                Statement::Quotation {
+                    id: 1,
+                    body: vec![Statement::IntLiteral(2)],
+                    span: None,
+                },
+                Statement::WordCall {
+                    name: "if".to_string(),
+                    span: None,
+                },
+            ],
+            source: None,
+            allowed_lints: vec![],
+        }],
+    };
+
+    let mut checker = TypeChecker::new();
+    assert!(checker.check_program(&program).is_ok());
+}
+
+#[test]
+fn test_if_combinator_branch_mismatch() {
+    // : test ( Bool -- ?? )  [ 1 ] [ "string" ] if ;
+    // Should fail: branches produce different output types.
+    let program = Program {
+        includes: vec![],
+        unions: vec![],
+        words: vec![WordDef {
+            name: "test".to_string(),
+            effect: Some(Effect::new(
+                StackType::singleton(Type::Bool),
+                StackType::singleton(Type::Int),
+            )),
+            body: vec![
+                Statement::Quotation {
+                    id: 0,
+                    body: vec![Statement::IntLiteral(1)],
+                    span: None,
+                },
+                Statement::Quotation {
+                    id: 1,
+                    body: vec![Statement::StringLiteral("string".to_string())],
+                    span: None,
+                },
+                Statement::WordCall {
+                    name: "if".to_string(),
+                    span: None,
+                },
+            ],
+            source: None,
+            allowed_lints: vec![],
+        }],
+    };
+
+    let mut checker = TypeChecker::new();
+    let result = checker.check_program(&program);
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(
+        err.contains("incompatible") || err.contains("unify"),
+        "Expected branch-mismatch error, got: {}",
+        err
+    );
+}
+
+#[test]
+fn test_if_combinator_non_bool_condition() {
+    // : test ( Int -- ?? )  [ 1 ] [ 2 ] if ;
+    // Should fail: condition is Int, not Bool.
+    let program = Program {
+        includes: vec![],
+        unions: vec![],
+        words: vec![WordDef {
+            name: "test".to_string(),
+            effect: Some(Effect::new(
+                StackType::singleton(Type::Int),
+                StackType::singleton(Type::Int),
+            )),
+            body: vec![
+                Statement::Quotation {
+                    id: 0,
+                    body: vec![Statement::IntLiteral(1)],
+                    span: None,
+                },
+                Statement::Quotation {
+                    id: 1,
+                    body: vec![Statement::IntLiteral(2)],
+                    span: None,
+                },
+                Statement::WordCall {
+                    name: "if".to_string(),
+                    span: None,
+                },
+            ],
+            source: None,
+            allowed_lints: vec![],
+        }],
+    };
+
+    let mut checker = TypeChecker::new();
+    let result = checker.check_program(&program);
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(
+        err.contains("Bool") || err.contains("condition"),
+        "Expected non-Bool condition error, got: {}",
+        err
+    );
+}

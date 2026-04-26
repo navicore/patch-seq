@@ -197,6 +197,33 @@ ok? [
 ] if
 ```
 
+## When `when` / `unless` aren't enough
+
+Rule 2 prefers `cond [ A ] when` for one-armed conditionals, and that's
+the right call when `A` is a simple stack-shape-preserving body. Two
+edge cases force you back to the explicit `cond [ A ] [ ] if` form:
+
+1. **Divergent branches.** A body that recurses into a non-returning
+   loop (`store-loop`, `district-loop`, etc.) doesn't have effect
+   `( ..a -- ..a )` — it has effect `( ..a -- ⊥ )`. `when`'s declared
+   signature requires the strict identity, so the typechecker rejects
+   the divergent body. Use `cond [ recurse-forever ] [ ] if` instead;
+   the literal-quotation form lowers to `Statement::If`, which has
+   first-class divergent-branch handling.
+
+2. **`>aux` / `aux>` inside the body.** The aux frame is allocated per
+   *quotation*, but `when`'s declared body type doesn't carry enough
+   information for the typechecker to verify aux usage end-to-end at
+   the call site. Migrating `cond if x >aux ... aux> then` to
+   `cond [ x >aux ... aux> ] when` will surface as
+   `>aux: cannot pop from polymorphic stack`. Rewrite as
+   `cond [ x >aux ... aux> ] [ ] if` and the AST normalization pass
+   inlines the body into the surrounding word's aux slot table, where
+   it typechecks as written.
+
+These caveats apply to `unless` too. They don't apply to two-armed
+`if` calls — those always use Rule 1 and inline cleanly.
+
 ## What does NOT change
 
 - **`match`** and `union` definitions — untouched.

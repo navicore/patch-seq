@@ -126,3 +126,25 @@ include std:control
   false [ const-7 ] [ const-13 ] pick-via-arg
   13 test.assert-eq
 ;
+
+# --------------------------------------------------------------------------
+# Yield-bearing branches
+# --------------------------------------------------------------------------
+# `if` accepts branches whose bodies yield (e.g. `chan.send` /
+# `chan.receive`). This matches the keyword form's behaviour and
+# protects the literal-quotation lowering path from regressing into
+# dip/keep/bi's stricter "no Yield in branches" rule.
+
+: test-if-yield-branch ( -- )
+  # Confirm an `if` branch can contain a yielding operation. The
+  # literal-quotation triple is lowered to `Statement::If`, which
+  # accepts Yield-bearing branches — matching the keyword form's
+  # behaviour and unlike `dip`/`keep`/`bi` which reject Yield.
+  # `chan.yield` is the cooperative scheduler yield, no channel
+  # state needed.
+  true  [ chan.yield 1 ] [ chan.yield 2 ] if
+  1 test.assert-eq
+
+  false [ chan.yield 1 ] [ chan.yield 2 ] if
+  2 test.assert-eq
+;

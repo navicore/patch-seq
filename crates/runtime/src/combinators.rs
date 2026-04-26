@@ -110,12 +110,18 @@ pub unsafe extern "C" fn patch_seq_if(stack: Stack) -> Stack {
         match cond {
             Value::Bool(true) => invoke_callable(stack, &then_quot),
             Value::Bool(false) => invoke_callable(stack, &else_quot),
+            // Defense-in-depth: the typechecker enforces that `if`'s
+            // condition is Bool, so this arm is unreachable from
+            // type-correct programs. We panic rather than silently
+            // dispatch in case a runtime path slips past — analogous
+            // to how `dip`/`keep`/`bi` handle their own invariants.
             other => panic!("if: expected Bool condition, got {:?}", other),
         }
     }
 }
 
-// Public re-exports with short names for internal use
+// Public re-exports with short names for internal use.
+// `if_combinator` rather than `if` because `if` is a Rust keyword.
 pub use patch_seq_bi as bi;
 pub use patch_seq_dip as dip;
 pub use patch_seq_if as if_combinator;

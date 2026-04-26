@@ -22,6 +22,7 @@
 # --------------------------------------------------------------------------
 # when — run quotation only when condition is true
 # --------------------------------------------------------------------------
+# Push an empty quotation as the else-branch and dispatch through `if`.
 : when ( ..a Bool [ ..a -- ..a ] -- ..a )
   [ ] if
 ;
@@ -29,6 +30,11 @@
 # --------------------------------------------------------------------------
 # unless — run quotation only when condition is false
 # --------------------------------------------------------------------------
+# Stack at entry: ( ..a Bool quot ). We push `[ ]` (empty quotation),
+# then `swap` so the layout becomes ( ..a Bool [ ] quot ) — i.e. the
+# user's quotation is now the else-branch. `if` then runs the user's
+# quotation when the Bool is false, and the empty quotation (no-op)
+# when true.
 : unless ( ..a Bool [ ..a -- ..a ] -- ..a )
   [ ] swap if
 ;
