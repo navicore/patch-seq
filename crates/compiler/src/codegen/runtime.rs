@@ -26,6 +26,7 @@ mod stdio;
 mod tcp;
 mod test_time;
 mod text;
+mod udp;
 
 use super::error::CodeGenError;
 use std::collections::HashMap;
@@ -53,6 +54,7 @@ pub static RUNTIME_DECLARATIONS: LazyLock<Vec<&'static RuntimeDecl>> = LazyLock:
         fs::DECLS,
         collections::DECLS,
         tcp::DECLS,
+        udp::DECLS,
         os::DECLS,
         text::DECLS,
         adt::DECLS,
@@ -79,6 +81,7 @@ pub static BUILTIN_SYMBOLS: LazyLock<HashMap<&'static str, &'static str>> = Lazy
         callable::SYMBOLS,
         closure::SYMBOLS,
         tcp::SYMBOLS,
+        udp::SYMBOLS,
         os::SYMBOLS,
         text::SYMBOLS,
         misc::SYMBOLS,

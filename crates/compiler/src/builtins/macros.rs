@@ -155,6 +155,14 @@ macro_rules! builtin {
     ($sigs:ident, $name:expr, (a $i1:tt -- a $o1:tt $o2:tt)) => {
         $sigs.insert($name.to_string(), Effect::new(stack!(a $i1), stack!(a $o1 $o2)));
     };
+    // (a T -- a U V W)
+    ($sigs:ident, $name:expr, (a $i1:tt -- a $o1:tt $o2:tt $o3:tt)) => {
+        $sigs.insert($name.to_string(), Effect::new(stack!(a $i1), stack!(a $o1 $o2 $o3)));
+    };
+    // (a T -- a U V W X)
+    ($sigs:ident, $name:expr, (a $i1:tt -- a $o1:tt $o2:tt $o3:tt $o4:tt)) => {
+        $sigs.insert($name.to_string(), Effect::new(stack!(a $i1), stack!(a $o1 $o2 $o3 $o4)));
+    };
     // (a T U -- a)
     ($sigs:ident, $name:expr, (a $i1:tt $i2:tt -- a)) => {
         $sigs.insert($name.to_string(), Effect::new(stack!(a $i1 $i2), stack!(a)));

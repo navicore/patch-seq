@@ -42,6 +42,7 @@ pub mod tcp_test;
 pub mod terminal;
 pub mod test;
 pub mod time_ops;
+pub mod udp;
 pub mod variant_ops;
 pub mod watchdog;
 pub mod weave;
@@ -247,6 +248,12 @@ pub use tcp::{
     patch_seq_tcp_accept as tcp_accept, patch_seq_tcp_close as tcp_close,
     patch_seq_tcp_listen as tcp_listen, patch_seq_tcp_read as tcp_read,
     patch_seq_tcp_write as tcp_write,
+};
+
+// UDP operations (exported for LLVM linking)
+pub use udp::{
+    patch_seq_udp_bind as udp_bind, patch_seq_udp_close as udp_close,
+    patch_seq_udp_receive_from as udp_receive_from, patch_seq_udp_send_to as udp_send_to,
 };
 
 // OS operations (exported for LLVM linking)
