@@ -1583,6 +1583,7 @@ fn test_comment_with_space_after_hash() {
 
     let mut parser = Parser::new(source);
     let program = parser.parse().unwrap();
+    assert_eq!(program.words.len(), 1);
     assert_eq!(program.words[0].body.len(), 1);
     assert_eq!(program.words[0].body[0], Statement::IntLiteral(42));
 }
@@ -1614,6 +1615,30 @@ fn test_shebang_still_recognized() {
     assert_eq!(program.words.len(), 1);
     assert_eq!(program.words[0].name, "main");
     assert_eq!(program.words[0].body[0], Statement::IntLiteral(7));
+}
+
+#[test]
+fn test_seq_allow_annotation_with_space() {
+    // The canonical `# seq:allow(...)` form (with a space) must keep
+    // working. This guards the parser path explicitly — the existing
+    // `error_flag_lint` tests build the AST directly and don't
+    // exercise tokenization or `skip_comments`.
+    let source = r#"
+# seq:allow(unchecked-list-get)
+: main ( -- Int )
+    99
+;
+"#;
+
+    let mut parser = Parser::new(source);
+    let program = parser.parse().unwrap();
+    assert!(
+        program.words[0]
+            .allowed_lints
+            .contains(&"unchecked-list-get".to_string()),
+        "expected `unchecked-list-get` in allowed_lints (space variant), got {:?}",
+        program.words[0].allowed_lints
+    );
 }
 
 #[test]

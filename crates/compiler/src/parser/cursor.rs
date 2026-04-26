@@ -29,8 +29,11 @@ impl Parser {
                     self.advance(); // skip newline
                 }
 
-                // Join parts and check for seq:allow annotation
+                // Join parts and check for seq:allow annotation.
                 // Format: # seq:allow(lint-id) -> parts = ["seq", ":", "allow", "(", "lint-id", ")"]
+                // The empty-string join works because lint IDs are
+                // [a-z0-9-]+ — no whitespace or special chars that would
+                // otherwise need separator preservation.
                 let comment = comment_parts.join("");
                 if let Some(lint_id) = comment
                     .strip_prefix("seq:allow(")
