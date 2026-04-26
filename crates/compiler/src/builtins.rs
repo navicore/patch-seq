@@ -26,6 +26,7 @@ mod os;
 mod stack;
 mod tcp;
 mod text;
+mod udp;
 
 #[cfg(test)]
 mod tests;
@@ -52,6 +53,7 @@ static BUILTIN_SIGNATURES: LazyLock<HashMap<String, Effect>> = LazyLock::new(|| 
     concurrency::add_signatures(&mut sigs);
     callable::add_signatures(&mut sigs);
     tcp::add_signatures(&mut sigs);
+    udp::add_signatures(&mut sigs);
     os::add_signatures(&mut sigs);
     text::add_signatures(&mut sigs);
     adt::add_signatures(&mut sigs);
@@ -81,6 +83,7 @@ static BUILTIN_DOCS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::n
     concurrency::add_docs(&mut docs);
     callable::add_docs(&mut docs);
     tcp::add_docs(&mut docs);
+    udp::add_docs(&mut docs);
     os::add_docs(&mut docs);
     text::add_docs(&mut docs);
     adt::add_docs(&mut docs);

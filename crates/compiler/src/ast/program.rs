@@ -244,6 +244,11 @@ impl Program {
             "tcp.read",
             "tcp.write",
             "tcp.close",
+            // UDP operations
+            "udp.bind",
+            "udp.send-to",
+            "udp.receive-from",
+            "udp.close",
             // OS operations
             "os.getenv",
             "os.home-dir",
