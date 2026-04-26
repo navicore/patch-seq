@@ -206,7 +206,13 @@ pub(super) fn tokenize(source: &str) -> Vec<Token> {
             } else {
                 col += 1;
             }
-        } else if "():;[]{},".contains(ch) {
+        } else if "():;[]{},#".contains(ch) {
+            // `#` is split out so that `#comment` (no space) tokenizes as
+            // `#` + `comment` and the parser's `skip_comments` consumes
+            // it as a line comment, matching Python/Bash/Ruby behaviour.
+            // Without this split, `#comment` would accumulate into a
+            // single identifier-shaped token and reach the parser as an
+            // undefined word call.
             if !current.is_empty() {
                 tokens.push(Token::new(
                     current.clone(),

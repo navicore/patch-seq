@@ -5,17 +5,19 @@ use super::{Parser, Token};
 impl Parser {
     pub(super) fn skip_comments(&mut self) {
         loop {
-            // Check for comment: either standalone "#" or token starting with "#"
-            // The latter handles shebangs like "#!/usr/bin/env seqc"
+            // The tokenizer splits `#` as a standalone token (alongside
+            // `()[]{},;:`), so any `#`-introduced line comment — with or
+            // without a space, including `#!shebang` lines — appears here
+            // as a `"#"` token followed by zero-or-more tokens until the
+            // next newline. We consume them all.
             let is_comment = if self.is_at_end() {
                 false
             } else {
-                let tok = self.current();
-                tok == "#" || tok.starts_with("#!")
+                self.current() == "#"
             };
 
             if is_comment {
-                self.advance(); // consume # or shebang token
+                self.advance(); // consume the `#` token
 
                 // Collect all tokens until newline to reconstruct the comment text
                 let mut comment_parts: Vec<String> = Vec::new();
