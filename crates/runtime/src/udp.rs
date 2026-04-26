@@ -26,7 +26,7 @@
 use crate::stack::{Stack, pop, push};
 use crate::value::Value;
 use may::net::UdpSocket;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 // Maximum number of concurrent sockets to prevent unbounded growth.
 // Same cap as `tcp.rs`.
@@ -46,13 +46,30 @@ const MAX_READ_SIZE: usize = 65_536;
 
 // Socket registry with ID reuse via free list.
 //
-// This is a deliberate copy of the registry in `tcp.rs`. The two will
-// be lifted into a shared `socket_registry` module once both are
-// landed and the right abstraction shape is obvious — TCP has a
-// listener/stream split and UDP doesn't, so forcing a generic
-// abstraction now risks the wrong shape.
+// Slots hold `Arc<UdpSocket>` rather than the socket directly. Reasons:
+//
+// - `may::net::UdpSocket`'s I/O methods (`send_to`, `recv_from`,
+//   `local_addr`) all take `&self`, so multiple `Arc` clones across
+//   strands are safe without any further synchronisation.
+//
+// - I/O paths clone the `Arc` out of the registry under the lock, then
+//   drop the lock before doing the syscall. This is what the previous
+//   `take()`-and-restore pattern was reaching for, but with `Arc` we
+//   avoid the close-vs-in-flight race: `close` simply sets the slot to
+//   `None` (and frees the id) regardless of whether other strands
+//   currently hold an `Arc` clone. The in-flight strand's clone keeps
+//   the OS socket alive until its `recv_from` / `send_to` returns; the
+//   OS-level close only happens when the last `Arc` drops.
+//
+// - The id bookkeeping is now correct under all races: every successful
+//   `close` pushes the id to `free_ids`, even if the slot was being
+//   used for I/O.
+//
+// `tcp.rs` keeps the take-and-restore pattern because `TcpStream::read`
+// is `&mut self` — multiple strands cannot share a TcpStream the same
+// way. UDP's `&self`-only API is what makes the cleaner shape possible.
 struct SocketRegistry<T> {
-    sockets: Vec<Option<T>>,
+    sockets: Vec<Option<Arc<T>>>,
     free_ids: Vec<usize>,
 }
 
@@ -65,6 +82,7 @@ impl<T> SocketRegistry<T> {
     }
 
     fn allocate(&mut self, socket: T) -> Result<i64, &'static str> {
+        let socket = Arc::new(socket);
         if let Some(id) = self.free_ids.pop() {
             self.sockets[id] = Some(socket);
             return Ok(id as i64);
@@ -77,17 +95,26 @@ impl<T> SocketRegistry<T> {
         Ok(id as i64)
     }
 
-    fn get_mut(&mut self, id: usize) -> Option<&mut Option<T>> {
-        self.sockets.get_mut(id)
+    /// Clone the `Arc` out of the slot so the caller can do I/O after
+    /// dropping the registry lock. Returns `None` if the slot is empty
+    /// (handle invalid, out of range, or already closed).
+    fn checkout(&self, id: usize) -> Option<Arc<T>> {
+        self.sockets.get(id).and_then(|slot| slot.clone())
     }
 
-    fn free(&mut self, id: usize) {
+    /// Drop the slot's `Arc`. Returns whether the slot held a socket
+    /// (i.e. whether the close had any effect). Idempotent: a second
+    /// close on the same id returns `false`. Independent of any
+    /// in-flight I/O — those strands hold their own `Arc` clones.
+    fn free(&mut self, id: usize) -> bool {
         if let Some(slot) = self.sockets.get_mut(id)
             && slot.is_some()
         {
             *slot = None;
             self.free_ids.push(id);
+            return true;
         }
+        false
     }
 }
 
@@ -190,10 +217,13 @@ pub unsafe extern "C" fn patch_seq_udp_send_to(stack: Stack) -> Stack {
             _ => return push(stack, Value::Bool(false)),
         };
 
-        // Pull the socket out of the registry so we don't hold the lock during I/O.
+        // Clone the Arc<UdpSocket> out of the registry. We don't hold
+        // the lock across the syscall, and a concurrent `close` is
+        // free to drop the registry's slot reference — our clone keeps
+        // the socket alive for the duration of this send.
         let socket = {
-            let mut sockets = SOCKETS.lock().unwrap();
-            match sockets.get_mut(socket_id).and_then(|slot| slot.take()) {
+            let sockets = SOCKETS.lock().unwrap();
+            match sockets.checkout(socket_id) {
                 Some(s) => s,
                 None => return push(stack, Value::Bool(false)),
             }
@@ -201,15 +231,6 @@ pub unsafe extern "C" fn patch_seq_udp_send_to(stack: Stack) -> Stack {
 
         let addr = format!("{}:{}", host.as_str(), port);
         let result = socket.send_to(bytes.as_str().as_bytes(), &addr);
-
-        // Restore the socket regardless of send result.
-        {
-            let mut sockets = SOCKETS.lock().unwrap();
-            if let Some(slot) = sockets.get_mut(socket_id) {
-                *slot = Some(socket);
-            }
-        }
-
         push(stack, Value::Bool(result.is_ok()))
     }
 }
@@ -233,9 +254,13 @@ pub unsafe extern "C" fn patch_seq_udp_receive_from(stack: Stack) -> Stack {
             _ => return push_receive_failure(stack),
         };
 
+        // Clone the Arc<UdpSocket> out of the registry. The receive
+        // strand keeps the socket alive even if another strand closes
+        // the handle while we're in `recv_from`. When close drops the
+        // registry's clone and ours returns, the OS-level close fires.
         let socket = {
-            let mut sockets = SOCKETS.lock().unwrap();
-            match sockets.get_mut(socket_id).and_then(|slot| slot.take()) {
+            let sockets = SOCKETS.lock().unwrap();
+            match sockets.checkout(socket_id) {
                 Some(s) => s,
                 None => return push_receive_failure(stack),
             }
@@ -243,13 +268,6 @@ pub unsafe extern "C" fn patch_seq_udp_receive_from(stack: Stack) -> Stack {
 
         let mut buffer = vec![0u8; MAX_READ_SIZE];
         let recv_result = socket.recv_from(&mut buffer);
-
-        {
-            let mut sockets = SOCKETS.lock().unwrap();
-            if let Some(slot) = sockets.get_mut(socket_id) {
-                *slot = Some(socket);
-            }
-        }
 
         let (size, src) = match recv_result {
             Ok(pair) => pair,
@@ -282,23 +300,17 @@ unsafe fn push_receive_failure(stack: Stack) -> Stack {
 ///
 /// Stack effect: ( socket -- Bool )
 ///
-/// Returns `true` if the socket existed (and is now closed), `false`
-/// if the handle was already invalid.
+/// Returns `true` if the handle was open (the registry slot held a
+/// socket), `false` if it was already invalid (never allocated, or
+/// previously closed). Idempotent across redundant calls on the same
+/// id.
 ///
-/// ## Race with in-flight I/O
-///
-/// `send_to` and `receive_from` use a take-and-restore pattern: they
-/// remove the socket from the registry while running I/O, so the
-/// registry lock isn't held across syscalls. If a strand calls
-/// `close` on a handle whose socket is currently *taken* by another
-/// strand's in-flight I/O, the slot looks empty (`is_some()` is
-/// `false`), and `close` returns `false` as if the handle were
-/// invalid — even though the I/O strand will restore the socket
-/// moments later. This matches `tcp_close`'s behaviour and is
-/// considered acceptable for the current concurrency model: callers
-/// shouldn't be racing close against I/O on the same handle. If we
-/// ever support that pattern, the registry needs a richer state
-/// machine (taken-but-marked-for-close).
+/// Concurrent I/O is safe: any strand mid-`send_to` / `recv_from`
+/// holds its own `Arc<UdpSocket>` clone, so closing the registry slot
+/// from another strand only drops the registry's reference. The
+/// in-flight syscall completes; the OS-level close fires when the
+/// last `Arc` is dropped. The id is recycled to the free list as
+/// soon as `close` returns, regardless of any in-flight strand.
 ///
 /// # Safety
 /// Stack must have an Int (socket) on top.
@@ -312,15 +324,7 @@ pub unsafe extern "C" fn patch_seq_udp_close(stack: Stack) -> Stack {
         };
 
         let mut sockets = SOCKETS.lock().unwrap();
-        let existed = sockets
-            .get_mut(socket_id)
-            .map(|slot| slot.is_some())
-            .unwrap_or(false);
-
-        if existed {
-            sockets.free(socket_id);
-        }
-
+        let existed = sockets.free(socket_id);
         push(stack, Value::Bool(existed))
     }
 }

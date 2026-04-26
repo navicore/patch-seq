@@ -17,8 +17,11 @@ even if the music POC fails.
 - **TCP API stays unchanged.** UDP is purely additive.
 - **Mirror `tcp.*` shape.** Sockets are `Int` handles in a registry;
   every operation returns a success `Bool` on top so callers can
-  `[ ... ] [ ... ] if`. Same `MAX_SOCKETS = 10_000` and per-datagram
-  `MAX_READ_SIZE = 1 MB` caps as `tcp.*`.
+  `[ ... ] [ ... ] if`. Same `MAX_SOCKETS = 10_000` cap as `tcp.*`.
+  `MAX_READ_SIZE = 65_536` (the next power of two above the IPv4 UDP
+  ceiling of 65,507 bytes). Intentionally diverges from TCP's 1 MB
+  streaming-read cap — UDP is one-datagram-per-call, so anything
+  larger cannot arrive on the wire.
 - **Strands must yield while waiting on `recv_from`.** Use
   `may::net::UdpSocket` for coroutine-aware blocking, same pattern
   `tcp.read` uses today.
