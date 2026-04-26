@@ -9,16 +9,16 @@ include "test-include-helper"
 : main ( -- Int )
   # Test included word
   3 4 included-add
-  dup 7 i.= not if
+  dup 7 i.= not [
     drop "FAIL: included-add" io.write-line 1
-  else
+  ] [
     drop
     # Test included constant
     included-value
-    dup 42 i.= not if
+    dup 42 i.= not [
       drop "FAIL: included-value" io.write-line 1
-    else
+    ] [
       drop "PASS: include system" io.write-line 0
-    then
-  then
+    ] if
+  ] if
 ;

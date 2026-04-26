@@ -4,12 +4,12 @@
 include std:list
 
 : push-n ( List Int -- List )
-  dup 0 i.<= if
+  dup 0 i.<= [
     drop
-  else
+  ] [
     dup rot swap lv swap
     1 i.- push-n
-  then
+  ] if
 ;
 
 # push-n pushes N, N-1, ..., 1. So index 0 = N, index N-1 = 1.

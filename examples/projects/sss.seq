@@ -39,7 +39,6 @@
 
 include std:list
 include std:loops
-
 # ============================================================================
 #                       GF(256) Finite Field Arithmetic
 # ============================================================================
@@ -48,32 +47,32 @@ include std:loops
 : gf256-sub ( Int Int -- Int )  bxor ;
 
 : gf256-mul-loop ( Int Int Int -- Int )
-  over 0 i.= if
+  over 0 i.= [
     nip nip
-  else
-    over 1 band 0 i.<> if
+  ] [
+    over 1 band 0 i.<> [
       >aux over aux> bxor
-    then
+    ] [ ] if
     rot 1 shl
-    dup 0x100 band 0 i.<> if 0x11B bxor then
+    dup 0x100 band 0 i.<> [ 0x11B bxor ] [ ] if
     rot rot
     swap 1 shr swap
     gf256-mul-loop
-  then
+  ] if
 ;
 
 : gf256-mul ( Int Int -- Int )  0 gf256-mul-loop ;
 
 : gf256-inv-loop ( Int Int Int -- Int )
-  dup 0 i.<= if
+  dup 0 i.<= [
     drop nip
-  else
+  ] [
     1 i.-
     swap dup gf256-mul
     rot dup >aux gf256-mul
     aux> swap rot
     gf256-inv-loop
-  then
+  ] if
 ;
 
 : gf256-inv ( Int -- Int )
@@ -101,25 +100,25 @@ include std:loops
 # ============================================================================
 
 : make-random-poly-loop ( List Int -- List )
-  dup 0 i.<= if
+  dup 0 i.<= [
     drop
-  else
+  ] [
     1 i.-
     swap 0 256 crypto.random-int lv swap
     make-random-poly-loop
-  then
+  ] if
 ;
 
 : make-random-poly ( Int Int -- List )
   swap list-of swap lv
   swap
-  dup 1 i.<= if
+  dup 1 i.<= [
     drop
-  else
+  ] [
     2 i.-
     make-random-poly-loop
     1 256 crypto.random-int lv
-  then
+  ] if
 ;
 
 # ============================================================================
@@ -127,15 +126,15 @@ include std:loops
 # ============================================================================
 
 : split-byte-loop ( List Int Int List -- List )
-  over 3 pick i.> if
+  over 3 pick i.> [
     nip nip nip
-  else
+  ] [
     3 pick 2 pick eval-poly
     2 pick 8 shl bor
     lv
     swap 1 i.+ swap
     split-byte-loop
-  then
+  ] if
 ;
 
 : split-byte ( Int Int Int -- List )
@@ -151,15 +150,15 @@ include std:loops
 : lagrange-basis-fold-step ( Int Int Int -- Int )
   >aux
   dup aux> dup >aux
-  i.= if
+  i.= [
     drop
-  else
+  ] [
     dup
     aux> dup >aux
     bxor
     gf256-div
     gf256-mul
-  then
+  ] if
   aux> drop
 ;
 
@@ -208,14 +207,14 @@ include std:loops
 # ============================================================================
 
 : str-to-bytes-loop ( String Int List -- List )
-  over 3 pick string.length i.>= if
+  over 3 pick string.length i.>= [
     nip nip
-  else
+  ] [
     2 pick 2 pick string.char-at
     lv
     swap 1 i.+ swap
     str-to-bytes-loop
-  then
+  ] if
 ;
 
 : str-to-bytes ( String -- List )
@@ -299,17 +298,17 @@ include std:loops
 ;
 
 : verify-eq-loop ( List List Int -- Bool )
-  1 pick list.length over i.<= if
+  1 pick list.length over i.<= [
     drop drop drop true
-  else
+  ] [
     2 pick over list.get drop
     2 pick 2 pick list.get drop
-    i.<> if
+    i.<> [
       drop drop drop false
-    else
+    ] [
       1 i.+ verify-eq-loop
-    then
-  then
+    ] if
+  ] if
 ;
 
 # ============================================================================
@@ -334,22 +333,22 @@ include std:loops
   dup list-of 0 lv 2 lv 4 lv select-shares
   lagrange-at-zero
   dup int->string "Recovered byte: " show
-  42 i.= if
+  42 i.= [
     "SUCCESS — matches original!" io.write-line
-  else
+  ] [
     "MISMATCH!" io.write-line
-  then
+  ] if
   "" io.write-line
 
   "Reconstructing from shares x=2, x=4, x=5..." io.write-line
   dup list-of 1 lv 3 lv 4 lv select-shares
   lagrange-at-zero
   dup int->string "Recovered byte: " show
-  42 i.= if
+  42 i.= [
     "SUCCESS — also matches!" io.write-line
-  else
+  ] [
     "MISMATCH!" io.write-line
-  then
+  ] if
   "" io.write-line
 
   "With only 2 shares (below threshold of 3):" io.write-line
@@ -379,11 +378,11 @@ include std:loops
 
   list-of 72 lv 101 lv 108 lv 108 lv 111 lv
   0 verify-eq-loop
-  if
+  [
     "SUCCESS — secret recovered!" io.write-line
-  else
+  ] [
     "MISMATCH!" io.write-line
-  then
+  ] if
   drop
   "" io.write-line
 

@@ -16,61 +16,61 @@
 # Extract a string field from response map, with error handling
 : get-string-field ( Map String -- String Bool )
   map.get
-  if
+  [
     true
-  else
+  ] [
     drop "" false
-  then
+  ] if
 ;
 
 # Extract an int field from response map, with error handling
 : get-int-field ( Map String -- Int Bool )
   map.get
-  if
+  [
     true
-  else
+  ] [
     drop 0 false
-  then
+  ] if
 ;
 
 # Extract the boolean "ok" field
 : get-ok ( Map -- Bool Bool )
   "ok" map.get
-  if
+  [
     true
-  else
+  ] [
     drop false false
-  then
+  ] if
 ;
 
 # Show status code from response map
 : show-status ( Map -- )
   "status" get-int-field
-  if
+  [
     "Status: " show-int
-  else
+  ] [
     drop "Status field missing" io.write-line
-  then
+  ] if
 ;
 
 # Show body size from response map
 : show-body-size ( Map -- )
   "body" get-string-field
-  if
+  [
     string.length int->string " bytes received" string.concat io.write-line
-  else
+  ] [
     drop "Body field missing" io.write-line
-  then
+  ] if
 ;
 
 # Show error message from response map
 : show-error ( Map -- )
   "error" get-string-field
-  if
+  [
     "Error: " show
-  else
+  ] [
     drop "Unknown error" io.write-line
-  then
+  ] if
 ;
 
 # Handle successful HTTP response (ok=true)
@@ -87,15 +87,15 @@
 # Handle HTTP response with proper error checking
 : handle-response ( Map -- )
   dup get-ok
-  if
-    if
+  [
+    [
       handle-success
-    else
+    ] [
       handle-failure
-    then
-  else
+    ] if
+  ] [
     drop drop "Response missing 'ok' field" io.write-line
-  then
+  ] if
 ;
 
 # Simple GET request
@@ -115,22 +115,22 @@
   "https://httpbin.org/status/404" http.get
 
   dup get-ok
-  if
-    if
+  [
+    [
       "Unexpected success" io.write-line
       drop
-    else
+    ] [
       dup show-status
       dup "error" map.has?
-      if
+      [
         show-error
-      else
+      ] [
         drop
-      then
-    then
-  else
+      ] if
+    ] if
+  ] [
     drop drop "Response missing 'ok' field" io.write-line
-  then
+  ] if
 
   "" io.write-line
 ;
@@ -150,15 +150,15 @@
 # Handle status-only response (no body needed)
 : handle-status-response ( Map -- )
   dup get-ok
-  if
-    if
+  [
+    [
       show-status
-    else
+    ] [
       handle-failure
-    then
-  else
+    ] if
+  ] [
     drop drop "Response missing 'ok' field" io.write-line
-  then
+  ] if
 ;
 
 # PUT to update a resource
@@ -191,17 +191,17 @@
   "http://192.0.2.1:12345/test" http.get
 
   dup get-ok
-  if
-    if
+  [
+    [
       "Unexpected success" io.write-line
       drop
-    else
+    ] [
       dup show-status
       show-error
-    then
-  else
+    ] if
+  ] [
     drop drop "Response missing 'ok' field" io.write-line
-  then
+  ] if
 
   "" io.write-line
 ;

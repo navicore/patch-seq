@@ -21,6 +21,7 @@ static STDLIB: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| 
     m.insert("signal", include_str!("../stdlib/signal.seq"));
     m.insert("zipper", include_str!("../stdlib/zipper.seq"));
     m.insert("loops", include_str!("../stdlib/loops.seq"));
+    m.insert("control", include_str!("../stdlib/control.seq"));
     m
 });
 
@@ -59,6 +60,14 @@ mod tests {
         assert!(content.contains("times"));
         assert!(content.contains("each-integer"));
         assert!(content.contains("integer-fold"));
+    }
+
+    #[test]
+    fn test_control_stdlib_exists() {
+        assert!(has_stdlib("control"));
+        let content = get_stdlib("control").unwrap();
+        assert!(content.contains("when"));
+        assert!(content.contains("unless"));
     }
 
     #[test]

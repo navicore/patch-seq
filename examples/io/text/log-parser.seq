@@ -13,26 +13,26 @@
   "=== Pattern Matching ===" io.write-line
   "[2024-01-15 10:23:45] INFO  - User login"
   "\\d{4}-\\d{2}-\\d{2}" regex.match?
-  if "  Has date pattern: true" io.write-line
-  else "  Has date pattern: false" io.write-line
-  then
+  [ "  Has date pattern: true" io.write-line
+  ] [ "  Has date pattern: false" io.write-line
+  ] if
 
   "[2024-01-15 10:23:45] ERROR - Failed"
   "ERROR" regex.match?
-  if "  Is error log: true" io.write-line
-  else "  Is error log: false" io.write-line
-  then
+  [ "  Is error log: true" io.write-line
+  ] [ "  Is error log: false" io.write-line
+  ] if
   "" io.write-line
 
   # Demo 2: Find first match
   "=== Finding Matches ===" io.write-line
   "Order #42 shipped on 2024-01-15"
   "[0-9]+" regex.find
-  if
+  [
     "  First number found: " swap string.concat io.write-line
-  else
+  ] [
     drop "  No number found" io.write-line
-  then
+  ] if
   "" io.write-line
 
   # Demo 3: Find all matches
@@ -47,16 +47,16 @@
   # Demo 4: Capture groups
   "=== Capture Groups ===" io.write-line
   "2024-01-15" "(\\d{4})-(\\d{2})-(\\d{2})" regex.captures
-  if
+  [
     dup 0 list.get drop
     "  Year: " swap string.concat io.write-line
     dup 1 list.get drop
     "  Month: " swap string.concat io.write-line
     2 list.get drop
     "  Day: " swap string.concat io.write-line
-  else
+  ] [
     drop "  No match" io.write-line
-  then
+  ] if
   "" io.write-line
 
   # Demo 5: Replace operations

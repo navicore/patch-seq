@@ -65,11 +65,11 @@
   # Compare using constant-time comparison (prevents timing attacks)
   crypto.constant-time-eq
 
-  if
+  [
     "Webhook signature VALID" io.write-line
-  else
+  ] [
     "Webhook signature INVALID!" io.write-line
-  then
+  ] if
 
   "" io.write-line
 ;
@@ -148,20 +148,20 @@
   # Stack: [key, message]
   over crypto.aes-gcm-encrypt
   # Stack: [key, ciphertext, bool]
-  if
+  [
     dup "  Encrypted: " show
     # Stack: [key, ciphertext]
     # Decrypt with same key - need (ciphertext, key)
     swap crypto.aes-gcm-decrypt
     # Stack: [plaintext, bool]
-    if
+    [
       "  Decrypted: " show
-    else
+    ] [
       drop "  Decryption failed" io.write-line
-    then
-  else
+    ] if
+  ] [
     drop drop "  Encryption failed" io.write-line
-  then
+  ] if
 
   "" io.write-line
 ;
@@ -174,7 +174,7 @@
   # Derive a key from a password
   "user-password" "unique-salt-123" 100000 crypto.pbkdf2-sha256
   # Stack: [key, bool]
-  if
+  [
     dup "Derived key: " show
     # Stack: [key]
 
@@ -183,24 +183,24 @@
     # Stack: [key, message]
     over crypto.aes-gcm-encrypt
     # Stack: [key, ciphertext, bool]
-    if
+    [
       dup "  Encrypted with derived key: " show
       # Stack: [key, ciphertext]
 
       # Decrypt - need (ciphertext, key)
       swap crypto.aes-gcm-decrypt
       # Stack: [plaintext, bool]
-      if
+      [
         "  Decrypted: " show
-      else
+      ] [
         drop "  Decryption failed" io.write-line
-      then
-    else
+      ] if
+    ] [
       drop drop "  Encryption failed" io.write-line
-    then
-  else
+    ] if
+  ] [
     drop "  Key derivation failed" io.write-line
-  then
+  ] if
 
   "" io.write-line
 ;
@@ -222,21 +222,21 @@
   # Stack: public-key private-key message
   swap crypto.ed25519-sign
   # Stack: public-key signature success
-  if
+  [
     dup "  Signature: " show
     # Stack: public-key signature
 
     # Verify the signature
     swap "This is an important message that needs authentication." rot rot
     crypto.ed25519-verify
-    if
+    [
       "  Verification: VALID" io.write-line
-    else
+    ] [
       "  Verification: INVALID" io.write-line
-    then
-  else
+    ] if
+  ] [
     drop drop "  Signing failed" io.write-line
-  then
+  ] if
 
   "" io.write-line
 ;

@@ -7,24 +7,24 @@
 
 : factorial-acc ( Int Int -- Int )
   over 0 i.<=
-  if
+  [
     nip
-  else
+  ] [
     over i.*
     swap 1 i.- swap
     factorial-acc
-  then
+  ] if
 ;
 
 # Fibonacci - not tail recursive
 : fib ( Int -- Int )
   dup 2 i.<
-  if
-  else
+  [
+  ] [
     dup 1 i.- fib
     swap 2 i.- fib
     i.add
-  then
+  ] if
 ;
 
 # Tail-recursive fibonacci with accumulators
@@ -34,25 +34,25 @@
 
 : fib-acc ( Int Int Int -- Int )
   rot dup 0 i.<=
-  if
+  [
     drop drop
-  else
+  ] [
     1 i.-
     rot rot
     over i.add swap
     fib-acc
-  then
+  ] if
 ;
 
 # GCD using Euclidean algorithm
 # seq:allow(unchecked-mod)
 : gcd ( Int Int -- Int )
   dup 0 i.=
-  if
+  [
     drop
-  else
+  ] [
     tuck i.% drop gcd   # drop success Bool
-  then
+  ] if
 ;
 
 # Main

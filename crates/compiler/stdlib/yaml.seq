@@ -59,7 +59,7 @@
 
 # Create a YAML boolean (0 or 1)
 : yaml-bool ( Int -- Variant )
-  0 i.<> if 1 else 0 then
+  0 i.<> [ 1 ] [ 0 ] if
   :JsonBool variant.make-1
 ;
 
@@ -135,24 +135,24 @@
 # seq:allow(deep-nesting)
 : yaml-parse-scalar ( String -- Variant )
   # Check for null
-  dup "null" string.equal? if
+  dup "null" string.equal? [
     drop yaml-null
-  else
-  dup "~" string.equal? if
+  ] [
+  dup "~" string.equal? [
     drop yaml-null
-  else
-  dup "true" string.equal? if
+  ] [
+  dup "true" string.equal? [
     drop 1 yaml-bool
-  else
-  dup "false" string.equal? if
+  ] [
+  dup "false" string.equal? [
     drop 0 yaml-bool
-  else
+  ] [
   # Try as number
-  dup string->float if
+  dup string->float [
     nip yaml-number
-  else
+  ] [
     drop yaml-string
-  then then then then then
+  ] if ] if ] if ] if ] if
 ;
 
 # ============================================================================
@@ -178,11 +178,11 @@
   string.substring             # value-with-possible-newline
   # Find and strip newline if present
   dup yaml-find-newline        # val nlpos
-  dup 0 i.< if
+  dup 0 i.< [
     drop string.trim           # no newline, just trim
-  else
+  ] [
     0 swap string.substring string.trim  # take before newline and trim
-  then
+  ] if
 ;
 
 # Parse a simple "key: value" line
@@ -190,10 +190,10 @@
 # Returns an object with one key-value pair, and success flag
 : yaml-parse-line ( ..rest String -- ..rest Variant Bool )
   dup yaml-find-colon
-  dup 0 i.< if
+  dup 0 i.< [
     # No colon found - not a valid key-value
     drop drop yaml-empty-object false
-  else
+  ] [
     # Found colon at position
     # Stack: str colonpos
     2dup yaml-key-part     # str colonpos key
@@ -205,7 +205,7 @@
     rot rot                     # obj keystr value
     yaml-obj-with               # obj'
     true
-  then
+  ] if
 ;
 
 # ============================================================================
@@ -226,27 +226,27 @@
 # Check if string starts with # (comment)
 : yaml-is-comment ( ..rest String -- ..rest Bool )
   string.trim
-  dup string.empty? if
+  dup string.empty? [
     drop false
-  else
+  ] [
     0 string.char-at 35 i.=
-  then
+  ] if
 ;
 
 # Parse one line and i.add to object if valid
 # Stack: ( obj line -- obj' )
 : yaml-parse-and-add ( ..rest Variant String -- ..rest Variant )
-  dup yaml-is-blank-line if
+  dup yaml-is-blank-line [
     drop  # skip blank lines
-  else
-  dup yaml-is-comment if
+  ] [
+  dup yaml-is-comment [
     drop  # skip comments
-  else
+  ] [
     dup yaml-find-colon
-    dup 0 i.< if
+    dup 0 i.< [
       # No colon - skip invalid line
       drop drop
-    else
+    ] [
       # Parse the key-value pair
       2dup yaml-key-part     # obj line colonpos key
       rot rot yaml-value-part     # obj key valuestr
@@ -254,8 +254,8 @@
       swap yaml-string            # obj value keystr
       swap                        # obj keystr value
       yaml-obj-with               # obj'
-    then
-  then then
+    ] if
+  ] if ] if
 ;
 
 # Extract first line from a string
@@ -274,14 +274,14 @@
 # Stack: ( obj str -- obj' )
 # Processes lines until string is empty
 : yaml-parse-lines ( ..rest Variant String -- ..rest Variant )
-  dup string.empty? if
+  dup string.empty? [
     drop  # done
-  else
+  ] [
     dup yaml-find-newline
-    dup 0 i.< if
+    dup 0 i.< [
       # No more newlines - process final line
       drop yaml-parse-and-add
-    else
+    ] [
       # Found newline at position
       # Stack: obj str newlinepos
       yaml-split-at-newline              # obj line rest (rest on top)
@@ -291,14 +291,14 @@
       yaml-parse-and-add                 # rest obj'
       swap                               # obj' rest
       yaml-parse-lines                   # obj''
-    then
-  then
+    ] if
+  ] if
 ;
 
 # Parse YAML (flat) - handles single or multi-line documents without nesting
 : yaml-parse-flat ( ..rest String -- ..rest Variant Bool )
   yaml-empty-object swap yaml-parse-lines
-  dup variant.field-count 0 i.> if true else false then
+  dup variant.field-count 0 i.> [ true ] [ false ] if
 ;
 
 # ============================================================================
@@ -308,16 +308,16 @@
 # Count leading spaces in a string
 # Stack: ( String -- Int )
 : yaml-count-spaces ( ..rest String -- ..rest Int )
-  dup string.empty? if
+  dup string.empty? [
     drop 0
-  else
-    dup 0 string.char-at 32 i.= if
+  ] [
+    dup 0 string.char-at 32 i.= [
       1 over string.length 1 i.subtract string.substring
       yaml-count-spaces 1 i.add
-    else
+    ] [
       drop 0
-    then
-  then
+    ] if
+  ] if
 ;
 
 # Check if a line is "key-only" (has colon with nothing after)
@@ -325,18 +325,18 @@
 : yaml-is-key-only? ( ..rest String -- ..rest Bool )
   string.trim
   dup yaml-find-colon
-  dup 0 i.< if
+  dup 0 i.< [
     drop drop false
-  else
+  ] [
     # Check what's after the colon
     1 i.add
-    over string.length over i.<= if
+    over string.length over i.<= [
       drop drop true  # colon is at end
-    else
+    ] [
       over string.length over i.subtract
       string.substring string.trim string.empty?
-    then
-  then
+    ] if
+  ] if
 ;
 
 # Extract the key from a key-only line
@@ -357,12 +357,12 @@
 # Strip N spaces from start of a string
 # Stack: ( String Int -- String )
 : yaml-strip-n-spaces ( ..rest String Int -- ..rest String )
-  over string.length over i.< if
+  over string.length over i.< [
     drop  # string too short, return as-is
-  else
+  ] [
     over string.length over i.subtract
     string.substring
-  then
+  ] if
 ;
 
 # Strip indent from a block of text - simplified approach
@@ -383,58 +383,58 @@
 
 # Skip leading newlines
 : yaml-skip-leading-newlines ( ..rest String -- ..rest String )
-  dup string.empty? if
+  dup string.empty? [
     nop
-  else
-    dup 0 string.char-at 10 i.= if
+  ] [
+    dup 0 string.char-at 10 i.= [
       # Starts with newline, skip it
       1 over string.length 1 i.subtract string.substring
       yaml-skip-leading-newlines
-    else
+    ] [
       nop
-    then
-  then
+    ] if
+  ] if
 ;
 
 # Stack: ( result remaining -- result' )
 : yaml-strip-simple-loop ( ..rest String String -- ..rest String )
-  dup string.empty? if
+  dup string.empty? [
     drop
-  else
+  ] [
     dup yaml-find-newline
-    dup 0 i.< if
+    dup 0 i.< [
       # Last line
       drop string.trim
-      dup string.empty? if
+      dup string.empty? [
         drop  # Skip empty line, keep result as-is
-      else
+      ] [
         yaml-append-line  # Append line to result
-      then
-    else
+      ] if
+    ] [
       # Split at newline
       over swap 0 swap string.substring string.trim  # result remaining line-trimmed
-      dup string.empty? if
+      dup string.empty? [
         drop swap  # Skip empty line
-      else
+      ] [
         yaml-append-line swap  # Append line to result
-      then
+      ] if
       # Advance past newline
       dup yaml-find-newline 1 i.add
       over string.length over i.subtract
       string.substring  # result' rest
       yaml-strip-simple-loop
-    then
-  then
+    ] if
+  ] if
 ;
 
 # Append a line to result (add newline separator if result is non-empty)
 # Stack: ( result line -- result' )
 : yaml-append-line ( ..rest String String -- ..rest String )
-  over string.empty? if
+  over string.empty? [
     nip  # result is empty, just use line
-  else
+  ] [
     swap 10 char->string string.concat swap string.concat  # result + newline + line
-  then
+  ] if
 ;
 
 # Collect indented block after current line
@@ -443,21 +443,21 @@
 : yaml-collect-nested-block ( ..rest String -- ..rest String String )
   # Skip the first line (the key-only line)
   dup yaml-find-newline
-  dup 0 i.< if
+  dup 0 i.< [
     drop drop "" ""  # no content after key-only line
-  else
+  ] [
     1 i.add
     over string.length over i.subtract
     string.substring
     # Now find where the indented block ends
     dup yaml-get-block-indent
-    dup 0 i.= if
+    dup 0 i.= [
       drop "" swap  # no indentation, nothing nested
-    else
+    ] [
       # Collect lines at this indent or deeper
       yaml-collect-at-indent
-    then
-  then
+    ] if
+  ] if
 ;
 
 # Collect lines at given indent level, return (collected, remaining)
@@ -473,24 +473,24 @@
 # Simple collection: gather lines that start with space
 # Stack: ( collected remaining -- collected' remaining' )
 : yaml-collect-simple-loop ( ..rest String String -- ..rest String String )
-  dup string.empty? if
+  dup string.empty? [
     # Done - remaining is empty
     swap  # ( remaining collected ) -> need ( collected remaining )
     # Wait, if remaining is empty and on top, and collected is below
     # We have ( collected "" ), that's correct!
     nop
-  else
+  ] [
     # Check first character of remaining
-    dup 0 string.char-at 32 i.= if
+    dup 0 string.char-at 32 i.= [
       # Starts with space - collect this line
       dup yaml-find-newline
-      dup 0 i.< if
+      dup 0 i.< [
         # Last line (no newline)
         drop  # ( collected remaining )
         swap 10 char->string string.concat  # ( remaining collected-nl )
         swap string.concat  # ( collected' )
         ""  # ( collected' "" )
-      else
+      ] [
         # Has newline - extract line
         over swap 0 swap string.substring  # ( collected remaining line )
         rot 10 char->string string.concat swap string.concat  # ( remaining collected' )
@@ -500,13 +500,13 @@
         over string.length over i.subtract
         string.substring  # ( collected' rest )
         yaml-collect-simple-loop
-      then
-    else
+      ] if
+    ] [
       # Doesn't start with space - stop collecting
       # Stack is already ( collected remaining ), just return
       nop
-    then
-  then
+    ] if
+  ] if
 ;
 
 # No-op helper for clarity
@@ -519,41 +519,41 @@
 # For key:value: i.adds to obj, returns (obj', "")
 : yaml-parse-nested-line ( ..rest Variant String -- ..rest Variant String )
   # Check first line only for blank/comment/key-only
-  dup yaml-first-line-is-blank? if
+  dup yaml-first-line-is-blank? [
     drop ""
-  else
-  dup yaml-first-line-is-comment? if
+  ] [
+  dup yaml-first-line-is-comment? [
     drop ""
-  else
+  ] [
     string.trim
-    dup yaml-first-line-is-key-only? if
+    dup yaml-first-line-is-key-only? [
       # Nested object starts here
       yaml-parse-key-only-line
-    else
+    ] [
       # Regular key: value line
       yaml-parse-kv-line
-    then
-  then then
+    ] if
+  ] if ] if
 ;
 
 # Check if first line is blank
 : yaml-first-line-is-blank? ( ..rest String -- ..rest Bool )
   dup yaml-find-newline
-  dup 0 i.< if
+  dup 0 i.< [
     drop yaml-is-blank-line
-  else
+  ] [
     0 swap string.substring yaml-is-blank-line
-  then
+  ] if
 ;
 
 # Check if first line is a comment
 : yaml-first-line-is-comment? ( ..rest String -- ..rest Bool )
   dup yaml-find-newline
-  dup 0 i.< if
+  dup 0 i.< [
     drop yaml-is-comment
-  else
+  ] [
     0 swap string.substring yaml-is-comment
-  then
+  ] if
 ;
 
 # Parse a key-only line (starts a nested object)
@@ -590,73 +590,73 @@
 # Stack: ( obj line -- obj' remaining )
 : yaml-parse-kv-line ( ..rest Variant String -- ..rest Variant String )
   dup yaml-find-colon
-  dup 0 i.< if
+  dup 0 i.< [
     drop drop ""               # invalid line, skip
-  else
+  ] [
     2dup yaml-key-part    # obj line colonpos key
     rot rot yaml-value-part    # obj key valuestr
     yaml-parse-scalar          # obj key value
     swap yaml-string swap      # obj key-str value
     yaml-obj-with              # obj'
     ""                         # no remaining from single line
-  then
+  ] if
 ;
 
 # Parse nested YAML content recursively
 # Stack: ( String -- Variant Bool )
 : yaml-parse-nested ( ..rest String -- ..rest Variant Bool )
   yaml-empty-object swap yaml-parse-nested-lines
-  dup variant.field-count 0 i.> if true else false then
+  dup variant.field-count 0 i.> [ true ] [ false ] if
 ;
 
 # Parse multiple lines with nesting support
 # Stack: ( obj str -- obj' )
 # seq:allow(deep-nesting)
 : yaml-parse-nested-lines ( ..rest Variant String -- ..rest Variant )
-  dup string.empty? if
+  dup string.empty? [
     drop
-  else
+  ] [
     # Check what kind of line this is
     # If it's a key-only line (e.g., "server:"), we need to pass the FULL
     # remaining string so it can collect the nested content
-    dup yaml-first-line-is-key-only? if
+    dup yaml-first-line-is-key-only? [
       # Pass full string to parse-nested-line so it can collect nested block
       yaml-parse-nested-line       # obj' remaining
       yaml-parse-nested-lines      # obj''
-    else
+    ] [
       # Regular key:value line - just process this line
       dup yaml-find-newline
-      dup 0 i.< if
+      dup 0 i.< [
         # Single line remaining
         drop yaml-parse-nested-line drop
-      else
+      ] [
         # Multiple lines - get first line only
         yaml-split-at-newline        # obj first-line rest
         rot swap                     # rest obj first-line
         yaml-parse-nested-line       # rest obj' line-remaining
         # Combine remaining with rest (line-remaining should be "")
         rot                          # obj' line-remaining rest
-        over string.empty? if
+        over string.empty? [
           nip                        # obj' rest
-        else
+        ] [
           swap 10 char->string string.concat
           swap string.concat         # obj' combined-remaining
-        then
+        ] if
         yaml-parse-nested-lines
-      then
-    then
-  then
+      ] if
+    ] if
+  ] if
 ;
 
 # Check if first line of a string is key-only
 # Stack: ( String -- Bool )
 : yaml-first-line-is-key-only? ( ..rest String -- ..rest Bool )
   dup yaml-find-newline
-  dup 0 i.< if
+  dup 0 i.< [
     drop yaml-is-key-only?
-  else
+  ] [
     0 swap string.substring yaml-is-key-only?
-  then
+  ] if
 ;
 
 # Main entry point - handles nested YAML
@@ -678,43 +678,43 @@
 : yaml-serialize ( Variant -- String )
   dup variant.tag
 
-  dup :JsonNull symbol.= if
+  dup :JsonNull symbol.= [
     drop drop "null"
-  else
-  dup :JsonBool symbol.= if
+  ] [
+  dup :JsonBool symbol.= [
     drop yaml-unwrap-bool
-    0 i.= if "false" else "true" then
-  else
-  dup :JsonNumber symbol.= if
+    0 i.= [ "false" ] [ "true" ] if
+  ] [
+  dup :JsonNumber symbol.= [
     drop yaml-unwrap-number float->string
-  else
-  dup :JsonString symbol.= if
+  ] [
+  dup :JsonString symbol.= [
     drop yaml-unwrap-string
     yaml-quote-char swap string.concat yaml-quote-char string.concat
-  else
-  dup :JsonObject symbol.= if
+  ] [
+  dup :JsonObject symbol.= [
     drop yaml-serialize-object
-  else
+  ] [
     drop drop "null"
-  then then then then then
+  ] if ] if ] if ] if ] if
 ;
 
 # Serialize an object (supports up to 3 pairs)
 # seq:allow(deep-nesting)
 : yaml-serialize-object ( Variant -- String )
   dup variant.field-count
-  dup 0 i.= if
+  dup 0 i.= [
     drop drop "{}"
-  else
-    dup 2 i.= if
+  ] [
+    dup 2 i.= [
       # 1 pair (2 fields)
       drop
       dup 0 variant.field-at yaml-serialize
       swap 1 variant.field-at yaml-serialize
       swap "{" swap string.concat ":" string.concat
       swap string.concat "}" string.concat
-    else
-      dup 4 i.= if
+    ] [
+      dup 4 i.= [
         # 2 pairs (4 fields)
         drop
         "{"
@@ -726,8 +726,8 @@
         ":" string.concat
         swap 3 variant.field-at yaml-serialize string.concat
         "}" string.concat
-      else
-        dup 6 i.= if
+      ] [
+        dup 6 i.= [
           # 3 pairs (6 fields)
           drop
           "{"
@@ -743,10 +743,10 @@
           ":" string.concat
           swap 5 variant.field-at yaml-serialize string.concat
           "}" string.concat
-        else
+        ] [
           drop drop "{...}"
-        then
-      then
-    then
-  then
+        ] if
+      ] if
+    ] if
+  ] if
 ;

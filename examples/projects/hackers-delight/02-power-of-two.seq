@@ -40,9 +40,9 @@
 
 # Test helpers
 : bool->string ( Bool -- )
-  if "true" io.write-line
-  else "false" io.write-line
-  then
+  [ "true" io.write-line
+  ] [ "false" io.write-line
+  ] if
 ;
 
 : test-power-check ( -- )

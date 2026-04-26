@@ -7,62 +7,62 @@
 # For large N, this would overflow without TCO
 
 : is-even ( Int -- Bool )
-  dup 0 i.= if
+  dup 0 i.= [
     drop true
-  else
+  ] [
     1 i.- is-odd
-  then
+  ] if
 ;
 
 : is-odd ( Int -- Bool )
-  dup 0 i.= if
+  dup 0 i.= [
     drop false
-  else
+  ] [
     1 i.- is-even
-  then
+  ] if
 ;
 
 # Three-way mutual recursion (a -> b -> c -> a)
 
 : triple-a ( Int -- Int )
-  dup 0 i.<= if
+  dup 0 i.<= [
     # Base case: return 0
-  else
+  ] [
     1 i.- triple-b
-  then
+  ] if
 ;
 
 : triple-b ( Int -- Int )
-  dup 0 i.<= if
+  dup 0 i.<= [
     1 i.+  # Return n + 1 for variety
-  else
+  ] [
     1 i.- triple-c
-  then
+  ] if
 ;
 
 : triple-c ( Int -- Int )
-  dup 0 i.<= if
+  dup 0 i.<= [
     2 i.+  # Return n + 2 for variety
-  else
+  ] [
     1 i.- triple-a
-  then
+  ] if
 ;
 
 # Helper: check a boolean condition and print pass/fail
 : check-true ( Bool String -- )
-  swap if
+  swap [
     "[PASS] " io.write io.write-line
-  else
+  ] [
     "[FAIL] " io.write io.write-line
-  then
+  ] if
 ;
 
 : check-false ( Bool String -- )
-  swap not if
+  swap not [
     "[PASS] " io.write io.write-line
-  else
+  ] [
     "[FAIL] " io.write io.write-line
-  then
+  ] if
 ;
 
 : main ( -- Int )

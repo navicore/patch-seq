@@ -19,11 +19,11 @@
 
   # Decode it back
   encoding.base64-decode
-  if
+  [
     "Decoded: " show
-  else
+  ] [
     drop "Decode failed!" io.write-line
-  then
+  ] if
 
   "" io.write-line
 ;
@@ -39,11 +39,11 @@
 
   # Note: no + / = characters
   encoding.base64url-decode
-  if
+  [
     "Decoded: " show
-  else
+  ] [
     drop "Decode failed!" io.write-line
-  then
+  ] if
 
   "" io.write-line
 ;
@@ -59,21 +59,21 @@
 
   # Decode back (case-insensitive)
   encoding.hex-decode
-  if
+  [
     "Decoded: " show
-  else
+  ] [
     drop "Decode failed!" io.write-line
-  then
+  ] if
 
   "" io.write-line
 
   # Uppercase works too
   "48454C4C4F" encoding.hex-decode
-  if
+  [
     "From uppercase: " show
-  else
+  ] [
     drop "Decode failed!" io.write-line
-  then
+  ] if
 
   "" io.write-line
 ;
@@ -85,19 +85,19 @@
 
   # Invalid base64 returns false
   "not!!valid!!base64" encoding.base64-decode
-  if
+  [
     "Decoded: " show
-  else
+  ] [
     drop "Base64 decode failed (expected)" io.write-line
-  then
+  ] if
 
   # Invalid hex returns false
   "xyz" encoding.hex-decode
-  if
+  [
     "Decoded: " show
-  else
+  ] [
     drop "Hex decode failed (expected)" io.write-line
-  then
+  ] if
 
   "" io.write-line
 ;

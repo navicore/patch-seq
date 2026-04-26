@@ -8,7 +8,7 @@
 
 # Convert Bool to Int (0 or 1)
 : bool->int ( Bool -- Int )
-  if 1 else 0 then
+  [ 1 ] [ 0 ] if
 ;
 
 # Create a mask: -1 if x < 0, else 0

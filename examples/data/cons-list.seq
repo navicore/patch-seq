@@ -56,11 +56,11 @@
 # Get the length of a list (recursive helper with accumulator)
 : length-acc ( List Int -- Int )
   swap                        # ( acc list )
-  dup nil? if
+  dup nil? [
     drop                      # ( acc ) return accumulator
-  else
+  ] [
     cdr swap 1 i.+ length-acc # ( tail acc+1 ) recurse on tail
-  then
+  ] if
 ;
 
 # Get the length of a list
@@ -71,15 +71,15 @@
 # Reverse helper with accumulator
 : reverse-acc ( List List -- List )
   swap                        # ( acc list )
-  dup nil? if
+  dup nil? [
     drop                      # ( acc ) return accumulator
-  else
+  ] [
     dup car                   # ( acc list head )
     rot                       # ( list head acc )
     cons                      # ( list new-acc )
     swap cdr swap             # ( tail new-acc )
     reverse-acc               # recurse
-  then
+  ] if
 ;
 
 # Reverse a list
@@ -93,18 +93,18 @@
 
 # Print a list element by element (recursive)
 : print-list-items ( List -- )
-  dup nil? if
+  dup nil? [
     drop
-  else
+  ] [
     dup car int->string io.write
     cdr
-    dup nil? if
+    dup nil? [
       drop
-    else
+    ] [
       " " io.write
       print-list-items
-    then
-  then
+    ] if
+  ] if
 ;
 
 # Print a list in parentheses
@@ -154,10 +154,10 @@
   # Verify operations return expected values
   "Verifying operations..." io.write-line
 
-  dup length 3 i.= if "  length = 3: PASS" else "  length = 3: FAIL" then io.write-line
-  dup car 1 i.= if "  car = 1: PASS" else "  car = 1: FAIL" then io.write-line
-  dup cdr length 2 i.= if "  cdr length = 2: PASS" else "  cdr length = 2: FAIL" then io.write-line
-  dup reverse car 3 i.= if "  reverse car = 3: PASS" else "  reverse car = 3: FAIL" then io.write-line
+  dup length 3 i.= [ "  length = 3: PASS" ] [ "  length = 3: FAIL" ] if io.write-line
+  dup car 1 i.= [ "  car = 1: PASS" ] [ "  car = 1: FAIL" ] if io.write-line
+  dup cdr length 2 i.= [ "  cdr length = 2: PASS" ] [ "  cdr length = 2: FAIL" ] if io.write-line
+  dup reverse car 3 i.= [ "  reverse car = 3: PASS" ] [ "  reverse car = 3: FAIL" ] if io.write-line
 
   drop
   0

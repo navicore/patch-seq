@@ -65,7 +65,7 @@
 
 # Convert bool to string for display
 : bool->str ( Bool -- String )
-  if "true" else "false" then
+  [ "true" ] [ "false" ] if
 ;
 
 # Set bit at position n

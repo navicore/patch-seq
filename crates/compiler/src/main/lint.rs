@@ -216,6 +216,13 @@ fn lint_file(path: &PathBuf, linter: &seqc::Linter, diagnostics: &mut Vec<seqc::
         return;
     }
 
+    // Mirror the main compile pipeline: lower literal-quotation `if`
+    // triples to `Statement::If` so the typechecker sees the same shape
+    // it sees in `seqc build`. Without this, the lint pass would reject
+    // patterns the build accepts (divergent branches, aux-using bodies,
+    // etc.) — see `normalize.rs`.
+    seqc::normalize::lower_literal_if_combinators(&mut resolved.program);
+
     let call_graph = call_graph::CallGraph::build(&resolved.program);
     let mut type_checker = TypeChecker::new();
     type_checker.set_call_graph(call_graph);

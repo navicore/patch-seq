@@ -27,11 +27,11 @@
 # Aux inside if/else (balanced in both branches)
 : test-if-else ( -- )
   7 >aux
-  true if
+  true [
     aux> 10 i.+ int->string io.write-line
-  else
+  ] [
     aux> 20 i.+ int->string io.write-line
-  then ;
+  ] if ;
 
 # Nested word calls: inner word uses aux independently
 : inner-aux ( Int -- Int )

@@ -38,9 +38,9 @@ union TokState {
   tnil trev-loop ;
 
 : trev-loop ( TokenList TokenList -- TokenList )
-  swap dup tnil? if drop else
+  swap dup tnil? [ drop ] [
     dup tcar rot tcons swap tcdr swap trev-loop
-  then
+  ] if
 ;
 
 # ============================================
@@ -88,9 +88,9 @@ union TokState {
 
 # Flush remaining token when done
 : flush-final-token ( TokState -- TokState )
-  dup state-tok string.empty? if
+  dup state-tok string.empty? [
     # Nothing to flush
-  else
+  ] [
     dup state-input
     over state-pos
     2 pick state-list
@@ -98,24 +98,24 @@ union TokState {
     swap tcons
     "" swap
     make-state nip
-  then
+  ] if
 ;
 
 : tokenize-loop ( TokState -- TokState )
   dup state-input string.length
-  over state-pos i.<= if
+  over state-pos i.<= [
     flush-final-token
-  else
+  ] [
     dup state-input over state-pos string.char-at
     dispatch-char
-  then
+  ] if
 ;
 
 # Flush current token (if any) and reset
 : handle-space ( TokState -- TokState )
-  dup state-tok string.empty? if
+  dup state-tok string.empty? [
     advance-pos
-  else
+  ] [
     # Flush token and advance
     dup state-input
     over state-pos 1 i.add
@@ -124,12 +124,12 @@ union TokState {
     swap tcons
     "" swap
     make-state nip
-  then
+  ] if
 ;
 
 # Flush token, add "(", advance
 : handle-lparen ( TokState -- TokState )
-  dup state-tok string.empty? if
+  dup state-tok string.empty? [
     # Just add "(" to list and advance
     dup state-input
     over state-pos 1 i.add
@@ -137,7 +137,7 @@ union TokState {
     "(" swap tcons
     "" swap
     make-state nip
-  else
+  ] [
     # Flush token, then add "("
     dup state-input
     over state-pos 1 i.add
@@ -147,12 +147,12 @@ union TokState {
     "(" swap tcons
     "" swap
     make-state nip
-  then
+  ] if
 ;
 
 # Flush token, add ")", advance
 : handle-rparen ( TokState -- TokState )
-  dup state-tok string.empty? if
+  dup state-tok string.empty? [
     # Just add ")" to list and advance
     dup state-input
     over state-pos 1 i.add
@@ -160,7 +160,7 @@ union TokState {
     ")" swap tcons
     "" swap
     make-state nip
-  else
+  ] [
     # Flush token, then add ")"
     dup state-input
     over state-pos 1 i.add
@@ -170,7 +170,7 @@ union TokState {
     ")" swap tcons
     "" swap
     make-state nip
-  then
+  ] if
 ;
 
 # Add char to current token, advance
@@ -202,7 +202,7 @@ union TokState {
 # ============================================
 
 : print-tokens ( TokenList -- )
-  dup tnil? if drop else
+  dup tnil? [ drop ] [
     dup tcar io.write-line tcdr print-tokens
-  then
+  ] if
 ;

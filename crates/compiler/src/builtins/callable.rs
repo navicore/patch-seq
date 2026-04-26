@@ -66,6 +66,20 @@ pub(super) fn add_signatures(sigs: &mut HashMap<String, Effect>) {
         ),
     );
 
+    // if: ( ..a Bool [..a -- ..b] [..a -- ..b] -- ..b )
+    // Conditional combinator. Both quotations must have identical effects.
+    // Type-checked specially in typechecker; this is a placeholder.
+    sigs.insert(
+        "if".to_string(),
+        Effect::new(
+            StackType::RowVar("a".to_string())
+                .push(Type::Bool)
+                .push(Type::Var("Q1".to_string()))
+                .push(Type::Var("Q2".to_string())),
+            StackType::RowVar("b".to_string()),
+        ),
+    );
+
     // cond: Multi-way conditional (variable arity)
     sigs.insert(
         "cond".to_string(),
@@ -96,5 +110,9 @@ pub(super) fn add_docs(docs: &mut HashMap<&'static str, &'static str>) {
     docs.insert(
         "bi",
         "Apply two quotations to the same value. ( ..a x [q1] [q2] -- ..c )",
+    );
+    docs.insert(
+        "if",
+        "Conditional combinator: branch on a Bool, invoking one of two quotations with identical effects. ( ..a Bool [..a -- ..b] [..a -- ..b] -- ..b )",
     );
 }

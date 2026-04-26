@@ -70,23 +70,23 @@ union IntResult {
 # Extract Ok value or return default
 : int-result-unwrap-or ( IntResult Int -- Int )
   swap                       # ( default result )
-  dup variant.tag :Ok symbol.= if
+  dup variant.tag :Ok symbol.= [
     0 variant.field-at nip   # return Ok value, drop default
-  else
+  ] [
     drop                     # drop result, return default
-  then
+  ] if
 ;
 
 # Transform the Ok value
 : int-result-map ( IntResult [Int -- Int] -- IntResult )
   swap                       # ( quotation result )
-  dup variant.tag :Ok symbol.= if
+  dup variant.tag :Ok symbol.= [
     0 variant.field-at       # ( quotation value )
     swap call                # ( new-value )
     Make-IntOk               # wrap as Ok
-  else
+  ] [
     nip                      # keep original Err
-  then
+  ] if
 ;
 
 # =============================================================================
@@ -96,11 +96,11 @@ union IntResult {
 # A function that returns our Result type
 # seq:allow(unchecked-div)
 : safe-divide ( Int Int -- IntResult )
-  dup 0 i.= if
+  dup 0 i.= [
     drop drop "Division by zero" Make-IntErr
-  else
+  ] [
     i./ drop Make-IntOk   # drop success Bool (we already checked for zero)
-  then
+  ] if
 ;
 
 # Using the Result with combinators
@@ -112,11 +112,11 @@ union IntResult {
 
 # Compare with standard Seq pattern - simpler and just as safe:
 : example-standard-pattern ( -- Int )
-  10 2 i./ if                # i./ returns ( result success )
+  10 2 i./ [                # i./ returns ( result success )
     3 i.*                    # multiply by 3
-  else
+  ] [
     drop 0                   # use default on failure
-  then
+  ] if
 ;
 
 # =============================================================================

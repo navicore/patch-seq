@@ -7,7 +7,6 @@
 
 include std:list
 include std:imath
-
 # =============================================================================
 # List Primitives (built-in)
 # =============================================================================
@@ -43,7 +42,7 @@ include std:imath
 # quotation receives ( acc elem ) and should return new acc
 : maximum ( Variant -- Int )
   dup 0 list.get drop  # ( list first-element )
-  [ 2dup i.> if drop else nip then ] list.fold
+  [ 2dup i.> [ drop ] [ nip ] if ] list.fold
   # if acc > elem: drop elem, keep acc
   # else: nip acc, keep elem (the larger one)
 ;
@@ -51,7 +50,7 @@ include std:imath
 # Find minimum (assumes non-empty list)
 : minimum ( Variant -- Int )
   dup 0 list.get drop  # ( list first-element )
-  [ 2dup i.< if drop else nip then ] list.fold
+  [ 2dup i.< [ drop ] [ nip ] if ] list.fold
   # if acc < elem: drop elem, keep acc
   # else: nip acc, keep elem (the smaller one)
 ;
@@ -100,17 +99,17 @@ include std:imath
 
 # Print list elements separated by spaces
 : print-elements ( Variant Int -- )
-  over list.length over i.<= if
+  over list.length over i.<= [
     drop drop
-  else
+  ] [
     # Print separator if not first element
-    dup 0 i.> if " " io.write then
+    dup 0 i.> [ " " io.write ] [ ] if
     # Get and print element
     2dup list.get drop int->string io.write
     # Next index
     1 i.+
     print-elements
-  then
+  ] if
 ;
 
 : print-list ( Variant -- )

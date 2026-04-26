@@ -9,48 +9,47 @@
 #   curl http://localhost:8080/
 
 include std:http
-
 : route ( String -- String )
-  dup "GET / " string.starts-with if
+  dup "GET / " string.starts-with [
     drop "Hello from stdlib!" http-ok
-  else
-    dup "GET /health" string.starts-with if
+  ] [
+    dup "GET /health" string.starts-with [
       drop "OK" http-ok
-    else
-      dup "GET /custom" string.starts-with if
+    ] [
+      dup "GET /custom" string.starts-with [
         drop
         201 "Created" "Custom status response" http-response
-      else
+      ] [
         drop "Not Found" http-not-found
-      then
-    then
-  then
+      ] if
+    ] if
+  ] if
 ;
 
 # seq:allow(unchecked-tcp-write)
 : handle-connection ( Int -- )
   dup tcp.read             # ( socket string success )
-  not if
+  not [
     drop tcp.close drop    # read failed - clean up
-  else
+  ] [
     route                  # ( socket response )
     over tcp.write drop    # write and drop success flag
     tcp.close drop         # close and drop success flag
-  then
+  ] if
 ;
 
 : accept-loop ( Int -- )
   dup tcp.accept          # ( listener client success )
-  not if
+  not [
     drop accept-loop      # accept failed - retry
-  else
+  ] [
     chan.make             # ( listener client chan )
-    dup [ chan.receive if handle-connection else drop then ] strand.spawn  # ( listener client chan chan strand-id )
+    dup [ chan.receive [ handle-connection ] [ drop ] if ] strand.spawn  # ( listener client chan chan strand-id )
     drop drop             # ( listener client chan ) - drop strand-id AND extra chan
     chan.send             # ( listener success ) - send client on chan
-    not if "Failed to send client to handler" io.write-line then
+    not [ "Failed to send client to handler" io.write-line ] [ ] if
     accept-loop           # tail call - runs forever, no stack growth
-  then
+  ] if
 ;
 
 : main ( -- )
@@ -60,9 +59,9 @@ include std:http
   "Try: curl http://localhost:8080/health" io.write-line
   "Try: curl http://localhost:8080/custom" io.write-line
   8080 tcp.listen         # ( listener success )
-  not if
+  not [
     drop "Failed to bind to port 8080" io.write-line
-  else
+  ] [
     accept-loop           # never returns
-  then
+  ] if
 ;

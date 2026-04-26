@@ -1,3 +1,5 @@
+include std:control
+
 # Test compression operations
 
 # compress.gzip / compress.gunzip - Basic gzip roundtrip

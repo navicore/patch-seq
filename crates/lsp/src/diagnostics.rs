@@ -364,26 +364,27 @@ fn lint_to_code_action(
 
 /// Generate a code action for unchecked error flag diagnostics.
 ///
-/// Replaces `op drop` with an `if/else/then` error check skeleton:
+/// Replaces `op drop` with an `if` error check skeleton:
 /// ```seq
-/// op if
+/// op [
 ///   # success
-/// else
+/// ] [
 ///   drop  # handle error
-/// then
+/// ] if
 /// ```
 fn unchecked_error_code_action(
     lint_diag: &lint::LintDiagnostic,
     uri: &Url,
     range: &Range,
 ) -> Option<CodeAction> {
-    let title = "Add error check (if/else/then)".to_string();
+    let title = "Add error check (if)".to_string();
 
     // The range covers "op drop" — replace just the "drop" part with the skeleton.
     // The diagnostic range starts at the operation and ends after "drop".
     // We want to replace "drop" (the last word in the range) with the skeleton.
     // Since we can't easily compute the "drop" sub-range, we replace the whole
-    // matched pattern. The pattern is "op drop", so we replace with "op if ... then".
+    // matched pattern. The pattern is "op drop", so we replace with the
+    // combinator skeleton.
     //
     // Extract the operation name from the diagnostic message.
     // Messages follow the pattern: "`op` returns ..."
@@ -394,7 +395,7 @@ fn unchecked_error_code_action(
         .unwrap_or("op");
 
     let new_text = format!(
-        "{} if\n    # success\n  else\n    drop  # handle {} error\n  then",
+        "{} [\n    # success\n  ] [\n    drop  # handle {} error\n  ] if",
         op_name, op_name,
     );
 
@@ -817,13 +818,14 @@ union Shape { Circle { radius: Int } Rectangle { width: Int, height: Int } }
 
     #[test]
     fn test_if_else_branch_mismatch_reports_correct_line() {
-        // If/else with incompatible branch types should report error on the if line
+        // if with incompatible branch types should report error on the line
+        // of the trailing combinator (matches the lowered Statement::If span).
         let source = r#": test ( Bool -- Int )
-  if
+  [
     42
-  else
+  ] [
     "string"
-  then
+  ] if
 ;
 
 : main ( -- )
@@ -834,14 +836,15 @@ union Shape { Circle { radius: Int } Rectangle { width: Int, height: Int } }
         assert!(!diagnostics.is_empty(), "Expected type error");
         let diag = &diagnostics[0];
         assert!(
-            diag.message.contains("if/else branches have incompatible"),
-            "Expected if/else branch mismatch error, got: {}",
+            diag.message.contains("branches have incompatible"),
+            "Expected branch mismatch error, got: {}",
             diag.message
         );
-        // The 'if' is on line 2 (1-indexed), which is line 1 in 0-indexed LSP coordinates
+        // The `if` call is on line 6 (1-indexed); its rewritten Statement::If
+        // takes that span. 0-indexed for LSP -> line 5.
         assert_eq!(
-            diag.range.start.line, 1,
-            "Expected error on line 1 (0-indexed), got line {}. Message: {}",
+            diag.range.start.line, 5,
+            "Expected error on line 5 (0-indexed), got line {}. Message: {}",
             diag.range.start.line, diag.message
         );
     }
@@ -850,7 +853,7 @@ union Shape { Circle { radius: Int } Rectangle { width: Int, height: Int } }
     fn test_diagnostic_structure() {
         // Verify the diagnostic has all required fields for neovim
         let source = r#": test ( Bool -- Int )
-  if 42 else "string" then
+  [ 42 ] [ "string" ] if
 ;
 : main ( -- ) true test drop ;
 "#;
@@ -888,11 +891,11 @@ union Shape { Circle { radius: Int } Rectangle { width: Int, height: Int } }
 }
 
 : safe-divide ( Int Int -- IntResult )
-    dup 0 i.= if
+    dup 0 i.= [
       drop "division by zero" Make-Err
-    else
+    ] [
       i./ Make-Ok
-    then
+    ] if
 ;
 
 : main ( -- )
@@ -907,7 +910,7 @@ union Shape { Circle { radius: Int } Rectangle { width: Int, height: Int } }
             "Expected stack type mismatch error, got: {}",
             diag.message
         );
-        // The 'Make-Ok' is on line 10 (1-indexed), which is line 9 in 0-indexed LSP coordinates
+        // The `Make-Ok` is on line 10 (1-indexed) → line 9 in 0-indexed LSP coords.
         assert_eq!(
             diag.range.start.line, 9,
             "Expected error on line 9 (0-indexed), got line {}. Message: {}",

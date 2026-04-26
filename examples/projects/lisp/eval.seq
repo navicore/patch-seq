@@ -78,19 +78,19 @@ include "parser"
 : env-lookup ( Name EnvList -- Result )
   # Stack: Name Env
   # Returns the value or snil wrapped as empty SList if not found
-  dup env-nil? if
+  dup env-nil? [
     # Not found - return empty list as error marker
     drop drop snil slist
-  else
+  ] [
     dup env-car binding-name
-    2 pick string.equal? if
+    2 pick string.equal? [
       # Found it
       nip env-car binding-value
-    else
+    ] [
       # Keep looking
       env-cdr env-lookup
-    then
-  then ;
+    ] if
+  ] if ;
 
 # ============================================
 # Main Evaluator
@@ -135,13 +135,13 @@ include "parser"
 : eval-list-call ( Env List Head -- Result )
   # Stack: Env List Head
   2 pick eval-with-env  # -> Env List EvaledHead
-  dup closure? if
+  dup closure? [
     # It's a closure - apply it
     rot rot scdr swap apply-closure
-  else
+  ] [
     # Not a closure - error
     drop drop slist
-  then
+  ] if
 ;
 
 # Dispatch on function type
@@ -156,13 +156,13 @@ include "parser"
 : eval-list-with-env ( Expr Env -- Result )
   # Stack: Expr Env
   swap slist-val
-  dup snil? if
+  dup snil? [
     # Empty list - return empty list
     nip slist
-  else
+  ] [
     # Non-empty list: first element is function
     dup scar eval-func-call
-  then
+  ] if
 ;
 
 # ============================================
@@ -195,10 +195,10 @@ include "parser"
 
 : eval-fold-add-with-env ( List Acc Env -- Int )
   # Stack: List Acc Env
-  2 pick snil? if
+  2 pick snil? [
     # List is empty, return Acc
     drop nip
-  else
+  ] [
     # Get first element and eval it
     2 pick scar over eval-with-env snum-val
     # Stack: List Acc Env FirstVal
@@ -207,34 +207,34 @@ include "parser"
     swap rot scdr rot rot
     # Stack: RestList NewAcc Env
     eval-fold-add-with-env
-  then
+  ] if
 ;
 
 : eval-sub-with-env ( List Env -- Result )
   # Stack: List Env
   swap scdr
-  dup snil? if
+  dup snil? [
     drop drop 0 snum
-  else
+  ] [
     dup scar 2 pick eval-with-env snum-val
     swap scdr
-    dup snil? if
+    dup snil? [
       # Unary minus: negate
       drop nip 0 swap i.subtract snum
-    else
+    ] [
       # Binary minus: first - rest
       # Stack: Env FirstVal RestList -> need RestList FirstVal Env
       rot rot swap eval-fold-sub-with-env snum
-    then
-  then
+    ] if
+  ] if
 ;
 
 : eval-fold-sub-with-env ( List Acc Env -- Int )
   # Stack: List Acc Env
-  2 pick snil? if
+  2 pick snil? [
     # List is empty, return Acc
     drop nip
-  else
+  ] [
     # Get first element and eval it
     2 pick scar over eval-with-env snum-val
     # Stack: List Acc Env FirstVal
@@ -243,7 +243,7 @@ include "parser"
     swap rot scdr rot rot
     # Stack: RestList NewAcc Env
     eval-fold-sub-with-env
-  then
+  ] if
 ;
 
 : eval-mul-with-env ( List Env -- Result )
@@ -254,10 +254,10 @@ include "parser"
 
 : eval-fold-mul-with-env ( List Acc Env -- Int )
   # Stack: List Acc Env
-  2 pick snil? if
+  2 pick snil? [
     # List is empty, return Acc
     drop nip
-  else
+  ] [
     # Get first element and eval it
     2 pick scar over eval-with-env snum-val
     # Stack: List Acc Env FirstVal
@@ -266,33 +266,33 @@ include "parser"
     swap rot scdr rot rot
     # Stack: RestList NewAcc Env
     eval-fold-mul-with-env
-  then
+  ] if
 ;
 
 : eval-div-with-env ( List Env -- Result )
   # Stack: List Env
   swap scdr
-  dup snil? if
+  dup snil? [
     drop drop 0 snum
-  else
+  ] [
     dup scar 2 pick eval-with-env snum-val
     swap scdr
-    dup snil? if
+    dup snil? [
       drop nip snum
-    else
+    ] [
       # Stack: Env FirstVal RestList -> need RestList FirstVal Env
       rot rot swap eval-fold-div-with-env snum
-    then
-  then
+    ] if
+  ] if
 ;
 
 # seq:allow(unchecked-divide)
 : eval-fold-div-with-env ( List Acc Env -- Int )
   # Stack: List Acc Env
-  2 pick snil? if
+  2 pick snil? [
     # List is empty, return Acc
     drop nip
-  else
+  ] [
     # Get first element and eval it
     2 pick scar over eval-with-env snum-val
     # Stack: List Acc Env FirstVal
@@ -301,7 +301,7 @@ include "parser"
     swap rot scdr rot rot
     # Stack: RestList NewAcc Env
     eval-fold-div-with-env
-  then
+  ] if
 ;
 
 # ============================================
@@ -317,21 +317,21 @@ include "parser"
   2 pick     # -> Env Args CondExpr Env
   eval-with-env  # -> Env Args CondResult
   # Check if condition is numeric 0 (false)
-  dup snum? if
-    snum-val 0 i.= if
+  dup snum? [
+    snum-val 0 i.= [
       # False (0) - eval else branch
       # Stack: Env Args
       scdr scdr scar swap eval-with-env
-    else
+    ] [
       # True (non-zero) - eval then branch
       # Stack: Env Args
       scdr scar swap eval-with-env
-    then
-  else
+    ] if
+  ] [
     # Non-numeric condition - treat as true
     drop  # Drop CondResult -> Env Args
     scdr scar swap eval-with-env
-  then
+  ] if
 ;
 
 # ============================================

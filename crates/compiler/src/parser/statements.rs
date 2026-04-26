@@ -100,9 +100,22 @@ impl Parser {
             return Ok(Statement::StringLiteral(unescaped));
         }
 
-        // Check for conditional
-        if token == "if" {
-            return self.parse_if(tok_line, tok_column);
+        // `else` and `then` are no longer parser keywords (Seq 6.0).
+        // `if` is now a stack-consuming combinator word — let it fall
+        // through to the regular WordCall path. Bare `else`/`then`
+        // tokens are almost always remnants of the pre-6.0 keyword
+        // form, so reject them with an explicit pointer at the
+        // migration doc.
+        if token == "else" || token == "then" {
+            return Err(format!(
+                "at line {}: '{}' is no longer a parser keyword in Seq 6.0.\n  \
+                 Conditionals are now expressed with the `if` combinator:\n  \
+                   `cond if A else B then`  →  `cond [ A ] [ B ] if`\n  \
+                   `cond if A then`         →  `cond [ A ] when`\n  \
+                 See docs/MIGRATION_6_0.md for the full transformation rules.",
+                tok_line + 1,
+                token
+            ));
         }
 
         // Check for quotation
@@ -120,64 +133,6 @@ impl Parser {
             name: token.to_string(),
             span: Some(Span::new(tok_line, tok_column, tok_len)),
         })
-    }
-
-    pub(super) fn parse_if(
-        &mut self,
-        start_line: usize,
-        start_column: usize,
-    ) -> Result<Statement, String> {
-        let mut then_branch = Vec::new();
-
-        // Parse then branch until 'else' or 'then'
-        loop {
-            if self.is_at_end() {
-                return Err("Unexpected end of file in 'if' statement".to_string());
-            }
-
-            // Skip comments and newlines
-            self.skip_comments();
-
-            if self.check("else") {
-                self.advance();
-                // Parse else branch
-                break;
-            }
-
-            if self.check("then") {
-                self.advance();
-                // End of if without else
-                return Ok(Statement::If {
-                    then_branch,
-                    else_branch: None,
-                    span: Some(Span::new(start_line, start_column, "if".len())),
-                });
-            }
-
-            then_branch.push(self.parse_statement()?);
-        }
-
-        // Parse else branch until 'then'
-        let mut else_branch = Vec::new();
-        loop {
-            if self.is_at_end() {
-                return Err("Unexpected end of file in 'else' branch".to_string());
-            }
-
-            // Skip comments and newlines
-            self.skip_comments();
-
-            if self.check("then") {
-                self.advance();
-                return Ok(Statement::If {
-                    then_branch,
-                    else_branch: Some(else_branch),
-                    span: Some(Span::new(start_line, start_column, "if".len())),
-                });
-            }
-
-            else_branch.push(self.parse_statement()?);
-        }
     }
 
     pub(super) fn parse_quotation(

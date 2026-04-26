@@ -16,43 +16,43 @@ include std:yaml
   "name: Alice" newline-str string.concat
   "age: 30" string.concat
   yaml-parse
-  if
+  [
     "PASS 2-pair: " swap yaml-serialize string.concat io.write-line
-  else
+  ] [
     drop "FAIL: 2-pair document" io.write-line
-  then
+  ] if
 
   # Test 2: Three key-value pairs
   "name: Bob" newline-str string.concat
   "age: 25" string.concat newline-str string.concat
   "active: true" string.concat
   yaml-parse
-  if
+  [
     "PASS 3-pair: " swap yaml-serialize string.concat io.write-line
-  else
+  ] [
     drop "FAIL: 3-pair document" io.write-line
-  then
+  ] if
 
   # Test 3: With blank lines
   "title: Hello" newline-str string.concat
   newline-str string.concat   # blank line
   "count: 42" string.concat
   yaml-parse
-  if
+  [
     "PASS blank lines: " swap yaml-serialize string.concat io.write-line
-  else
+  ] [
     drop "FAIL: blank lines" io.write-line
-  then
+  ] if
 
   # Test 4: With comments
   "# This is a comment" newline-str string.concat
   "key: value" string.concat
   yaml-parse
-  if
+  [
     "PASS comments: " swap yaml-serialize string.concat io.write-line
-  else
+  ] [
     drop "FAIL: comments" io.write-line
-  then
+  ] if
 
   "" io.write-line
   "Multi-line tests completed!" io.write-line

@@ -42,41 +42,41 @@ include std:json
 
 # Read file or return empty string if not found/unreadable
 : read-json-file ( String -- String )
-  dup file.exists? if
-    file.slurp if
+  dup file.exists? [
+    file.slurp [
       # success - content is on stack
-    else
+    ] [
       drop ""  # failed to read - return empty string
-    then
-  else
+    ] if
+  ] [
     drop ""
-  then
+  ] if
 ;
 
 # Process argument: if it's a .json file, read it; otherwise return as-is
 : process-arg ( String -- String )
-  is-json-file? if
+  is-json-file? [
     read-json-file
-  else
+  ] [
     # Not a file - return as JSON string directly
-  then
+  ] if
 ;
 
 # Get JSON input - from file, command line, or stdin
 : get-json-input ( -- String )
-  args.count 1 i.> if
+  args.count 1 i.> [
     # Have an argument
     1 args.at process-arg
-  else
+  ] [
     # No argument - read from stdin
     "Paste JSON and press Enter:" io.write-line
     io.read-line  # ( String Bool )
-    if
+    [
       string.chomp
-    else
+    ] [
       drop ""  # I/O error or EOF - return empty string
-    then
-  then
+    ] if
+  ] if
 ;
 
 : main ( -- Int )
@@ -85,26 +85,26 @@ include std:json
 
   get-json-input
 
-  dup string.length 0 i.= if
+  dup string.length 0 i.= [
     drop
     "No input." io.write-line
     1
-  else
+  ] [
     "Input: " over string.concat io.write-line
     "" io.write-line
 
     json-parse
-    not if
+    not [
       drop
       "Parse error!" io.write-line
       1
-    else
+    ] [
       # variant.tag now returns Symbol (e.g., :JsonNull, :JsonBool, etc.)
       # The tag is now symbolic rather than numeric
 
       "Value:" io.write-line
       json-format io.write-line
       0
-    then
-  then
+    ] if
+  ] if
 ;

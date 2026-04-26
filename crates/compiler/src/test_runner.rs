@@ -212,9 +212,7 @@ impl TestRunner {
             r#"{}
 
 : main ( -- )
-{}  test.has-failures if
-    1 os.exit
-  then
+{}  test.has-failures [ 1 os.exit ] [ ] if
 ;
 "#,
             source, test_calls

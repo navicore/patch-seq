@@ -108,7 +108,7 @@
 
 # Create a JSON boolean from an Int (0 for false, non-zero for true)
 : json-bool ( Int -- Variant )
-  0 i.<> if 1 else 0 then
+  0 i.<> [ 1 ] [ 0 ] if
   :JsonBool variant.make-1
 ;
 
@@ -223,7 +223,7 @@
 
 # Serialize JsonBool to string
 : serialize-bool ( Variant -- String )
-  json-unwrap-bool 0 i.= if "false" else "true" then
+  json-unwrap-bool 0 i.= [ "false" ] [ "true" ] if
 ;
 
 # Serialize JsonString to string
@@ -292,11 +292,11 @@
 : json-serialize-object ( Variant -- String )
   # Stack: JsonObject
   dup variant.field-count      # JsonObject count
-  dup 0 i.= if
+  dup 0 i.= [
     # Empty object
     drop drop "{}"
-  else
-    dup 2 i.= if
+  ] [
+    dup 2 i.= [
       # Single key-value pair (2 fields)
       drop                     # JsonObject
       # Get key (field 0) and value (field 1)
@@ -311,8 +311,8 @@
       ":" string.concat        # valstr "{key:"
       swap string.concat       # "{key:val"
       "}" string.concat        # "{key:val}"
-    else
-      dup 4 i.= if
+    ] [
+      dup 4 i.= [
         # Two key-value pairs (4 fields)
         drop                     # JsonObject
         # Strategy: build result string incrementally, keep obj on stack
@@ -333,12 +333,12 @@
         json-serialize           # "{key1:val1,key2:" val2str
         string.concat            # "{key1:val1,key2:val2"
         "}" string.concat        # "{key1:val1,key2:val2}"
-      else
+      ] [
         # More than 2 pairs - fall back for now
         drop drop "{...}"
-      then
-    then
-  then
+      ] if
+    ] if
+  ] if
 ;
 
 # ============================================================================
@@ -418,16 +418,16 @@
 # Skip whitespace in parser state
 # Stack: ( PState -- PState )
 : pstate-skip-ws ( Variant -- Variant )
-  pstate-at-end? if
+  pstate-at-end? [
     # At end, nothing to skip
-  else
+  ] [
     pstate-char-at           # PState charcode
-    pstate-is-ws-char? if    # PState
+    pstate-is-ws-char? [    # PState
       1 pstate-advance pstate-skip-ws
-    else
+    ] [
       # Not whitespace, stop
-    then
-  then
+    ] if
+  ] if
 ;
 
 # ============================================================================
@@ -472,84 +472,84 @@
 # Parse "null" keyword (returns JsonValue and success flag)
 # seq:allow(deep-nesting)
 : json-parse-null ( ..rest String Int -- ..rest String Int Variant Bool )
-  json-char-at 110 i.= if
+  json-char-at 110 i.= [
     1 json-advance
-    json-char-at 117 i.= if
+    json-char-at 117 i.= [
       1 json-advance
-      json-char-at 108 i.= if
+      json-char-at 108 i.= [
         1 json-advance
-        json-char-at 108 i.= if
+        json-char-at 108 i.= [
           1 json-advance
           json-null true
-        else
+        ] [
           json-null false
-        then
-      else
+        ] if
+      ] [
         json-null false
-      then
-    else
+      ] if
+    ] [
       json-null false
-    then
-  else
+    ] if
+  ] [
     json-null false
-  then
+  ] if
 ;
 
 # Parse "true" keyword
 # seq:allow(deep-nesting)
 : json-parse-true ( ..rest String Int -- ..rest String Int Variant Bool )
-  json-char-at 116 i.= if
+  json-char-at 116 i.= [
     1 json-advance
-    json-char-at 114 i.= if
+    json-char-at 114 i.= [
       1 json-advance
-      json-char-at 117 i.= if
+      json-char-at 117 i.= [
         1 json-advance
-        json-char-at 101 i.= if
+        json-char-at 101 i.= [
           1 json-advance
           json-true true
-        else
+        ] [
           json-null false
-        then
-      else
+        ] if
+      ] [
         json-null false
-      then
-    else
+      ] if
+    ] [
       json-null false
-    then
-  else
+    ] if
+  ] [
     json-null false
-  then
+  ] if
 ;
 
 # Parse "false" keyword
 # seq:allow(deep-nesting)
 : json-parse-false ( ..rest String Int -- ..rest String Int Variant Bool )
-  json-char-at 102 i.= if
+  json-char-at 102 i.= [
     1 json-advance
-    json-char-at 97 i.= if
+    json-char-at 97 i.= [
       1 json-advance
-      json-char-at 108 i.= if
+      json-char-at 108 i.= [
         1 json-advance
-        json-char-at 115 i.= if
+        json-char-at 115 i.= [
           1 json-advance
-          json-char-at 101 i.= if
+          json-char-at 101 i.= [
             1 json-advance
             json-false true
-          else
+          ] [
             json-null false
-          then
-        else
+          ] if
+        ] [
           json-null false
-        then
-      else
+        ] if
+      ] [
         json-null false
-      then
-    else
+      ] if
+    ] [
       json-null false
-    then
-  else
+    ] if
+  ] [
     json-null false
-  then
+  ] if
 ;
 
 # Check if character code is a digit 0-9
@@ -586,15 +586,15 @@
 # Stack: ( str pos -- str pos Int )
 # Returns 1 if whitespace was skipped, 0 if not
 : json-skip-one-ws ( ..rest String Int -- ..rest String Int Int )
-  json-at-end? if
+  json-at-end? [
     0
-  else
-    json-char-at json-is-ws? if
+  ] [
+    json-char-at json-is-ws? [
       1 json-advance 1
-    else
+    ] [
       0
-    then
-  then
+    ] if
+  ] if
 ;
 
 # Helper: Get substring from position to end
@@ -614,19 +614,19 @@
 # Stack: ( PState -- PState closepos )
 # Returns position of quote or -1 if not found
 : pstate-scan-for-quote ( Variant -- Variant Int )
-  pstate-at-end? if
+  pstate-at-end? [
     -1
-  else
+  ] [
     pstate-char-at           # PState char
-    34 i.= if
+    34 i.= [
       # Found quote at current position
       pstate-pos
-    else
+    ] [
       # Continue scanning
       1 pstate-advance
       pstate-scan-for-quote
-    then
-  then
+    ] if
+  ] if
 ;
 
 # Parse a JSON string
@@ -636,7 +636,7 @@
 # This version properly returns the new position after the closing quote.
 : json-parse-string ( ..rest String Int -- ..rest String Int Variant Bool )
   # Check for opening quote
-  json-char-at 34 i.= if
+  json-char-at 34 i.= [
     # Stack: str pos (at opening quote)
     # Keep original str and pos for later use
     2dup                     # str pos str pos
@@ -648,11 +648,11 @@
     2dup make-pstate    # str pos str startpos PState
     pstate-scan-for-quote    # str pos str startpos PState closepos
 
-    dup 0 i.< if
+    dup 0 i.< [
       # No closing quote - cleanup and fail
       3drop drop    # str pos
       json-null false
-    else
+    ] [
       # Stack: str pos str startpos PState closepos
       # Drop PState, compute len = closepos - startpos
       nip                    # str pos str startpos closepos
@@ -683,10 +683,10 @@
       rot                    # str JsonString newpos
       swap                   # str newpos JsonString
       true
-    then
-  else
+    ] if
+  ] [
     json-null false
-  then
+  ] if
 ;
 
 # ============================================================================
@@ -703,21 +703,21 @@
 # Helper: scan until non-number char, return position
 # Stack: ( ..rest PState -- ..rest PState endpos )
 : pstate-find-number-end-loop ( ..rest Variant -- ..rest Variant Int )
-  pstate-at-end? if
+  pstate-at-end? [
     # At end of string, number ends here
     pstate-pos
-  else
+  ] [
     pstate-char-at
     # Stack: PState charcode
-    json-is-number-char? if
+    json-is-number-char? [
       # Still in number, advance and continue
       1 pstate-advance
       pstate-find-number-end-loop
-    else
+    ] [
       # Found non-number char, return current position
       pstate-pos
-    then
-  then
+    ] if
+  ] if
 ;
 
 
@@ -776,11 +776,11 @@
 : pstate-parse-number ( Variant -- Variant Variant Bool )
   pstate-extract-number-str  # PState' numstr
   string->float              # PState' float success
-  not if
+  not [
     drop json-null false
-  else
+  ] [
     json-number true
-  then
+  ] if
 ;
 
 # Parse a JSON number (legacy interface using str pos)
@@ -831,15 +831,15 @@
 # Skip whitespace characters
 # Stack: ( str pos -- str pos )
 : json-skip-ws ( ..rest String Int -- ..rest String Int )
-  json-at-end? if
+  json-at-end? [
     # At end, nothing to skip
-  else
-    json-char-at json-is-ws? if
+  ] [
+    json-char-at json-is-ws? [
       1 json-advance json-skip-ws
-    else
+    ] [
       # Not whitespace, stop skipping
-    then
-  then
+    ] if
+  ] if
 ;
 
 # Parse a single array element and add it to an array
@@ -852,12 +852,12 @@
   dup 0 variant.field-at         # arr PState str
   over 1 variant.field-at        # arr PState str pos
   json-parse-value               # arr PState str' pos' elem success
-  not if
+  not [
     # Failed to parse element
     3drop               # arr PState
     swap                         # PState arr
     false
-  else
+  ] [
     # Stack: arr PState str' pos' elem
     # Update PState
     rot rot                      # arr PState elem str' pos'
@@ -868,7 +868,7 @@
     rot rot                      # PState' arr elem
     array-with                   # PState' arr'
     true
-  then
+  ] if
 ;
 
 # Parse array elements recursively
@@ -876,33 +876,33 @@
 # Parses elements until ] is found
 : pstate-parse-array-elements ( ..rest Variant Variant -- ..rest Variant Variant Bool )
   pstate-parse-one-element       # PState' arr' success
-  not if
+  not [
     # Failed to parse element
     false
-  else
+  ] [
     # Successfully parsed one element, check for more
     # Stack: PState' arr'
     swap pstate-skip-ws          # arr' PState'
     pstate-char-at
 
-    dup 93 i.= if                  # ']' - end of array
+    dup 93 i.= [                  # ']' - end of array
       drop                       # arr' PState'
       1 pstate-advance           # arr' PState''
       swap                       # PState'' arr'
       true
-    else
-      44 i.= if                    # ',' - more elements
+    ] [
+      44 i.= [                    # ',' - more elements
         1 pstate-advance         # arr' PState''
         pstate-skip-ws           # arr' PState''
         swap                     # PState'' arr'
         pstate-parse-array-elements  # recurse
-      else
+      ] [
         # Unexpected character
         swap                     # PState' arr'
         false
-      then
-    then
-  then
+      ] if
+    ] if
+  ] if
 ;
 
 # Parse array contents using PState with array-with for building
@@ -919,20 +919,20 @@
   # Convert to PState for easier manipulation
   make-pstate                    # PState
   pstate-parse-array-contents    # PState' arr success
-  not if
+  not [
     # Failed - extract str pos from PState
     drop                         # PState'
     dup 0 variant.field-at       # PState' str
     swap 1 variant.field-at      # str pos
     json-null false
-  else
+  ] [
     # Success - extract str pos from PState
     swap                         # arr PState'
     dup 0 variant.field-at       # arr PState' str
     swap 1 variant.field-at      # arr str pos
     rot                          # str pos arr
     true
-  then
+  ] if
 ;
 
 # Parse an array - handles empty and non-empty arrays
@@ -943,18 +943,18 @@
   1 json-advance
   json-skip-ws
 
-  json-at-end? if
+  json-at-end? [
     json-null false
-  else
-    json-char-at 93 i.= if
+  ] [
+    json-char-at 93 i.= [
       # Found ']' immediately - empty array
       1 json-advance
       json-empty-array true
-    else
+    ] [
       # Non-empty array - parse contents
       json-parse-array-contents
-    then
-  then
+    ] if
+  ] if
 ;
 
 # Parse a single key-value pair and add it to an object
@@ -964,17 +964,17 @@
 : pstate-parse-one-pair ( ..rest Variant Variant -- ..rest Variant Variant Bool )
   # Stack: PState obj
   swap                           # obj PState
-  pstate-char-at 34 i.= if         # Check for opening quote
+  pstate-char-at 34 i.= [         # Check for opening quote
     # Unpack PState to call json-parse-string
     dup 0 variant.field-at       # obj PState str
     over 1 variant.field-at      # obj PState str pos
     json-parse-string            # obj PState str' pos' JsonString success
-    not if
+    not [
       # Failed to parse key
       3drop             # obj PState
       swap                       # PState obj
       false
-    else
+    ] [
       # Stack: obj PState str' pos' JsonString
       # Update PState with new position
       rot rot                    # obj PState JsonString str' pos'
@@ -983,7 +983,7 @@
 
       # Skip whitespace and expect colon
       pstate-skip-ws
-      pstate-char-at 58 i.= if     # ':' = 58
+      pstate-char-at 58 i.= [     # ':' = 58
         1 pstate-advance         # obj JsonString PState'
         pstate-skip-ws           # obj JsonString PState'
 
@@ -991,12 +991,12 @@
         dup 0 variant.field-at   # obj JsonString PState' str
         over 1 variant.field-at  # obj JsonString PState' str pos
         json-parse-value         # obj JsonString PState' str' pos' val success
-        not if
+        not [
           # Failed to parse value
           3drop         # obj JsonString PState'
           rot drop               # PState' obj
           false
-        else
+        ] [
           # Stack: obj JsonString PState' str' pos' val
           # Update PState
           rot rot                # obj JsonString PState' val str' pos'
@@ -1012,18 +1012,18 @@
           3 roll                 # PState'' obj JsonString val
           obj-with               # PState'' obj'
           true
-        then
-      else
+        ] if
+      ] [
         # Missing colon
         rot drop                 # PState' obj
         false
-      then
-    then
-  else
+      ] if
+    ] if
+  ] [
     # Key must start with quote
     swap                         # PState obj
     false
-  then
+  ] if
 ;
 
 # Parse object pairs recursively
@@ -1031,33 +1031,33 @@
 # Parses pairs until } is found
 : pstate-parse-object-pairs ( ..rest Variant Variant -- ..rest Variant Variant Bool )
   pstate-parse-one-pair          # PState' obj' success
-  not if
+  not [
     # Failed to parse pair
     false
-  else
+  ] [
     # Successfully parsed one pair, check for more
     # Stack: PState' obj'
     swap pstate-skip-ws          # obj' PState'
     pstate-char-at
 
-    dup 125 i.= if                 # '}' - end of object
+    dup 125 i.= [                 # '}' - end of object
       drop                       # obj' PState'
       1 pstate-advance           # obj' PState''
       swap                       # PState'' obj'
       true
-    else
-      44 i.= if                    # ',' - more pairs
+    ] [
+      44 i.= [                    # ',' - more pairs
         1 pstate-advance         # obj' PState''
         pstate-skip-ws           # obj' PState''
         swap                     # PState'' obj'
         pstate-parse-object-pairs  # recurse
-      else
+      ] [
         # Unexpected character
         swap                     # PState' obj'
         false
-      then
-    then
-  then
+      ] if
+    ] if
+  ] if
 ;
 
 # Parse object contents using PState with obj-with for building
@@ -1075,20 +1075,20 @@
   # Convert to PState for easier manipulation
   make-pstate                    # PState
   pstate-parse-object-contents   # PState' obj success
-  not if
+  not [
     # Failed - extract str pos from PState
     drop                         # PState'
     dup 0 variant.field-at       # PState' str
     swap 1 variant.field-at      # str pos
     json-null false
-  else
+  ] [
     # Success - extract str pos from PState
     swap                         # obj PState'
     dup 0 variant.field-at       # obj PState' str
     swap 1 variant.field-at      # obj str pos
     rot                          # str pos obj
     true
-  then
+  ] if
 ;
 
 # Parse an object - handles empty and non-empty objects
@@ -1099,18 +1099,18 @@
   1 json-advance
   json-skip-ws
 
-  json-at-end? if
+  json-at-end? [
     json-null false
-  else
-    json-char-at 125 i.= if
+  ] [
+    json-char-at 125 i.= [
       # Found '}' immediately - empty object
       1 json-advance
       json-empty-object true
-    else
+    ] [
       # Non-empty object - parse contents
       json-parse-object-contents
-    then
-  then
+    ] if
+  ] if
 ;
 
 # Main JSON parser entry point
@@ -1118,42 +1118,42 @@
 # Stack: ( str pos -- str pos JsonValue Bool )
 # seq:allow(deep-nesting)
 : json-parse-value ( ..rest String Int -- ..rest String Int Variant Bool )
-  json-at-end? if
+  json-at-end? [
     json-null false
-  else
+  ] [
     json-skip-ws
     json-char-at
     # Check for double-quote (34) - string
-    dup 34 i.= if
+    dup 34 i.= [
       drop json-parse-string
-    else
+    ] [
     # Check for n (110) - null
-    dup 110 i.= if
+    dup 110 i.= [
       drop json-parse-null
-    else
+    ] [
     # Check for t (116) - true
-    dup 116 i.= if
+    dup 116 i.= [
       drop json-parse-true
-    else
+    ] [
     # Check for f (102) - false
-    dup 102 i.= if
+    dup 102 i.= [
       drop json-parse-false
-    else
+    ] [
     # Check for number (digit or minus)
-    dup json-is-number-start? if
+    dup json-is-number-start? [
       drop json-parse-number
-    else
+    ] [
     # Check for [ (91) - array
-    dup 91 i.= if
+    dup 91 i.= [
       drop json-parse-array
-    else
+    ] [
     # Check for { (123) - object
-    dup 123 i.= if
+    dup 123 i.= [
       drop json-parse-object
-    else
+    ] [
       drop json-null false
-    then then then then then then then
-  then
+    ] if ] if ] if ] if ] if ] if ] if
+  ] if
 ;
 
 # Simple JSON parse interface

@@ -164,11 +164,11 @@ union Shape {
   "--- Type Checking (instanceof) ---" io.write-line
 
   3.0 make-circle
-  shape.is-circle? if "Circle is a circle: true" else "Circle is a circle: false" then
+  shape.is-circle? [ "Circle is a circle: true" ] [ "Circle is a circle: false" ] if
   io.write-line drop
 
   4.0 5.0 make-rectangle
-  shape.is-square? if "Rectangle is a square: true" else "Rectangle is a square: false" then
+  shape.is-square? [ "Rectangle is a square: true" ] [ "Rectangle is a square: false" ] if
   io.write-line drop
 
   "=== Demo Complete ===" io.write-line

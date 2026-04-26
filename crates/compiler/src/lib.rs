@@ -32,6 +32,7 @@ pub mod config;
 pub mod error_flag_lint;
 pub mod ffi;
 pub mod lint;
+pub mod normalize;
 pub mod parser;
 pub mod resolver;
 pub mod resource_lint;
@@ -236,6 +237,11 @@ pub fn compile_file_with_config(
     // Always done here to consolidate constructor generation in one place
     program.generate_constructors()?;
 
+    // Lower literal-quotation `if` triples to `Statement::If` so the
+    // typechecker, codegen, type-specializer, and lints all see the
+    // same shape they see for the keyword form. (See `normalize.rs`.)
+    normalize::lower_literal_if_combinators(&mut program);
+
     // Check for word name collisions
     check_collisions(&program.words)?;
 
@@ -412,6 +418,8 @@ pub fn compile_to_ir_with_config(source: &str, config: &CompilerConfig) -> Resul
     if !program.unions.is_empty() {
         program.generate_constructors()?;
     }
+
+    normalize::lower_literal_if_combinators(&mut program);
 
     let external_names = config.external_names();
     program.validate_word_calls_with_externals(&external_names)?;

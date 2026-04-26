@@ -12,16 +12,16 @@ include std:zipper
 
 # Helper to print a zipper's state
 : print-zipper ( Zipper -- Zipper )
-  dup zipper.empty? if
+  dup zipper.empty? [
     "  [empty zipper]" io.write-line
-  else
+  ] [
     "  List: " io.write
     dup zipper.to-list son.dump io.write-line
     "  Focus index: " io.write
     dup zipper.index int->string io.write-line
     "  Focus value: " io.write
     dup zipper.focus son.dump io.write-line
-  then
+  ] if
 ;
 
 : main ( -- Int )
