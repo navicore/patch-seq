@@ -586,8 +586,10 @@ fn test_list_first_empty_is_failure_tuple() {
         let stack = push(stack, make_int_list(vec![]));
         let stack = list_first(stack);
         let (stack, ok) = pop(stack);
-        let (_stack, _placeholder) = pop(stack);
+        let (_stack, placeholder) = pop(stack);
         assert_eq!(ok, Value::Bool(false));
+        // Placeholder shape is part of the documented contract — pin it.
+        assert_eq!(placeholder, Value::Int(0));
     }
 }
 
@@ -598,7 +600,8 @@ fn test_list_last_empty_is_failure_tuple() {
         let stack = push(stack, make_int_list(vec![]));
         let stack = list_last(stack);
         let (stack, ok) = pop(stack);
-        let (_stack, _placeholder) = pop(stack);
+        let (_stack, placeholder) = pop(stack);
         assert_eq!(ok, Value::Bool(false));
+        assert_eq!(placeholder, Value::Int(0));
     }
 }

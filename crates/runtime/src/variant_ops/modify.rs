@@ -57,7 +57,7 @@ pub unsafe extern "C" fn patch_seq_variant_append(stack: Stack) -> Stack {
                     push(stack, new_variant)
                 }
             }
-            _ => panic!("variant-append: expected Variant, got {:?}", variant_val),
+            _ => panic!("variant.append: expected Variant, got {:?}", variant_val),
         }
     }
 }
@@ -80,13 +80,13 @@ pub unsafe extern "C" fn patch_seq_variant_first(stack: Stack) -> Stack {
         match variant_val {
             Value::Variant(variant_data) => {
                 if variant_data.fields.is_empty() {
-                    panic!("variant-first: variant has no fields");
+                    panic!("variant.first: variant has no fields");
                 }
 
                 let first = variant_data.fields[0].clone();
                 push(stack, first)
             }
-            _ => panic!("variant-first: expected Variant, got {:?}", variant_val),
+            _ => panic!("variant.first: expected Variant, got {:?}", variant_val),
         }
     }
 }
@@ -108,13 +108,13 @@ pub unsafe extern "C" fn patch_seq_variant_last(stack: Stack) -> Stack {
         match variant_val {
             Value::Variant(variant_data) => {
                 if variant_data.fields.is_empty() {
-                    panic!("variant-last: variant has no fields");
+                    panic!("variant.last: variant has no fields");
                 }
 
                 let last = variant_data.fields.last().unwrap().clone();
                 push(stack, last)
             }
-            _ => panic!("variant-last: expected Variant, got {:?}", variant_val),
+            _ => panic!("variant.last: expected Variant, got {:?}", variant_val),
         }
     }
 }
@@ -139,7 +139,7 @@ pub unsafe extern "C" fn patch_seq_variant_init(stack: Stack) -> Stack {
         match variant_val {
             Value::Variant(variant_data) => {
                 if variant_data.fields.is_empty() {
-                    panic!("variant-init: variant has no fields");
+                    panic!("variant.init: variant has no fields");
                 }
 
                 // Create new fields without the last element
@@ -153,7 +153,7 @@ pub unsafe extern "C" fn patch_seq_variant_init(stack: Stack) -> Stack {
 
                 push(stack, new_variant)
             }
-            _ => panic!("variant-init: expected Variant, got {:?}", variant_val),
+            _ => panic!("variant.init: expected Variant, got {:?}", variant_val),
         }
     }
 }

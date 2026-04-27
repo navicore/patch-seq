@@ -272,6 +272,15 @@ fn test_variant_first_singleton() {
     }
 }
 
+// NOTE: there is no unit test for `variant.first` on a fieldless variant.
+// The panic crosses the `extern "C"` boundary, which is non-unwinding
+// in edition 2024 — it aborts the process rather than unwinding, so
+// `#[should_panic]` would abort the entire test binary instead of being
+// caught. The same is true for `variant.last` and `variant.init`. The
+// contract is pinned by the docstring + panic message; an end-to-end
+// repro would have to run the produced binary in a subprocess and
+// observe the abort, which isn't worth the harness complexity here.
+
 #[test]
 fn test_variant_last() {
     unsafe {
