@@ -48,6 +48,14 @@ pub(super) static DECLS: &[RuntimeDecl] = &[
         decl: "declare ptr @patch_seq_list_reverse(ptr)",
         category: None,
     },
+    RuntimeDecl {
+        decl: "declare ptr @patch_seq_list_first(ptr)",
+        category: None,
+    },
+    RuntimeDecl {
+        decl: "declare ptr @patch_seq_list_last(ptr)",
+        category: None,
+    },
     // Map operations
     RuntimeDecl {
         decl: "declare ptr @patch_seq_make_map(ptr)",
@@ -108,6 +116,8 @@ pub(super) static SYMBOLS: &[(&str, &str)] = &[
     ("list.length", "patch_seq_list_length"),
     ("list.empty?", "patch_seq_list_empty"),
     ("list.reverse", "patch_seq_list_reverse"),
+    ("list.first", "patch_seq_list_first"),
+    ("list.last", "patch_seq_list_last"),
     // Map operations
     ("map.make", "patch_seq_make_map"),
     ("map.get", "patch_seq_map_get"),

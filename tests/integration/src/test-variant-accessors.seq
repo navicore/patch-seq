@@ -1,0 +1,34 @@
+# Integration tests for variant.first / variant.last / variant.init.
+#
+# These confirm the head/tail accessor surface — `variant.first` and
+# `variant.last` mirror each other, and `variant.init` returns the
+# variant minus its last field.
+
+# variant.first returns the first field.
+: test-variant-first ( -- )
+  10 20 30 :Triple wrap-3
+  variant.first
+  10 test.assert-eq
+;
+
+# variant.last returns the last field.
+: test-variant-last ( -- )
+  10 20 30 :Triple wrap-3
+  variant.last
+  30 test.assert-eq
+;
+
+# Singleton: first and last must agree.
+: test-variant-first-and-last-agree-on-singleton ( -- )
+  42 :Wrap wrap-1 dup
+  variant.first 42 test.assert-eq
+  variant.last  42 test.assert-eq
+;
+
+# variant.first does not consume the variant for downstream callers.
+: test-variant-first-followed-by-init ( -- )
+  10 20 30 :Triple wrap-3 dup
+  variant.first 10 test.assert-eq
+  variant.init                 # drop the last field
+  variant.last 20 test.assert-eq
+;

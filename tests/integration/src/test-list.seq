@@ -127,3 +127,35 @@ include std:list
   # Original list still has 2 at index 1
   1 list.get test.assert 2 test.assert-eq
 ;
+
+# list.first returns the head and true for a non-empty list.
+: test-list-first ( -- )
+  list-of 10 lv 20 lv 30 lv
+  list.first test.assert
+  10 test.assert-eq
+;
+
+# list.last returns the tail and true for a non-empty list.
+: test-list-last ( -- )
+  list-of 10 lv 20 lv 30 lv
+  list.last test.assert
+  30 test.assert-eq
+;
+
+# list.first on a singleton agrees with list.last.
+: test-list-first-and-last-agree-on-singleton ( -- )
+  list-of 42 lv dup
+  list.first test.assert 42 test.assert-eq
+  list.last  test.assert 42 test.assert-eq
+;
+
+# Empty-list path: both return false; the value side is a placeholder.
+: test-list-first-empty ( -- )
+  list-of list.first not test.assert
+  drop  # placeholder
+;
+
+: test-list-last-empty ( -- )
+  list-of list.last not test.assert
+  drop  # placeholder
+;

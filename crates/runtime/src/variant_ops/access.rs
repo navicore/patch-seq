@@ -19,7 +19,7 @@ pub unsafe extern "C" fn patch_seq_variant_field_count(stack: Stack) -> Stack {
                 let count = variant_data.fields.len() as i64;
                 push(stack, Value::Int(count))
             }
-            _ => panic!("variant-field-count: expected Variant, got {:?}", value),
+            _ => panic!("variant.field-count: expected Variant, got {:?}", value),
         }
     }
 }
@@ -40,7 +40,7 @@ pub unsafe extern "C" fn patch_seq_variant_tag(stack: Stack) -> Stack {
                 // Return the tag as a Symbol
                 push(stack, Value::Symbol(variant_data.tag.clone()))
             }
-            _ => panic!("variant-tag: expected Variant, got {:?}", value),
+            _ => panic!("variant.tag: expected Variant, got {:?}", value),
         }
     }
 }
@@ -93,13 +93,13 @@ pub unsafe extern "C" fn patch_seq_variant_field_at(stack: Stack) -> Stack {
         let index = match index_val {
             Value::Int(i) => i,
             _ => panic!(
-                "variant-field-at: expected Int (index), got {:?}",
+                "variant.field-at: expected Int (index), got {:?}",
                 index_val
             ),
         };
 
         if index < 0 {
-            panic!("variant-field-at: index cannot be negative: {}", index);
+            panic!("variant.field-at: index cannot be negative: {}", index);
         }
 
         let (stack, variant_val) = pop(stack);
@@ -109,7 +109,7 @@ pub unsafe extern "C" fn patch_seq_variant_field_at(stack: Stack) -> Stack {
                 let idx = index as usize;
                 if idx >= variant_data.fields.len() {
                     panic!(
-                        "variant-field-at: index {} out of bounds (variant has {} fields)",
+                        "variant.field-at: index {} out of bounds (variant has {} fields)",
                         index,
                         variant_data.fields.len()
                     );
@@ -119,7 +119,7 @@ pub unsafe extern "C" fn patch_seq_variant_field_at(stack: Stack) -> Stack {
                 let field = variant_data.fields[idx].clone();
                 push(stack, field)
             }
-            _ => panic!("variant-field-at: expected Variant, got {:?}", variant_val),
+            _ => panic!("variant.field-at: expected Variant, got {:?}", variant_val),
         }
     }
 }

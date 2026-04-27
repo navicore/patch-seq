@@ -28,6 +28,10 @@ pub(super) static DECLS: &[RuntimeDecl] = &[
         category: None,
     },
     RuntimeDecl {
+        decl: "declare ptr @patch_seq_variant_first(ptr)",
+        category: None,
+    },
+    RuntimeDecl {
         decl: "declare ptr @patch_seq_variant_last(ptr)",
         category: None,
     },
@@ -105,6 +109,7 @@ pub(super) static SYMBOLS: &[(&str, &str)] = &[
     ("variant.tag", "patch_seq_variant_tag"),
     ("variant.field-at", "patch_seq_variant_field_at"),
     ("variant.append", "patch_seq_variant_append"),
+    ("variant.first", "patch_seq_variant_first"),
     ("variant.last", "patch_seq_variant_last"),
     ("variant.init", "patch_seq_variant_init"),
     ("variant.make-0", "patch_seq_make_variant_0"),

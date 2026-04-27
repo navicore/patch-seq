@@ -25,7 +25,7 @@ pub unsafe extern "C" fn patch_seq_make_variant_0(stack: Stack) -> Stack {
         let (stack, tag_val) = pop(stack);
         let tag = match tag_val {
             Value::Symbol(s) => s,
-            _ => panic!("make-variant-0: expected Symbol (tag), got {:?}", tag_val),
+            _ => panic!("variant.make-0: expected Symbol (tag), got {:?}", tag_val),
         };
 
         let variant = Value::Variant(Arc::new(VariantData::new(tag, vec![])));
@@ -47,7 +47,7 @@ pub unsafe extern "C" fn patch_seq_make_variant_1(stack: Stack) -> Stack {
         let (stack, tag_val) = pop(stack);
         let tag = match tag_val {
             Value::Symbol(s) => s,
-            _ => panic!("make-variant-1: expected Symbol (tag), got {:?}", tag_val),
+            _ => panic!("variant.make-1: expected Symbol (tag), got {:?}", tag_val),
         };
 
         let (stack, field1) = pop(stack);
@@ -70,7 +70,7 @@ pub unsafe extern "C" fn patch_seq_make_variant_2(stack: Stack) -> Stack {
         let (stack, tag_val) = pop(stack);
         let tag = match tag_val {
             Value::Symbol(s) => s,
-            _ => panic!("make-variant-2: expected Symbol (tag), got {:?}", tag_val),
+            _ => panic!("variant.make-2: expected Symbol (tag), got {:?}", tag_val),
         };
 
         let (stack, field2) = pop(stack);
@@ -94,7 +94,7 @@ pub unsafe extern "C" fn patch_seq_make_variant_3(stack: Stack) -> Stack {
         let (stack, tag_val) = pop(stack);
         let tag = match tag_val {
             Value::Symbol(s) => s,
-            _ => panic!("make-variant-3: expected Symbol (tag), got {:?}", tag_val),
+            _ => panic!("variant.make-3: expected Symbol (tag), got {:?}", tag_val),
         };
 
         let (stack, field3) = pop(stack);
@@ -122,7 +122,7 @@ pub unsafe extern "C" fn patch_seq_make_variant_4(stack: Stack) -> Stack {
         let (stack, tag_val) = pop(stack);
         let tag = match tag_val {
             Value::Symbol(s) => s,
-            _ => panic!("make-variant-4: expected Symbol (tag), got {:?}", tag_val),
+            _ => panic!("variant.make-4: expected Symbol (tag), got {:?}", tag_val),
         };
 
         let (stack, field4) = pop(stack);
@@ -151,7 +151,7 @@ pub unsafe extern "C" fn patch_seq_make_variant_5(stack: Stack) -> Stack {
         let (stack, tag_val) = pop(stack);
         let tag = match tag_val {
             Value::Symbol(s) => s,
-            _ => panic!("make-variant-5: expected Symbol (tag), got {:?}", tag_val),
+            _ => panic!("variant.make-5: expected Symbol (tag), got {:?}", tag_val),
         };
 
         let (stack, field5) = pop(stack);
@@ -181,7 +181,7 @@ pub unsafe extern "C" fn patch_seq_make_variant_6(stack: Stack) -> Stack {
         let (stack, tag_val) = pop(stack);
         let tag = match tag_val {
             Value::Symbol(s) => s,
-            _ => panic!("make-variant-6: expected Symbol (tag), got {:?}", tag_val),
+            _ => panic!("variant.make-6: expected Symbol (tag), got {:?}", tag_val),
         };
 
         let (stack, field6) = pop(stack);
@@ -212,7 +212,7 @@ pub unsafe extern "C" fn patch_seq_make_variant_7(stack: Stack) -> Stack {
         let (stack, tag_val) = pop(stack);
         let tag = match tag_val {
             Value::Symbol(s) => s,
-            _ => panic!("make-variant-7: expected Symbol (tag), got {:?}", tag_val),
+            _ => panic!("variant.make-7: expected Symbol (tag), got {:?}", tag_val),
         };
 
         let (stack, field7) = pop(stack);
@@ -244,7 +244,7 @@ pub unsafe extern "C" fn patch_seq_make_variant_8(stack: Stack) -> Stack {
         let (stack, tag_val) = pop(stack);
         let tag = match tag_val {
             Value::Symbol(s) => s,
-            _ => panic!("make-variant-8: expected Symbol (tag), got {:?}", tag_val),
+            _ => panic!("variant.make-8: expected Symbol (tag), got {:?}", tag_val),
         };
 
         let (stack, field8) = pop(stack);
@@ -279,7 +279,7 @@ pub unsafe extern "C" fn patch_seq_make_variant_9(stack: Stack) -> Stack {
         let (stack, tag_val) = pop(stack);
         let tag = match tag_val {
             Value::Symbol(s) => s,
-            _ => panic!("make-variant-9: expected Symbol (tag), got {:?}", tag_val),
+            _ => panic!("variant.make-9: expected Symbol (tag), got {:?}", tag_val),
         };
 
         let (stack, field9) = pop(stack);
@@ -315,7 +315,7 @@ pub unsafe extern "C" fn patch_seq_make_variant_10(stack: Stack) -> Stack {
         let (stack, tag_val) = pop(stack);
         let tag = match tag_val {
             Value::Symbol(s) => s,
-            _ => panic!("make-variant-10: expected Symbol (tag), got {:?}", tag_val),
+            _ => panic!("variant.make-10: expected Symbol (tag), got {:?}", tag_val),
         };
 
         let (stack, field10) = pop(stack);
@@ -352,7 +352,7 @@ pub unsafe extern "C" fn patch_seq_make_variant_11(stack: Stack) -> Stack {
         let (stack, tag_val) = pop(stack);
         let tag = match tag_val {
             Value::Symbol(s) => s,
-            _ => panic!("make-variant-11: expected Symbol (tag), got {:?}", tag_val),
+            _ => panic!("variant.make-11: expected Symbol (tag), got {:?}", tag_val),
         };
 
         let (stack, field11) = pop(stack);
@@ -391,7 +391,7 @@ pub unsafe extern "C" fn patch_seq_make_variant_12(stack: Stack) -> Stack {
         let (stack, tag_val) = pop(stack);
         let tag = match tag_val {
             Value::Symbol(s) => s,
-            _ => panic!("make-variant-12: expected Symbol (tag), got {:?}", tag_val),
+            _ => panic!("variant.make-12: expected Symbol (tag), got {:?}", tag_val),
         };
 
         let (stack, field12) = pop(stack);

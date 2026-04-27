@@ -1,5 +1,6 @@
-//! Indexed list access: `list_get` (returns success flag) and `list_set`
-//! (functional update returning a new list + success flag).
+//! Indexed list access: `list_get` (returns success flag), `list_set`
+//! (functional update returning a new list + success flag), and the
+//! `list_first` / `list_last` convenience accessors.
 
 use super::combinators::stack_depth;
 use crate::error::set_runtime_error;
@@ -156,4 +157,71 @@ pub unsafe extern "C" fn patch_seq_list_set(stack: Stack) -> Stack {
             push(stack, Value::Bool(true))
         }
     }
+}
+
+/// Shared body for `list.first` and `list.last` — both pop a list, push
+/// `(value true)` on a non-empty list or `(Int 0, false)` on an empty
+/// or wrong-typed list. `pick` selects which element the non-empty path
+/// returns; the only difference between `list.first` and `list.last` is
+/// `[0]` vs `last()`. Stays a free function (not a closure-taking
+/// generic) so the FFI extern wrappers remain trivial inline calls.
+unsafe fn list_endpoint(stack: Stack, op_name: &'static str, pick: fn(&[Value]) -> Value) -> Stack {
+    unsafe {
+        if stack_depth(stack) < 1 {
+            set_runtime_error(format!("{}: stack underflow (need 1 value)", op_name));
+            return stack;
+        }
+        let (stack, list_val) = pop(stack);
+
+        let variant_data = match list_val {
+            Value::Variant(v) => v,
+            _ => {
+                set_runtime_error(format!(
+                    "{}: expected Variant (list), got {:?}",
+                    op_name, list_val
+                ));
+                let stack = push(stack, Value::Int(0));
+                return push(stack, Value::Bool(false));
+            }
+        };
+
+        if variant_data.fields.is_empty() {
+            let stack = push(stack, Value::Int(0));
+            push(stack, Value::Bool(false))
+        } else {
+            let value = pick(&variant_data.fields);
+            let stack = push(stack, value);
+            push(stack, Value::Bool(true))
+        }
+    }
+}
+
+/// First element of a list.
+///
+/// Stack effect: ( V -- T Bool )
+///
+/// Convenience for the common `0 list.get` idiom. Returns the element at
+/// index 0 plus `true` on a non-empty list, or a placeholder `Int 0` plus
+/// `false` on an empty list (matching `list.get`'s out-of-bounds shape).
+///
+/// # Safety
+/// Stack must have a Variant (list) value on top.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn patch_seq_list_first(stack: Stack) -> Stack {
+    unsafe { list_endpoint(stack, "list.first", |fields| fields[0].clone()) }
+}
+
+/// Last element of a list.
+///
+/// Stack effect: ( V -- T Bool )
+///
+/// Convenience for the `dup list.length 1 i.- list.get` idiom. Returns the
+/// element at the highest index plus `true` on a non-empty list, or a
+/// placeholder `Int 0` plus `false` on an empty list.
+///
+/// # Safety
+/// Stack must have a Variant (list) value on top.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn patch_seq_list_last(stack: Stack) -> Stack {
+    unsafe { list_endpoint(stack, "list.last", |fields| fields.last().unwrap().clone()) }
 }

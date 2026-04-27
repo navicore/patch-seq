@@ -140,6 +140,8 @@ pub(super) fn fallible_op_info(name: &str) -> Option<FallibleOpInfo> {
         "map.get" => (2, 1, "key not found"),
         "list.get" => (2, 1, "index out of bounds"),
         "list.set" => (3, 1, "index out of bounds"),
+        "list.first" => (1, 1, "empty list"),
+        "list.last" => (1, 1, "empty list"),
 
         // TCP
         "tcp.listen" => (1, 1, "listen failure"),

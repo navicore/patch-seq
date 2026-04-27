@@ -514,3 +514,94 @@ fn test_list_reverse_multiple() {
         }
     }
 }
+
+// --------------------------------------------------------------------------
+// list.first / list.last
+// --------------------------------------------------------------------------
+
+fn make_int_list(values: Vec<i64>) -> Value {
+    Value::Variant(Arc::new(VariantData::new(
+        global_string("List".to_string()),
+        values.into_iter().map(Value::Int).collect(),
+    )))
+}
+
+#[test]
+fn test_list_first_non_empty() {
+    unsafe {
+        let stack = crate::stack::alloc_test_stack();
+        let stack = push(stack, make_int_list(vec![10, 20, 30]));
+        let stack = list_first(stack);
+        let (stack, ok) = pop(stack);
+        let (_stack, val) = pop(stack);
+        assert_eq!(ok, Value::Bool(true));
+        assert_eq!(val, Value::Int(10));
+    }
+}
+
+#[test]
+fn test_list_last_non_empty() {
+    unsafe {
+        let stack = crate::stack::alloc_test_stack();
+        let stack = push(stack, make_int_list(vec![10, 20, 30]));
+        let stack = list_last(stack);
+        let (stack, ok) = pop(stack);
+        let (_stack, val) = pop(stack);
+        assert_eq!(ok, Value::Bool(true));
+        assert_eq!(val, Value::Int(30));
+    }
+}
+
+#[test]
+fn test_list_first_singleton() {
+    unsafe {
+        let stack = crate::stack::alloc_test_stack();
+        let stack = push(stack, make_int_list(vec![42]));
+        let stack = list_first(stack);
+        let (stack, ok) = pop(stack);
+        let (_stack, val) = pop(stack);
+        assert_eq!(ok, Value::Bool(true));
+        assert_eq!(val, Value::Int(42));
+    }
+}
+
+#[test]
+fn test_list_last_singleton() {
+    // Singleton list: first and last must agree.
+    unsafe {
+        let stack = crate::stack::alloc_test_stack();
+        let stack = push(stack, make_int_list(vec![42]));
+        let stack = list_last(stack);
+        let (stack, ok) = pop(stack);
+        let (_stack, val) = pop(stack);
+        assert_eq!(ok, Value::Bool(true));
+        assert_eq!(val, Value::Int(42));
+    }
+}
+
+#[test]
+fn test_list_first_empty_is_failure_tuple() {
+    unsafe {
+        let stack = crate::stack::alloc_test_stack();
+        let stack = push(stack, make_int_list(vec![]));
+        let stack = list_first(stack);
+        let (stack, ok) = pop(stack);
+        let (_stack, placeholder) = pop(stack);
+        assert_eq!(ok, Value::Bool(false));
+        // Placeholder shape is part of the documented contract — pin it.
+        assert_eq!(placeholder, Value::Int(0));
+    }
+}
+
+#[test]
+fn test_list_last_empty_is_failure_tuple() {
+    unsafe {
+        let stack = crate::stack::alloc_test_stack();
+        let stack = push(stack, make_int_list(vec![]));
+        let stack = list_last(stack);
+        let (stack, ok) = pop(stack);
+        let (_stack, placeholder) = pop(stack);
+        assert_eq!(ok, Value::Bool(false));
+        assert_eq!(placeholder, Value::Int(0));
+    }
+}

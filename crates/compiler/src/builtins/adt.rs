@@ -15,6 +15,7 @@ pub(super) fn add_signatures(sigs: &mut HashMap<String, Effect>) {
     builtin!(sigs, "variant.tag", (a Variant -- a Symbol));
     builtin!(sigs, "variant.field-at", (a Variant Int -- a T));
     builtin!(sigs, "variant.append", (a Variant T -- a Variant));
+    builtin!(sigs, "variant.first", (a Variant -- a T));
     builtin!(sigs, "variant.last", (a Variant -- a T));
     builtin!(sigs, "variant.init", (a Variant -- a Variant));
 
@@ -68,6 +69,7 @@ pub(super) fn add_docs(docs: &mut HashMap<&'static str, &'static str>) {
         "variant.append",
         "Append a value to a variant (creates new).",
     );
+    docs.insert("variant.first", "Get the first field of a variant.");
     docs.insert("variant.last", "Get the last field of a variant.");
     docs.insert("variant.init", "Get all fields except the last.");
     docs.insert("variant.make-0", "Create a variant with 0 fields.");

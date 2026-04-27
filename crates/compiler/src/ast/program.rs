@@ -119,6 +119,8 @@ impl Program {
             "list.length",
             "list.empty?",
             "list.reverse",
+            "list.first",
+            "list.last",
             // Map operations
             "map.make",
             "map.get",
@@ -136,6 +138,7 @@ impl Program {
             "variant.tag",
             "variant.field-at",
             "variant.append",
+            "variant.first",
             "variant.last",
             "variant.init",
             "variant.make-0",

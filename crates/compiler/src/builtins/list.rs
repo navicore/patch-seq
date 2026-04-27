@@ -21,6 +21,11 @@ pub(super) fn add_signatures(sigs: &mut HashMap<String, Effect>) {
     builtin!(sigs, "list.empty?", (a V -- a Bool));
     builtin!(sigs, "list.reverse", (a V -- a V));
 
+    // Convenience accessors. Match `list.get`'s (value Bool) shape so
+    // empty lists fall through the same error-flag lint as out-of-bounds.
+    builtin!(sigs, "list.first", (a V -- a T Bool));
+    builtin!(sigs, "list.last",  (a V -- a T Bool));
+
     // list.map: ( a Variant Quotation -- a Variant )
     // Quotation: ( b T -- b U )
     sigs.insert(
@@ -100,6 +105,14 @@ pub(super) fn add_docs(docs: &mut HashMap<&'static str, &'static str>) {
     docs.insert("list.length", "Get the number of elements in a list.");
     docs.insert("list.empty?", "Check if a list is empty.");
     docs.insert("list.reverse", "Reverse the elements of a list.");
+    docs.insert(
+        "list.first",
+        "Get the first element. Returns (value Bool) -- Bool is false on an empty list.",
+    );
+    docs.insert(
+        "list.last",
+        "Get the last element. Returns (value Bool) -- Bool is false on an empty list.",
+    );
     docs.insert(
         "list.map",
         "Apply quotation to each element. Returns new list.",
