@@ -2,6 +2,17 @@ use super::*;
 use crate::arithmetic::push_int;
 use crate::scheduler::scheduler_init;
 use may::net::UdpSocket as MayUdpSocket;
+use std::sync::Mutex;
+
+/// Serializes tests whose assertions depend on `SOCKETS` registry
+/// stability across multiple operations (e.g. "double-close returns
+/// false" — a parallel test calling `bind` between our two `close`
+/// calls would recycle the freed id, making the second close find a
+/// different socket and return `true`). The id-reuse behaviour is
+/// intentional in the registry; this lock just keeps the tests that
+/// observe it deterministic. Tests that only care about a single
+/// allocate-or-free-cycle don't need it.
+static REGISTRY_LOCK: Mutex<()> = Mutex::new(());
 
 /// Helper: bind a UDP socket on `0.0.0.0:port`, return `(socket_id, bound_port)`.
 /// Asserts success.
@@ -33,6 +44,7 @@ unsafe fn bind_succeeds(port: i64) -> (i64, i64) {
 
 #[test]
 fn test_udp_bind_returns_assigned_port() {
+    let _guard = REGISTRY_LOCK.lock().unwrap();
     unsafe {
         scheduler_init();
 
@@ -88,6 +100,7 @@ fn test_udp_loopback_round_trip() {
     // Bind socket B on 127.0.0.1:0 (sender side).
     // From B, send a payload to 127.0.0.1:<A's bound port>.
     // From A, receive — assert byte-exact match including source port == B's port.
+    let _guard = REGISTRY_LOCK.lock().unwrap();
     unsafe {
         scheduler_init();
 
@@ -127,12 +140,12 @@ fn test_udp_loopback_round_trip() {
         );
         let (stack, src_host) = pop(stack);
         match src_host {
-            Value::String(s) => assert_eq!(s.as_str(), "127.0.0.1"),
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), "127.0.0.1"),
             other => panic!("expected source host, got {:?}", other),
         }
         let (_, payload) = pop(stack);
         match payload {
-            Value::String(s) => assert_eq!(s.as_str(), "hello"),
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), "hello"),
             other => panic!("expected payload, got {:?}", other),
         }
     }
@@ -140,6 +153,7 @@ fn test_udp_loopback_round_trip() {
 
 #[test]
 fn test_udp_send_to_invalid_socket() {
+    let _guard = REGISTRY_LOCK.lock().unwrap();
     unsafe {
         scheduler_init();
 
@@ -160,6 +174,7 @@ fn test_udp_send_to_invalid_socket() {
 
 #[test]
 fn test_udp_receive_from_invalid_socket() {
+    let _guard = REGISTRY_LOCK.lock().unwrap();
     unsafe {
         scheduler_init();
 
@@ -174,12 +189,12 @@ fn test_udp_receive_from_invalid_socket() {
         assert!(matches!(port, Value::Int(0)));
         let (stack, host) = pop(stack);
         match host {
-            Value::String(s) => assert_eq!(s.as_str(), ""),
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), ""),
             other => panic!("expected empty host, got {:?}", other),
         }
         let (_, bytes) = pop(stack);
         match bytes {
-            Value::String(s) => assert_eq!(s.as_str(), ""),
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), ""),
             other => panic!("expected empty bytes, got {:?}", other),
         }
     }
@@ -187,6 +202,7 @@ fn test_udp_receive_from_invalid_socket() {
 
 #[test]
 fn test_udp_close_double_close() {
+    let _guard = REGISTRY_LOCK.lock().unwrap();
     unsafe {
         scheduler_init();
 
@@ -218,6 +234,7 @@ fn test_udp_close_double_close() {
 
 #[test]
 fn test_udp_close_invalid_handle() {
+    let _guard = REGISTRY_LOCK.lock().unwrap();
     unsafe {
         scheduler_init();
 
@@ -239,24 +256,25 @@ fn test_udp_close_invalid_handle() {
 }
 
 #[test]
-fn test_udp_receive_from_rejects_non_utf8() {
-    // Documented behaviour: payloads must be valid UTF-8 because they
-    // come back as Seq Strings, and `SeqString` invariant requires
-    // UTF-8. Verify a datagram with invalid byte sequences is dropped
-    // with the standard failure tuple.
+fn test_udp_receive_from_preserves_non_utf8_bytes() {
+    let _guard = REGISTRY_LOCK.lock().unwrap();
+    // After the SeqString byte-cleanliness change, non-UTF-8 datagrams
+    // round-trip exactly. This is the load-bearing test for binary
+    // protocols (OSC int32 / float32 args, DNS records, NTP packets,
+    // multicast TLV) — every wire byte must come back intact.
     //
-    // Bypass `udp_send_to` (which would round-trip through a Seq
-    // String and so could not carry invalid bytes) and use
-    // `may::net::UdpSocket` directly to inject the raw bytes.
+    // Inject raw bytes via `may::net::UdpSocket` directly (rather than
+    // `udp_send_to`, which already supports any bytes via the new
+    // byte-clean SeqString) and verify the receive-side bytes match.
     unsafe {
         scheduler_init();
 
         let (recv_sock_id, recv_port) = bind_succeeds(0);
 
         let sender = MayUdpSocket::bind("0.0.0.0:0").expect("sender bind");
-        // 0xFF is never a valid UTF-8 start byte; this whole datagram
-        // is unambiguously invalid.
-        let payload: &[u8] = &[0xFF, 0xFE, b'x', 0xC0];
+        // Mix of high-bit, NUL, valid-ASCII, and a partial UTF-8 lead.
+        // None of this is valid UTF-8 as a whole.
+        let payload: &[u8] = &[0xFF, 0xFE, 0x00, b'x', 0xC0, 0x42];
         sender
             .send_to(payload, format!("127.0.0.1:{}", recv_port))
             .expect("raw send");
@@ -265,29 +283,35 @@ fn test_udp_receive_from_rejects_non_utf8() {
         let stack = push_int(stack, recv_sock_id);
         let stack = udp_receive_from(stack);
 
-        // Failure tuple: ( "" "" 0 false )
+        // Success tuple: ( bytes host port true )
         let (stack, success) = pop(stack);
         assert!(
-            matches!(success, Value::Bool(false)),
-            "non-UTF-8 datagram should produce false success"
+            matches!(success, Value::Bool(true)),
+            "non-UTF-8 datagram should now succeed"
         );
         let (stack, port) = pop(stack);
-        assert!(matches!(port, Value::Int(0)));
+        assert!(matches!(port, Value::Int(p) if p > 0));
         let (stack, host) = pop(stack);
         match host {
-            Value::String(s) => assert_eq!(s.as_str(), ""),
-            other => panic!("expected empty host, got {:?}", other),
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), "127.0.0.1"),
+            other => panic!("expected 127.0.0.1 host, got {:?}", other),
         }
+        // Critical: the payload bytes round-trip exactly.
         let (_, bytes) = pop(stack);
         match bytes {
-            Value::String(s) => assert_eq!(s.as_str(), ""),
-            other => panic!("expected empty bytes, got {:?}", other),
+            Value::String(s) => assert_eq!(
+                s.as_bytes(),
+                payload,
+                "received bytes must match sent bytes exactly"
+            ),
+            other => panic!("expected payload, got {:?}", other),
         }
     }
 }
 
 #[test]
 fn test_udp_receive_from_yields_strand() {
+    let _guard = REGISTRY_LOCK.lock().unwrap();
     // Design doc Checkpoint 3: a strand blocked in `receive_from`
     // must yield its OS thread so other strands can run.
     //
@@ -366,6 +390,7 @@ fn test_udp_receive_from_yields_strand() {
 
 #[test]
 fn test_udp_close_during_in_flight_recv() {
+    let _guard = REGISTRY_LOCK.lock().unwrap();
     // The close-vs-in-flight-I/O race that motivated moving the
     // registry to Arc<UdpSocket>. Before the fix, close() during a
     // strand's in-flight recv_from would (a) return false even though

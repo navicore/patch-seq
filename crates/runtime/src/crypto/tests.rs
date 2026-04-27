@@ -20,7 +20,7 @@ fn test_sha256() {
             Value::String(s) => {
                 // SHA-256 of "hello"
                 assert_eq!(
-                    s.as_str(),
+                    s.as_str_or_empty(),
                     "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
                 );
             }
@@ -41,7 +41,7 @@ fn test_sha256_empty() {
             Value::String(s) => {
                 // SHA-256 of empty string
                 assert_eq!(
-                    s.as_str(),
+                    s.as_str_or_empty(),
                     "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
                 );
             }
@@ -63,7 +63,7 @@ fn test_hmac_sha256() {
             Value::String(s) => {
                 // HMAC-SHA256("message", "secret")
                 assert_eq!(
-                    s.as_str(),
+                    s.as_str_or_empty(),
                     "8b5f48702995c1598c573db1e21866a9b825d4a794d169d7060a03605796360b"
                 );
             }
@@ -131,9 +131,9 @@ fn test_random_bytes() {
         match value {
             Value::String(s) => {
                 // 16 bytes = 32 hex chars
-                assert_eq!(s.as_str().len(), 32);
+                assert_eq!(s.as_str_or_empty().len(), 32);
                 // Should be valid hex
-                assert!(hex::decode(s.as_str()).is_ok());
+                assert!(hex::decode(s.as_str_or_empty()).is_ok());
             }
             _ => panic!("Expected String"),
         }
@@ -150,7 +150,7 @@ fn test_random_bytes_zero() {
 
         match value {
             Value::String(s) => {
-                assert_eq!(s.as_str(), "");
+                assert_eq!(s.as_str_or_empty(), "");
             }
             _ => panic!("Expected String"),
         }
@@ -167,10 +167,10 @@ fn test_uuid4() {
         match value {
             Value::String(s) => {
                 // UUID format: 8-4-4-4-12
-                assert_eq!(s.as_str().len(), 36);
-                assert_eq!(s.as_str().chars().filter(|c| *c == '-').count(), 4);
+                assert_eq!(s.as_str_or_empty().len(), 36);
+                assert_eq!(s.as_str_or_empty().chars().filter(|c| *c == '-').count(), 4);
                 // Version 4 indicator at position 14
-                assert_eq!(s.as_str().chars().nth(14), Some('4'));
+                assert_eq!(s.as_str_or_empty().chars().nth(14), Some('4'));
             }
             _ => panic!("Expected String"),
         }
@@ -188,7 +188,7 @@ fn test_uuid4_unique() {
 
         match (value1, value2) {
             (Value::String(s1), Value::String(s2)) => {
-                assert_ne!(s1.as_str(), s2.as_str());
+                assert_ne!(s1.as_str_or_empty(), s2.as_str_or_empty());
             }
             _ => panic!("Expected Strings"),
         }
@@ -206,7 +206,7 @@ fn test_random_bytes_max_limit() {
         match value {
             Value::String(s) => {
                 // 1024 bytes = 2048 hex chars
-                assert_eq!(s.as_str().len(), 2048);
+                assert_eq!(s.as_str_or_empty().len(), 2048);
             }
             _ => panic!("Expected String"),
         }
@@ -251,7 +251,7 @@ fn test_aes_gcm_roundtrip() {
         // Check plaintext
         let (_, result) = pop(stack);
         if let Value::String(s) = result {
-            assert_eq!(s.as_str(), "hello world");
+            assert_eq!(s.as_str_or_empty(), "hello world");
         } else {
             panic!("expected string");
         }
@@ -369,9 +369,9 @@ fn test_pbkdf2_sha256() {
         // Check key is 64 hex chars (32 bytes)
         let (_, result) = pop(stack);
         if let Value::String(s) = result {
-            assert_eq!(s.as_str().len(), 64);
+            assert_eq!(s.as_str_or_empty().len(), 64);
             // Verify it's valid hex
-            assert!(hex::decode(s.as_str()).is_ok());
+            assert!(hex::decode(s.as_str_or_empty()).is_ok());
         } else {
             panic!("expected string");
         }
@@ -531,13 +531,13 @@ fn test_ed25519_keypair_ffi() {
 
         // Both should be 64-char hex strings (32 bytes)
         if let Value::String(pk) = public_key {
-            assert_eq!(pk.as_str().len(), 64);
+            assert_eq!(pk.as_str_or_empty().len(), 64);
         } else {
             panic!("Expected String for public key");
         }
 
         if let Value::String(sk) = private_key {
-            assert_eq!(sk.as_str().len(), 64);
+            assert_eq!(sk.as_str_or_empty().len(), 64);
         } else {
             panic!("Expected String for private key");
         }
@@ -566,7 +566,7 @@ fn test_ed25519_sign_ffi() {
 
         assert_eq!(success, Value::Bool(true));
         if let Value::String(sig) = signature {
-            assert_eq!(sig.as_str().len(), 128); // 64 bytes = 128 hex chars
+            assert_eq!(sig.as_str_or_empty().len(), 128); // 64 bytes = 128 hex chars
         } else {
             panic!("Expected String for signature");
         }

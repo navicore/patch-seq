@@ -38,7 +38,7 @@ pub unsafe extern "C" fn patch_seq_base64_encode(stack: Stack) -> Stack {
 
     match value {
         Value::String(s) => {
-            let encoded = BASE64_STANDARD.encode(s.as_str().as_bytes());
+            let encoded = BASE64_STANDARD.encode(s.as_bytes());
             unsafe { push(stack, Value::String(global_string(encoded))) }
         }
         _ => panic!("base64-encode: expected String on stack, got {:?}", value),
@@ -60,7 +60,7 @@ pub unsafe extern "C" fn patch_seq_base64_decode(stack: Stack) -> Stack {
     let (stack, value) = unsafe { pop(stack) };
 
     match value {
-        Value::String(s) => match BASE64_STANDARD.decode(s.as_str().as_bytes()) {
+        Value::String(s) => match BASE64_STANDARD.decode(s.as_bytes()) {
             Ok(bytes) => match String::from_utf8(bytes) {
                 Ok(decoded) => {
                     let stack = unsafe { push(stack, Value::String(global_string(decoded))) };
@@ -99,7 +99,7 @@ pub unsafe extern "C" fn patch_seq_base64url_encode(stack: Stack) -> Stack {
 
     match value {
         Value::String(s) => {
-            let encoded = BASE64_URL_SAFE_NO_PAD.encode(s.as_str().as_bytes());
+            let encoded = BASE64_URL_SAFE_NO_PAD.encode(s.as_bytes());
             unsafe { push(stack, Value::String(global_string(encoded))) }
         }
         _ => panic!(
@@ -124,7 +124,7 @@ pub unsafe extern "C" fn patch_seq_base64url_decode(stack: Stack) -> Stack {
     let (stack, value) = unsafe { pop(stack) };
 
     match value {
-        Value::String(s) => match BASE64_URL_SAFE_NO_PAD.decode(s.as_str().as_bytes()) {
+        Value::String(s) => match BASE64_URL_SAFE_NO_PAD.decode(s.as_bytes()) {
             Ok(bytes) => match String::from_utf8(bytes) {
                 Ok(decoded) => {
                     let stack = unsafe { push(stack, Value::String(global_string(decoded))) };
@@ -163,7 +163,7 @@ pub unsafe extern "C" fn patch_seq_hex_encode(stack: Stack) -> Stack {
 
     match value {
         Value::String(s) => {
-            let encoded = hex::encode(s.as_str().as_bytes());
+            let encoded = hex::encode(s.as_bytes());
             unsafe { push(stack, Value::String(global_string(encoded))) }
         }
         _ => panic!("hex-encode: expected String on stack, got {:?}", value),
@@ -186,7 +186,7 @@ pub unsafe extern "C" fn patch_seq_hex_decode(stack: Stack) -> Stack {
     let (stack, value) = unsafe { pop(stack) };
 
     match value {
-        Value::String(s) => match hex::decode(s.as_str()) {
+        Value::String(s) => match hex::decode(s.as_str_or_empty()) {
             Ok(bytes) => match String::from_utf8(bytes) {
                 Ok(decoded) => {
                     let stack = unsafe { push(stack, Value::String(global_string(decoded))) };

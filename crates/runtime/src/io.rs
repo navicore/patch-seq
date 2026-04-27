@@ -60,7 +60,7 @@ pub unsafe extern "C" fn patch_seq_write_line(stack: Stack) -> Stack {
             // Write directly to fd 1 using libc to avoid Rust's std::io::stdout() RefCell.
             // Rust's standard I/O uses RefCell which panics on concurrent access from
             // multiple coroutines on the same thread.
-            let str_slice = s.as_str();
+            let str_slice = s.as_str_or_empty();
             let newline = b"\n";
             unsafe {
                 libc::write(
@@ -100,7 +100,7 @@ pub unsafe extern "C" fn patch_seq_write(stack: Stack) -> Stack {
         Value::String(s) => {
             let _guard = STDOUT_MUTEX.lock().unwrap();
 
-            let str_slice = s.as_str();
+            let str_slice = s.as_str_or_empty();
             unsafe {
                 libc::write(
                     1,

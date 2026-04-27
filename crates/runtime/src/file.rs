@@ -23,12 +23,24 @@
 //! ;
 //! ```
 
+use crate::seqstring::global_bytes;
 use crate::stack::{Stack, pop, push};
 use crate::value::{Value, VariantData};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use std::sync::Arc;
+
+/// Path conversion idiom: paths are inherently text on the OS APIs we
+/// target (Linux/macOS POSIX, which expose `&str` via Rust's `Path`),
+/// so non-UTF-8 path bytes can't be handed to the OS as-is.
+/// `SeqString::as_str_or_empty()` returns `""` for non-UTF-8 input,
+/// which routes the call through the OS error path and produces the
+/// standard `(empty, false)` failure tuple — same observable result
+/// as if we'd validated upfront. Helper kept for readability.
+fn path_str(s: &crate::seqstring::SeqString) -> &str {
+    s.as_str_or_empty()
+}
 
 /// Read entire file contents as a string
 ///
@@ -49,9 +61,12 @@ pub unsafe extern "C" fn patch_seq_file_slurp(stack: Stack) -> Stack {
     let (rest, value) = unsafe { pop(stack) };
 
     match value {
-        Value::String(path) => match fs::read_to_string(path.as_str()) {
+        // Read the file as raw bytes — `fs::read` returns `Vec<u8>` and
+        // imposes no UTF-8 requirement, so binary file slurp now works.
+        // Wrap the bytes directly into a byte-clean SeqString.
+        Value::String(path) => match fs::read(path_str(&path)) {
             Ok(contents) => {
-                let stack = unsafe { push(rest, Value::String(contents.into())) };
+                let stack = unsafe { push(rest, Value::String(global_bytes(contents))) };
                 unsafe { push(stack, Value::Bool(true)) }
             }
             Err(_) => {
@@ -80,7 +95,7 @@ pub unsafe extern "C" fn patch_seq_file_exists(stack: Stack) -> Stack {
 
     match value {
         Value::String(path) => {
-            let exists = Path::new(path.as_str()).exists();
+            let exists = Path::new(path_str(&path)).exists();
             unsafe { push(rest, Value::Bool(exists)) }
         }
         _ => panic!(
@@ -143,7 +158,7 @@ pub unsafe extern "C" fn patch_seq_file_for_each_line_plus(stack: Stack) -> Stac
     };
 
     // Open file
-    let file = match File::open(path.as_str()) {
+    let file = match File::open(path_str(&path)) {
         Ok(f) => f,
         Err(e) => {
             // Return error: ( "error message" 0 )
@@ -247,7 +262,9 @@ pub unsafe extern "C" fn patch_seq_file_spit(stack: Stack) -> Stack {
         ),
     };
 
-    match fs::write(path.as_str(), content.as_str()) {
+    // Content is byte-clean — `fs::write` accepts any `AsRef<[u8]>`
+    // so we don't need UTF-8 validation here. Binary file write works.
+    match fs::write(path_str(&path), content.as_bytes()) {
         Ok(()) => unsafe { push(stack, Value::Bool(true)) },
         Err(_) => unsafe { push(stack, Value::Bool(false)) },
     }
@@ -288,8 +305,8 @@ pub unsafe extern "C" fn patch_seq_file_append(stack: Stack) -> Stack {
     let result = OpenOptions::new()
         .create(true)
         .append(true)
-        .open(path.as_str())
-        .and_then(|mut file| file.write_all(content.as_str().as_bytes()));
+        .open(path_str(&path))
+        .and_then(|mut file| file.write_all(content.as_bytes()));
 
     match result {
         Ok(()) => unsafe { push(stack, Value::Bool(true)) },
@@ -317,7 +334,7 @@ pub unsafe extern "C" fn patch_seq_file_delete(stack: Stack) -> Stack {
         _ => panic!("file.delete: expected String path, got {:?}", path_value),
     };
 
-    match fs::remove_file(path.as_str()) {
+    match fs::remove_file(path_str(&path)) {
         Ok(()) => unsafe { push(stack, Value::Bool(true)) },
         Err(_) => unsafe { push(stack, Value::Bool(false)) },
     }
@@ -343,7 +360,7 @@ pub unsafe extern "C" fn patch_seq_file_size(stack: Stack) -> Stack {
         _ => panic!("file.size: expected String path, got {:?}", path_value),
     };
 
-    match fs::metadata(path.as_str()) {
+    match fs::metadata(path_str(&path)) {
         Ok(metadata) => {
             let size = metadata.len() as i64;
             let stack = unsafe { push(stack, Value::Int(size)) };
@@ -379,7 +396,7 @@ pub unsafe extern "C" fn patch_seq_dir_exists(stack: Stack) -> Stack {
         _ => panic!("dir.exists?: expected String path, got {:?}", path_value),
     };
 
-    let exists = Path::new(path.as_str()).is_dir();
+    let exists = Path::new(path_str(&path)).is_dir();
     unsafe { push(stack, Value::Bool(exists)) }
 }
 
@@ -403,7 +420,7 @@ pub unsafe extern "C" fn patch_seq_dir_make(stack: Stack) -> Stack {
         _ => panic!("dir.make: expected String path, got {:?}", path_value),
     };
 
-    match fs::create_dir_all(path.as_str()) {
+    match fs::create_dir_all(path_str(&path)) {
         Ok(()) => unsafe { push(stack, Value::Bool(true)) },
         Err(_) => unsafe { push(stack, Value::Bool(false)) },
     }
@@ -429,7 +446,7 @@ pub unsafe extern "C" fn patch_seq_dir_delete(stack: Stack) -> Stack {
         _ => panic!("dir.delete: expected String path, got {:?}", path_value),
     };
 
-    match fs::remove_dir(path.as_str()) {
+    match fs::remove_dir(path_str(&path)) {
         Ok(()) => unsafe { push(stack, Value::Bool(true)) },
         Err(_) => unsafe { push(stack, Value::Bool(false)) },
     }
@@ -455,7 +472,7 @@ pub unsafe extern "C" fn patch_seq_dir_list(stack: Stack) -> Stack {
         _ => panic!("dir.list: expected String path, got {:?}", path_value),
     };
 
-    match fs::read_dir(path.as_str()) {
+    match fs::read_dir(path_str(&path)) {
         Ok(entries) => {
             let mut names: Vec<Value> = Vec::new();
             for entry in entries.flatten() {

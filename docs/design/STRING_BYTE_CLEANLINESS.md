@@ -1,94 +1,172 @@
-# String Byte-Cleanliness Audit
+# String Byte-Cleanliness
 
-Status: design · 2026-04-26 · follow-up from `UDP_RUNTIME.md` open question
+Status: design · 2026-04-26 · supersedes earlier audit-only sketch
 
 ## Intent
 
-Confirm — and where necessary, enforce — that a Seq `String` carries
-arbitrary bytes including NUL (`0x00`) without silent truncation,
-across every public runtime path that accepts or produces a String.
-Most likely Seq is already byte-clean internally (`SeqString` is
-Rust-side, and Rust `String` permits interior NULs; `string.byte-length`
-and byte-indexed `string.char-at` already imply bytes-not-codepoints).
-The risk is at FFI boundaries that use `CString` or rely on C-strlen
-semantics — those silently lose data.
+Make Seq `String` a sequence of arbitrary bytes — no UTF-8 invariant —
+so binary protocols (OSC, DNS records, NTP packets, MessagePack,
+Protobuf, image formats, raw crypto bytes) can be carried, sent, and
+received without resorting to a separate `Bytes` type.
 
-This is a follow-up audit, not a feature: the goal is documenting the
-current behaviour and closing any gaps, not adding new types or
-significantly widening the API.
+The earlier sketch of "audit at FFI boundaries, add a `string->cstring`
+word" was a half-measure: under the existing UTF-8 invariant the
+`Value::String(...)` constructor either validates (rejecting binary
+input) or doesn't (UB at every later `as_str()` via
+`from_utf8_unchecked`). Neither lets a Seq program *construct* a
+String containing, say, `0xDC` — which is exactly what an OSC encoder
+must do for `float32` arguments. The honest fix is to drop the UTF-8
+invariant from the type itself.
 
 ## Constraints
 
-- **Do not introduce a separate `Bytes` type.** That tradeoff was
-  considered in `UDP_RUNTIME.md` and rejected in favour of keeping
-  `String` byte-clean. Reopening that decision is its own design
-  problem, not part of this audit.
-- **Do not widen public API ergonomically.** At most one boundary
-  word — something like `string->cstring` — added at C-FFI sites
-  that genuinely cannot carry interior NULs. That word should
-  *fail loudly* (not truncate) on NUL-bearing input.
-- **Existing public APIs must keep their current signatures.** If
-  `file.slurp` is currently NUL-safe, it stays. If it's not, fix
-  the implementation, not the signature.
-- **Out of scope:** Unicode normalization questions, grapheme
-  clusters, encoding conversions. The audit is byte-level only.
+- **No new top-level value type.** A separate `Bytes` discriminant
+  doubles every byte-aware builtin (concat, send, store-in-list,
+  channel-pass) and matches Python 3's str/bytes split, which is the
+  canonical "we should have just used one type" lesson. Concatenative
+  languages (Forth, Erlang, Lua, Go-style) typically have one
+  byte-string type. We follow.
+- **No silent semantic change for Seq programs that work today.**
+  Every existing string operation continues to accept the inputs it
+  accepts today and produce the same output. The change *adds*
+  legal inputs (arbitrary bytes), it doesn't *remove* any.
+- **Text operations remain text operations.** `string.length` keeps
+  its codepoint semantic (not byte length); `string.to-upper` keeps
+  Unicode case folding; `regex.*` keeps Unicode-class support. These
+  ops validate UTF-8 at their boundary and fail loudly with the
+  conventional `(value Bool)` failure tuple on invalid input — same
+  pattern as `string->int`, `list.get`, etc.
+- **Byte operations accept any bytes.** Concat, byte-length,
+  starts-with, contains, equal?, split, channel send, list/map
+  storage, network I/O, file I/O of binary content, crypto inputs —
+  all become byte-clean.
+- **No corner-cut at FFI.** Where we cross into a C-string boundary
+  (today: nowhere we ship; potentially future libc-FFI), we add a
+  validated boundary word that rejects NULs explicitly rather than
+  truncating.
 
 ## Approach
 
-Three phases, each independently shippable:
+### Type-level change
 
-1. **Inventory.** List every runtime function that accepts or
-   produces a Seq String. Group by category: I/O (`file.*`,
-   `io.*`), networking (`tcp.*`, `udp.*`, `http.*`), encoding
-   (`encoding.*`, `crypto.*`), collections (`list.*`, `map.*`,
-   `chan.*`), string ops (`string.*`), FFI (`seq_ffi_*` wrappers).
-   Mark each as **likely-clean** (Rust-only path), **suspect**
-   (crosses FFI), or **unknown** (needs reading).
+`SeqString` (in `crates/core/src/seqstring.rs`) drops the UTF-8
+invariant.
 
-2. **Test fixture.** Add a Rust integration test that round-trips
-   a fixed sentinel — e.g. `"hello\x00middle\x00end"` — through
-   every public path in the inventory. Failures point at exactly
-   which functions truncate.
+```rust
+// before
+/// ptr + len must form a valid UTF-8 string
+pub fn as_str(&self) -> &str {
+    unsafe { from_utf8_unchecked(...) }   // UB if invariant broken
+}
 
-3. **Close gaps.** For each failing path, either fix the
-   implementation (preferred) or add a boundary word that rejects
-   NUL-bearing input with a clear error. Document each FFI site's
-   policy in the function's doc comment.
+// after
+/// ptr + len point to an arbitrary byte sequence — no UTF-8 guarantee.
+pub fn as_bytes(&self) -> &[u8] { ... }
+
+/// Try to view as a `&str`. Returns `None` if the bytes aren't
+/// valid UTF-8. The handful of text-level ops use this and fail
+/// loudly on invalid input.
+pub fn as_str(&self) -> Option<&str> { ... }
+```
+
+Constructors stop validating UTF-8. `arena_string(&str)` /
+`global_string(String)` just store the bytes; we additionally provide
+`arena_bytes(&[u8])` / `global_bytes(Vec<u8>)` for binary callers.
+
+### Consumer audit
+
+Every internal `as_str()` call in `crates/core` and
+`crates/runtime` is reclassified into one of three buckets, with the
+appropriate per-site change:
+
+| Bucket | Operations | Change |
+|---|---|---|
+| **Byte-clean** | `string.concat`, `string.byte-length`, `string.empty?`, `string.equal?`, `string.contains`, `string.starts-with`, `string.split` (byte-delimiter), `string.chomp`, `string.join` (Vec join), `crypto.*`, `encoding.base64-*`, `encoding.hex-*`, `compress.*`, `serialize` (SON), TCP/UDP/HTTP send & receive, file content slurp/spit/append, channel send, list/map storage, variant fields | switch to `as_bytes()` |
+| **Text-required** | `string.length` (codepoints), `string.char-at`, `string.substring`, `string.find`, `string.to-upper`, `string.to-lower`, `string.trim`, `string.json-escape`, `string->int`, `regex.*`, `symbol.*`, `os.getenv` / paths, `file.*` paths, `io.write-line` (display), value `Display` impls | call `as_str()`, return failure tuple / -1 / empty on `None` |
+| **API-internal** | `SeqString` Display, `Value::Display`, `Value::PartialEq`, SON binary frame headers | mostly switches to `as_bytes()`; a few text-level (Display) keep validating |
+
+Per-site classification lives in inline comments next to each call
+site after the audit pass — the source itself becomes the inventory.
+
+### Receive paths
+
+`udp_receive_from` and `tcp_read` drop their `String::from_utf8(buffer)`
+validation. Bytes go straight into a `SeqString` via the new
+`global_bytes` constructor. Both ops can now serve binary protocols.
+
+### String literals
+
+The tokenizer's `unescape_string` already supports `\xFF` and `\0` —
+we verify this (and fix it if missing) so Seq source can construct
+arbitrary byte strings inline. `"\x43\xDC\x00\x00"` produces a 4-byte
+String containing the IEEE-754 big-endian bytes for `440.0`.
+
+### New builtins for binary construction
+
+Phase B's OSC encoder needs a way to convert Int / Float values into
+their big-endian byte representations. Two minimal builtins:
+
+```
+int.to-bytes-be   ( Int -- String )    # 8-byte big-endian i64
+float.to-bytes-be ( Float -- String )  # 8-byte big-endian f64
+```
+
+OSC specifically wants 4-byte int32 / float32, but those are bit-trims
+of the 8-byte versions. Adding both 4-byte and 8-byte variants is a
+later decision based on what the encoder actually needs; for the first
+cut, the 8-byte versions plus a `string.substring` byte-slicing op (or
+manual indexing) is enough. We commit to landing at least the 4-byte
+variants if the OSC encoder reads cleaner with them.
 
 ## Domain Events
 
-- **Trigger:** UDP/OSC work, or any user filing a bug like "my
-  binary protocol's payload is being truncated".
-- **Output:** `StringByteCleanlinessVerified { paths_audited: N,
-  gaps_found: K, gaps_closed: K }` — the audit ends with either
-  zero gaps or a documented fix per gap.
-- **Downstream now confidently unblocked:** BSON / MessagePack /
-  Protobuf encoders in user code, binary file digests, OSC
-  encoders that pad with NULs (motivating case), image and
-  archive parsing, network protocols with binary framing.
-- **Out of scope:** any work that requires a Bytes type — that's
-  a separate design.
+- **Trigger:** Phase B (OSC encoder) needs to construct datagram
+  payloads containing arbitrary bytes; `udp.send-to` needs to accept
+  them.
+- **Output:** `StringByteCleanLanded { invariant_dropped: true,
+  byte_clean_paths: N, text_paths_validated: M }` — every path in the
+  inventory is either byte-clean or explicitly UTF-8-validating; the
+  round-trip sentinel test (with `0x00`, `0xDC`, `0xFF`, valid UTF-8)
+  passes through every public path.
+- **Downstream now unblocked:**
+  - `OscEncoderProven` (POC Phase B) — Seq-side encoder + send.
+  - DNS / NTP / multicast / syslog clients in user code.
+  - Binary file parsing (images, archives, compiled formats).
+  - Crypto primitives carrying arbitrary key/hash bytes
+    without a base64/hex round-trip.
 
 ## Checkpoints
 
-1. **Inventory exists** in `docs/STRING_BYTE_INVENTORY.md` (or
-   inline in this doc's appendix), classifying every public
-   String-touching runtime function.
-2. **Round-trip test passes** for the sentinel through every path
-   in the inventory.
-3. **Each FFI boundary documented.** Function doc comments say
-   either "byte-clean — interior NULs preserved" or "rejects NULs
-   — use this when crossing C-string boundaries".
-4. **`just ci` green** with the audit's tests in the regular suite,
-   so future regressions are caught.
-5. **Open question from `UDP_RUNTIME.md` resolved.** That doc's
-   payload-type concern can be closed once the audit confirms UDP
-   send/receive preserves NULs.
+1. **Inventory is captured as inline comments** next to every site
+   that crossed the byte/text boundary in the audit pass.
+2. **Round-trip sentinel test passes** for the byte sequence
+   `[0x00, 0xDC, b'x', 0xFF, partial-UTF-8]` through every public
+   path that takes or returns a String.
+3. **`Value::String` constructor stops validating UTF-8** —
+   construction with arbitrary bytes succeeds.
+4. **TCP `read` and UDP `receive_from` return raw bytes** — neither
+   path validates UTF-8 anymore. The old "non-UTF-8 → false" tests
+   are inverted: those bytes now arrive intact.
+5. **Text-required operations fail loudly** on invalid UTF-8 input,
+   using the `(value Bool)` failure pattern. New tests cover each
+   operation with an invalid-UTF-8 input.
+6. **String literal `"\xFF"` produces a 1-byte string.** If the
+   tokenizer doesn't already support hex escapes, it does after this.
+7. **OSC encoder works for `,if` and `,f` messages** — Phase B
+   compiles and round-trips through `udp.send-to`.
+8. **`just ci` is green** end-to-end — all stdlib, examples, integration
+   tests pass.
 
-## Open question
+## Out of scope
 
-Whether to publish the inventory as a permanent doc or fold it
-into runtime-source doc comments. Lean toward doc comments — they
-travel with the code and don't drift — with a short index in
-`STRING_BYTE_CLEANLINESS.md` that just lists which categories
-were audited and when.
+- Adding a separate `Bytes` value type. Decision recorded above.
+- Codepoint-by-codepoint mutation APIs (insert-at, delete-at). Out of
+  scope; existing operations remain functional (return-new-String).
+- Locale-aware case folding / collation. Rust's standard
+  `to_uppercase`/`to_lowercase` are Unicode-correct without locale
+  awareness; that's what we already ship.
+- Unicode normalization (NFC/NFD). Out of scope; not needed for any
+  current Seq workload.
+- Path encoding on Windows. Today Seq paths are `&str`-validated
+  (UTF-8 or fail). On Windows non-UTF-16 path components would
+  require `OsStr`-aware APIs; defer until a Windows user reports it.

@@ -10,7 +10,7 @@ fn test_base64_encode() {
         let (_, value) = pop(stack);
 
         match value {
-            Value::String(s) => assert_eq!(s.as_str(), "aGVsbG8="),
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), "aGVsbG8="),
             _ => panic!("Expected String"),
         }
     }
@@ -27,7 +27,7 @@ fn test_base64_decode_success() {
         let (_, decoded) = pop(stack);
 
         match (decoded, success) {
-            (Value::String(s), Value::Bool(true)) => assert_eq!(s.as_str(), "hello"),
+            (Value::String(s), Value::Bool(true)) => assert_eq!(s.as_str_or_empty(), "hello"),
             _ => panic!("Expected (String, true)"),
         }
     }
@@ -47,7 +47,7 @@ fn test_base64_decode_failure() {
         let (_, decoded) = pop(stack);
 
         match (decoded, success) {
-            (Value::String(s), Value::Bool(false)) => assert_eq!(s.as_str(), ""),
+            (Value::String(s), Value::Bool(false)) => assert_eq!(s.as_str_or_empty(), ""),
             _ => panic!("Expected (empty String, false)"),
         }
     }
@@ -65,9 +65,9 @@ fn test_base64url_encode() {
         match value {
             Value::String(s) => {
                 // Should not contain + or / or =
-                assert!(!s.as_str().contains('+'));
-                assert!(!s.as_str().contains('/'));
-                assert!(!s.as_str().contains('='));
+                assert!(!s.as_str_or_empty().contains('+'));
+                assert!(!s.as_str_or_empty().contains('/'));
+                assert!(!s.as_str_or_empty().contains('='));
             }
             _ => panic!("Expected String"),
         }
@@ -87,7 +87,7 @@ fn test_base64url_roundtrip() {
         let (_, decoded) = pop(stack);
 
         match (decoded, success) {
-            (Value::String(s), Value::Bool(true)) => assert_eq!(s.as_str(), original),
+            (Value::String(s), Value::Bool(true)) => assert_eq!(s.as_str_or_empty(), original),
             _ => panic!("Expected (String, true)"),
         }
     }
@@ -102,7 +102,7 @@ fn test_hex_encode() {
         let (_, value) = pop(stack);
 
         match value {
-            Value::String(s) => assert_eq!(s.as_str(), "68656c6c6f"),
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), "68656c6c6f"),
             _ => panic!("Expected String"),
         }
     }
@@ -122,7 +122,7 @@ fn test_hex_decode_success() {
         let (_, decoded) = pop(stack);
 
         match (decoded, success) {
-            (Value::String(s), Value::Bool(true)) => assert_eq!(s.as_str(), "hello"),
+            (Value::String(s), Value::Bool(true)) => assert_eq!(s.as_str_or_empty(), "hello"),
             _ => panic!("Expected (String, true)"),
         }
     }
@@ -142,7 +142,7 @@ fn test_hex_decode_uppercase() {
         let (_, decoded) = pop(stack);
 
         match (decoded, success) {
-            (Value::String(s), Value::Bool(true)) => assert_eq!(s.as_str(), "hello"),
+            (Value::String(s), Value::Bool(true)) => assert_eq!(s.as_str_or_empty(), "hello"),
             _ => panic!("Expected (String, true)"),
         }
     }
@@ -159,7 +159,7 @@ fn test_hex_decode_failure() {
         let (_, decoded) = pop(stack);
 
         match (decoded, success) {
-            (Value::String(s), Value::Bool(false)) => assert_eq!(s.as_str(), ""),
+            (Value::String(s), Value::Bool(false)) => assert_eq!(s.as_str_or_empty(), ""),
             _ => panic!("Expected (empty String, false)"),
         }
     }
@@ -178,7 +178,7 @@ fn test_hex_roundtrip() {
         let (_, decoded) = pop(stack);
 
         match (decoded, success) {
-            (Value::String(s), Value::Bool(true)) => assert_eq!(s.as_str(), original),
+            (Value::String(s), Value::Bool(true)) => assert_eq!(s.as_str_or_empty(), original),
             _ => panic!("Expected (String, true)"),
         }
     }

@@ -121,7 +121,7 @@ fn test_cond_single_match() {
 
         let (_, result) = pop(stack);
         match result {
-            Value::String(s) => assert_eq!(s.as_str(), "matched"),
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), "matched"),
             _ => panic!("Expected String, got {:?}", result),
         }
     }
@@ -145,7 +145,7 @@ fn test_cond_first_match_wins() {
 
         let (_, result) = pop(stack);
         match result {
-            Value::String(s) => assert_eq!(s.as_str(), "matched"), // first body wins
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), "matched"), // first body wins
             _ => panic!("Expected String, got {:?}", result),
         }
     }
@@ -168,7 +168,7 @@ fn test_cond_second_match() {
 
         let (_, result) = pop(stack);
         match result {
-            Value::String(s) => assert_eq!(s.as_str(), "default"), // second body wins
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), "default"), // second body wins
             _ => panic!("Expected String, got {:?}", result),
         }
     }
@@ -193,7 +193,7 @@ fn test_cond_classify_number() {
         let stack = cond(stack);
         let (_, result) = pop(stack);
         match result {
-            Value::String(s) => assert_eq!(s.as_str(), "negative"),
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), "negative"),
             _ => panic!("Expected String"),
         }
 
@@ -211,7 +211,7 @@ fn test_cond_classify_number() {
         let stack = cond(stack);
         let (_, result) = pop(stack);
         match result {
-            Value::String(s) => assert_eq!(s.as_str(), "zero"),
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), "zero"),
             _ => panic!("Expected String"),
         }
 
@@ -229,7 +229,7 @@ fn test_cond_classify_number() {
         let stack = cond(stack);
         let (_, result) = pop(stack);
         match result {
-            Value::String(s) => assert_eq!(s.as_str(), "positive"),
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), "positive"),
             _ => panic!("Expected String"),
         }
     }

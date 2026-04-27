@@ -21,8 +21,8 @@ pub unsafe extern "C" fn patch_seq_string_split(stack: Stack) -> Stack {
         (Value::String(s), Value::String(d)) => {
             // Split and collect into Value::String instances
             let fields: Vec<Value> = s
-                .as_str()
-                .split(d.as_str())
+                .as_str_or_empty()
+                .split(d.as_str_or_empty())
                 .map(|part| Value::String(global_string(part.to_owned())))
                 .collect();
 
@@ -54,7 +54,7 @@ pub unsafe extern "C" fn patch_seq_string_contains(stack: Stack) -> Stack {
 
     match (str_val, substring_val) {
         (Value::String(s), Value::String(sub)) => {
-            let contains = s.as_str().contains(sub.as_str());
+            let contains = s.as_str_or_empty().contains(sub.as_str_or_empty());
             unsafe { push(stack, Value::Bool(contains)) }
         }
         _ => panic!("string_contains: expected two strings on stack"),
@@ -77,7 +77,7 @@ pub unsafe extern "C" fn patch_seq_string_starts_with(stack: Stack) -> Stack {
 
     match (str_val, prefix_val) {
         (Value::String(s), Value::String(prefix)) => {
-            let starts = s.as_str().starts_with(prefix.as_str());
+            let starts = s.as_str_or_empty().starts_with(prefix.as_str_or_empty());
             unsafe { push(stack, Value::Bool(starts)) }
         }
         _ => panic!("string_starts_with: expected two strings on stack"),
@@ -103,7 +103,7 @@ pub unsafe extern "C" fn patch_seq_string_char_at(stack: Stack) -> Stack {
             let result = if index < 0 {
                 -1
             } else {
-                s.as_str()
+                s.as_str_or_empty()
                     .chars()
                     .nth(index as usize)
                     .map(|c| c as i64)
@@ -151,7 +151,7 @@ pub unsafe extern "C" fn patch_seq_string_substring(stack: Stack) -> Stack {
             let result = if start < 0 || len < 0 {
                 String::new()
             } else {
-                s.as_str()
+                s.as_str_or_empty()
                     .chars()
                     .skip(start as usize)
                     .take(len as usize)
@@ -214,8 +214,8 @@ pub unsafe extern "C" fn patch_seq_string_find(stack: Stack) -> Stack {
 
     match (str_val, needle_val) {
         (Value::String(haystack), Value::String(needle)) => {
-            let haystack_str = haystack.as_str();
-            let needle_str = needle.as_str();
+            let haystack_str = haystack.as_str_or_empty();
+            let needle_str = needle.as_str_or_empty();
 
             // Find byte position then convert to character position
             let result = match haystack_str.find(needle_str) {
@@ -243,7 +243,7 @@ pub unsafe extern "C" fn patch_seq_string_join(stack: Stack) -> Stack {
         // Pop separator
         let (stack, sep_val) = pop(stack);
         let sep = match &sep_val {
-            Value::String(s) => s.as_str().to_owned(),
+            Value::String(s) => s.as_str_or_empty().to_owned(),
             _ => panic!("string.join: expected String separator, got {:?}", sep_val),
         };
 
@@ -259,11 +259,11 @@ pub unsafe extern "C" fn patch_seq_string_join(stack: Stack) -> Stack {
             .fields
             .iter()
             .map(|v| match v {
-                Value::String(s) => s.as_str().to_owned(),
+                Value::String(s) => s.as_str_or_empty().to_owned(),
                 Value::Int(n) => n.to_string(),
                 Value::Float(f) => f.to_string(),
                 Value::Bool(b) => if *b { "true" } else { "false" }.to_string(),
-                Value::Symbol(s) => format!(":{}", s.as_str()),
+                Value::Symbol(s) => format!(":{}", s.as_str_or_empty()),
                 _ => format!("{:?}", v),
             })
             .collect();

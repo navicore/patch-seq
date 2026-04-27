@@ -32,7 +32,9 @@ fn test_string_roundtrip() {
     let back = typed.to_value();
     // Compare string contents (not pointer equality)
     match (&value, &back) {
-        (Value::String(a), Value::String(b)) => assert_eq!(a.as_str(), b.as_str()),
+        (Value::String(a), Value::String(b)) => {
+            assert_eq!(a.as_str_or_empty(), b.as_str_or_empty())
+        }
         _ => panic!("Expected strings"),
     }
 }
@@ -70,7 +72,7 @@ fn test_variant_roundtrip() {
     let back = typed.to_value();
 
     if let Value::Variant(v) = back {
-        assert_eq!(v.tag.as_str(), "TestVariant");
+        assert_eq!(v.tag.as_str_or_empty(), "TestVariant");
         assert_eq!(v.fields.len(), 2);
     } else {
         panic!("Expected variant");

@@ -118,7 +118,7 @@ impl TypedMapKey {
         match key {
             RuntimeMapKey::Int(v) => TypedMapKey::Int(*v),
             RuntimeMapKey::Bool(v) => TypedMapKey::Bool(*v),
-            RuntimeMapKey::String(s) => TypedMapKey::String(s.as_str().to_string()),
+            RuntimeMapKey::String(s) => TypedMapKey::String(s.as_str_or_empty().to_string()),
         }
     }
 
@@ -169,8 +169,8 @@ impl TypedValue {
                 Ok(TypedValue::Float(*v))
             }
             Value::Bool(v) => Ok(TypedValue::Bool(*v)),
-            Value::String(s) => Ok(TypedValue::String(s.as_str().to_string())),
-            Value::Symbol(s) => Ok(TypedValue::Symbol(s.as_str().to_string())),
+            Value::String(s) => Ok(TypedValue::String(s.as_str_or_empty().to_string())),
+            Value::Symbol(s) => Ok(TypedValue::Symbol(s.as_str_or_empty().to_string())),
             Value::Map(map) => {
                 let mut typed_map = BTreeMap::new();
                 for (k, v) in map.iter() {
@@ -186,7 +186,7 @@ impl TypedValue {
                     typed_fields.push(TypedValue::from_value(field)?);
                 }
                 Ok(TypedValue::Variant {
-                    tag: data.tag.as_str().to_string(),
+                    tag: data.tag.as_str_or_empty().to_string(),
                     fields: typed_fields,
                 })
             }

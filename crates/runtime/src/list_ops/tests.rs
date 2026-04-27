@@ -276,7 +276,7 @@ fn test_list_map_preserves_tag() {
         let (_stack, result) = pop(stack);
         match result {
             Value::Variant(v) => {
-                assert_eq!(v.tag.as_str(), "CustomTag"); // Tag preserved
+                assert_eq!(v.tag.as_str_or_empty(), "CustomTag"); // Tag preserved
                 assert_eq!(v.fields[0], Value::Int(2));
                 assert_eq!(v.fields[1], Value::Int(4));
             }
@@ -461,7 +461,7 @@ fn test_list_reverse_empty() {
         match result {
             Value::Variant(v) => {
                 assert_eq!(v.fields.len(), 0);
-                assert_eq!(v.tag.as_str(), "List");
+                assert_eq!(v.tag.as_str_or_empty(), "List");
             }
             _ => panic!("Expected Variant"),
         }
@@ -508,7 +508,7 @@ fn test_list_reverse_multiple() {
                 assert_eq!(v.fields[0], Value::Int(3));
                 assert_eq!(v.fields[1], Value::Int(2));
                 assert_eq!(v.fields[2], Value::Int(1));
-                assert_eq!(v.tag.as_str(), "List"); // tag preserved
+                assert_eq!(v.tag.as_str_or_empty(), "List"); // tag preserved
             }
             _ => panic!("Expected Variant"),
         }

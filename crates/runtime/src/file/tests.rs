@@ -19,7 +19,7 @@ fn test_file_slurp() {
         assert_eq!(success, Value::Bool(true));
         let (_stack, value) = pop(stack);
         match value {
-            Value::String(s) => assert_eq!(s.as_str().trim(), "Hello, file!"),
+            Value::String(s) => assert_eq!(s.as_str_or_empty().trim(), "Hello, file!"),
             _ => panic!("Expected String"),
         }
     }
@@ -68,7 +68,7 @@ fn test_file_slurp_utf8() {
         assert_eq!(success, Value::Bool(true));
         let (_stack, value) = pop(stack);
         match value {
-            Value::String(s) => assert_eq!(s.as_str(), "Hello, 世界! 🌍"),
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), "Hello, 世界! 🌍"),
             _ => panic!("Expected String"),
         }
     }
@@ -89,7 +89,7 @@ fn test_file_slurp_empty() {
         assert_eq!(success, Value::Bool(true)); // Empty file is still success
         let (_stack, value) = pop(stack);
         match value {
-            Value::String(s) => assert_eq!(s.as_str(), ""),
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), ""),
             _ => panic!("Expected String"),
         }
     }
@@ -106,7 +106,7 @@ fn test_file_slurp_not_found() {
         let (_stack, contents) = pop(stack);
         assert_eq!(success, Value::Bool(false));
         match contents {
-            Value::String(s) => assert_eq!(s.as_str(), ""),
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), ""),
             _ => panic!("Expected String"),
         }
     }
@@ -450,7 +450,7 @@ fn test_dir_list_success() {
         let (_stack, list) = pop(stack);
         match list {
             Value::Variant(v) => {
-                assert_eq!(v.tag.as_str(), "List");
+                assert_eq!(v.tag.as_str_or_empty(), "List");
                 assert_eq!(v.fields.len(), 2);
             }
             _ => panic!("Expected Variant(List)"),
@@ -474,7 +474,7 @@ fn test_dir_list_empty() {
         let (_stack, list) = pop(stack);
         match list {
             Value::Variant(v) => {
-                assert_eq!(v.tag.as_str(), "List");
+                assert_eq!(v.tag.as_str_or_empty(), "List");
                 assert_eq!(v.fields.len(), 0);
             }
             _ => panic!("Expected Variant(List)"),
@@ -495,7 +495,7 @@ fn test_dir_list_nonexistent() {
         let (_stack, list) = pop(stack);
         match list {
             Value::Variant(v) => {
-                assert_eq!(v.tag.as_str(), "List");
+                assert_eq!(v.tag.as_str_or_empty(), "List");
                 assert_eq!(v.fields.len(), 0); // empty list on failure
             }
             _ => panic!("Expected Variant(List)"),

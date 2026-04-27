@@ -14,7 +14,7 @@ pub unsafe extern "C" fn patch_seq_string_trim(stack: Stack) -> Stack {
 
     match str_val {
         Value::String(s) => {
-            let trimmed = s.as_str().trim();
+            let trimmed = s.as_str_or_empty().trim();
             unsafe { push(stack, Value::String(global_string(trimmed.to_owned()))) }
         }
         _ => panic!("string_trim: expected String on stack"),
@@ -35,7 +35,7 @@ pub unsafe extern "C" fn patch_seq_string_to_upper(stack: Stack) -> Stack {
 
     match str_val {
         Value::String(s) => {
-            let upper = s.as_str().to_uppercase();
+            let upper = s.as_str_or_empty().to_uppercase();
             unsafe { push(stack, Value::String(global_string(upper))) }
         }
         _ => panic!("string_to_upper: expected String on stack"),
@@ -56,7 +56,7 @@ pub unsafe extern "C" fn patch_seq_string_to_lower(stack: Stack) -> Stack {
 
     match str_val {
         Value::String(s) => {
-            let lower = s.as_str().to_lowercase();
+            let lower = s.as_str_or_empty().to_lowercase();
             unsafe { push(stack, Value::String(global_string(lower))) }
         }
         _ => panic!("string_to_lower: expected String on stack"),
@@ -77,7 +77,7 @@ pub unsafe extern "C" fn patch_seq_string_chomp(stack: Stack) -> Stack {
 
     match str_val {
         Value::String(s) => {
-            let mut result = s.as_str().to_owned();
+            let mut result = s.as_str_or_empty().to_owned();
             if result.ends_with('\n') {
                 result.pop();
                 if result.ends_with('\r') {

@@ -71,7 +71,7 @@ pub unsafe extern "C" fn patch_seq_symbol_eq_cstr(stack: Stack, c_str: *const i8
             .to_str()
             .expect("Invalid UTF-8 in variant name");
 
-        let is_equal = symbol_str.as_str() == expected;
+        let is_equal = symbol_str.as_str_or_empty() == expected;
         push(stack, Value::Bool(is_equal))
     }
 }

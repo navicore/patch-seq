@@ -39,7 +39,11 @@ pub unsafe extern "C" fn patch_seq_crypto_pbkdf2_sha256(stack: Stack) -> Stack {
                 return unsafe { push(stack, Value::Bool(false)) };
             }
 
-            let key = derive_key_pbkdf2(password.as_str(), salt.as_str(), iterations as u32);
+            let key = derive_key_pbkdf2(
+                password.as_str_or_empty(),
+                salt.as_str_or_empty(),
+                iterations as u32,
+            );
             let key_hex = hex::encode(key);
             let stack = unsafe { push(stack, Value::String(global_string(key_hex))) };
             unsafe { push(stack, Value::Bool(true)) }

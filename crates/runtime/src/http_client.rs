@@ -246,7 +246,7 @@ pub unsafe extern "C" fn patch_seq_http_get(stack: Stack) -> Stack {
 
     match url_value {
         Value::String(url) => {
-            let response = perform_get(url.as_str());
+            let response = perform_get(url.as_str_or_empty());
             unsafe { push(stack, response) }
         }
         _ => panic!(
@@ -274,7 +274,11 @@ pub unsafe extern "C" fn patch_seq_http_post(stack: Stack) -> Stack {
 
     match (url_value, body_value, content_type_value) {
         (Value::String(url), Value::String(body), Value::String(content_type)) => {
-            let response = perform_post(url.as_str(), body.as_str(), content_type.as_str());
+            let response = perform_post(
+                url.as_str_or_empty(),
+                body.as_str_or_empty(),
+                content_type.as_str_or_empty(),
+            );
             unsafe { push(stack, response) }
         }
         (url, body, ct) => panic!(
@@ -302,7 +306,11 @@ pub unsafe extern "C" fn patch_seq_http_put(stack: Stack) -> Stack {
 
     match (url_value, body_value, content_type_value) {
         (Value::String(url), Value::String(body), Value::String(content_type)) => {
-            let response = perform_put(url.as_str(), body.as_str(), content_type.as_str());
+            let response = perform_put(
+                url.as_str_or_empty(),
+                body.as_str_or_empty(),
+                content_type.as_str_or_empty(),
+            );
             unsafe { push(stack, response) }
         }
         (url, body, ct) => panic!(
@@ -328,7 +336,7 @@ pub unsafe extern "C" fn patch_seq_http_delete(stack: Stack) -> Stack {
 
     match url_value {
         Value::String(url) => {
-            let response = perform_delete(url.as_str());
+            let response = perform_delete(url.as_str_or_empty());
             unsafe { push(stack, response) }
         }
         _ => panic!(

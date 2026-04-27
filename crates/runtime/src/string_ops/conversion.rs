@@ -22,7 +22,7 @@ pub unsafe extern "C" fn patch_seq_symbol_equal(stack: Stack) -> Stack {
                 s1.as_ptr() == s2.as_ptr()
             } else {
                 // Fallback: string comparison for runtime-created symbols
-                s1.as_str() == s2.as_str()
+                s1.as_str_or_empty() == s2.as_str_or_empty()
             };
             unsafe { push(stack, Value::Bool(equal)) }
         }
@@ -54,7 +54,7 @@ pub unsafe extern "C" fn patch_seq_json_escape(stack: Stack) -> Stack {
 
     match value {
         Value::String(s) => {
-            let input = s.as_str();
+            let input = s.as_str_or_empty();
             let mut result = String::with_capacity(input.len() + 16);
 
             for ch in input.chars() {
@@ -102,7 +102,7 @@ pub unsafe extern "C" fn patch_seq_string_to_int(stack: Stack) -> Stack {
     let (stack, val) = unsafe { pop(stack) };
 
     match val {
-        Value::String(s) => match s.as_str().trim().parse::<i64>() {
+        Value::String(s) => match s.as_str_or_empty().trim().parse::<i64>() {
             Ok(i) => {
                 let stack = unsafe { push(stack, Value::Int(i)) };
                 unsafe { push(stack, Value::Bool(true)) }

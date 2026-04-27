@@ -118,7 +118,7 @@ fn test_make_variant_with_fields() {
 
         match result {
             Value::Variant(v) => {
-                assert_eq!(v.tag.as_str(), "Tag");
+                assert_eq!(v.tag.as_str_or_empty(), "Tag");
                 assert_eq!(v.fields.len(), 3);
                 assert_eq!(v.fields[0], Value::Int(10));
                 assert_eq!(v.fields[1], Value::Int(20));
@@ -143,7 +143,7 @@ fn test_make_variant_empty() {
 
         match result {
             Value::Variant(v) => {
-                assert_eq!(v.tag.as_str(), "None");
+                assert_eq!(v.tag.as_str_or_empty(), "None");
                 assert_eq!(v.fields.len(), 0);
             }
             _ => panic!("Expected Variant"),
@@ -169,7 +169,7 @@ fn test_make_variant_with_mixed_types() {
 
         match result {
             Value::Variant(v) => {
-                assert_eq!(v.tag.as_str(), "Mixed");
+                assert_eq!(v.tag.as_str_or_empty(), "Mixed");
                 assert_eq!(v.fields.len(), 3);
                 assert_eq!(v.fields[0], Value::Int(42));
                 assert_eq!(v.fields[1], Value::String(s));
@@ -196,7 +196,7 @@ fn test_variant_append() {
         let (_stack, result) = pop(stack);
         match result {
             Value::Variant(v) => {
-                assert_eq!(v.tag.as_str(), "Array");
+                assert_eq!(v.tag.as_str_or_empty(), "Array");
                 assert_eq!(v.fields.len(), 1);
                 assert_eq!(v.fields[0], Value::Int(42));
             }
@@ -227,7 +227,7 @@ fn test_variant_append_multiple() {
         let (_stack, result) = pop(stack);
         match result {
             Value::Variant(v) => {
-                assert_eq!(v.tag.as_str(), "Object");
+                assert_eq!(v.tag.as_str_or_empty(), "Object");
                 assert_eq!(v.fields.len(), 2);
                 assert_eq!(v.fields[0], Value::String(key));
                 assert_eq!(v.fields[1], Value::String(val));
@@ -271,7 +271,7 @@ fn test_variant_init() {
         let (_stack, result) = pop(stack);
         match result {
             Value::Variant(v) => {
-                assert_eq!(v.tag.as_str(), "Custom"); // tag preserved
+                assert_eq!(v.tag.as_str_or_empty(), "Custom"); // tag preserved
                 assert_eq!(v.fields.len(), 2);
                 assert_eq!(v.fields[0], Value::Int(10));
                 assert_eq!(v.fields[1], Value::Int(20));
@@ -412,7 +412,7 @@ fn test_variant_thread_safe_sharing() {
                 // Access the variant from another thread
                 match &*v {
                     Value::Variant(data) => {
-                        assert_eq!(data.tag.as_str(), "ThreadSafe");
+                        assert_eq!(data.tag.as_str_or_empty(), "ThreadSafe");
                         assert_eq!(data.fields.len(), 3);
                     }
                     _ => panic!("Expected Variant"),

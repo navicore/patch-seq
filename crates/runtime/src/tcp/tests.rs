@@ -143,7 +143,7 @@ fn test_tcp_read_invalid_socket_id() {
         );
         let (_stack, result) = pop(stack);
         match result {
-            Value::String(s) => assert_eq!(s.as_str(), ""),
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), ""),
             _ => panic!("Expected empty string"),
         }
     }

@@ -35,7 +35,7 @@ pub unsafe extern "C" fn patch_seq_crypto_aes_gcm_encrypt(stack: Stack) -> Stack
 
     match (plaintext_val, key_val) {
         (Value::String(plaintext), Value::String(key_hex)) => {
-            match aes_gcm_encrypt(plaintext.as_str(), key_hex.as_str()) {
+            match aes_gcm_encrypt(plaintext.as_str_or_empty(), key_hex.as_str_or_empty()) {
                 Some(ciphertext) => {
                     let stack = unsafe { push(stack, Value::String(global_string(ciphertext))) };
                     unsafe { push(stack, Value::Bool(true)) }
@@ -73,7 +73,7 @@ pub unsafe extern "C" fn patch_seq_crypto_aes_gcm_decrypt(stack: Stack) -> Stack
 
     match (ciphertext_val, key_val) {
         (Value::String(ciphertext), Value::String(key_hex)) => {
-            match aes_gcm_decrypt(ciphertext.as_str(), key_hex.as_str()) {
+            match aes_gcm_decrypt(ciphertext.as_str_or_empty(), key_hex.as_str_or_empty()) {
                 Some(plaintext) => {
                     let stack = unsafe { push(stack, Value::String(global_string(plaintext))) };
                     unsafe { push(stack, Value::Bool(true)) }

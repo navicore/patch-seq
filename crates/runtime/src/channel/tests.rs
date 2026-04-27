@@ -182,7 +182,7 @@ fn test_arena_string_send_between_strands() {
 
                 match msg_val {
                     Value::String(s) => {
-                        assert_eq!(s.as_str(), "Arena message!");
+                        assert_eq!(s.as_str_or_empty(), "Arena message!");
                         assert!(s.is_global(), "Received string should be global");
                         VERIFIED.store(true, Ordering::Release);
                     }

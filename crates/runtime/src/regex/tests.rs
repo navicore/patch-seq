@@ -45,7 +45,7 @@ fn test_regex_find() {
 
     assert_eq!(success, Value::Bool(true));
     if let Value::String(s) = matched {
-        assert_eq!(s.as_str(), "a1");
+        assert_eq!(s.as_str_or_empty(), "a1");
     } else {
         panic!("expected String");
     }
@@ -70,13 +70,13 @@ fn test_regex_find_all() {
     if let Value::Variant(v) = list_val {
         assert_eq!(v.fields.len(), 3);
         if let Value::String(s) = &v.fields[0] {
-            assert_eq!(s.as_str(), "a1");
+            assert_eq!(s.as_str_or_empty(), "a1");
         }
         if let Value::String(s) = &v.fields[1] {
-            assert_eq!(s.as_str(), "b2");
+            assert_eq!(s.as_str_or_empty(), "b2");
         }
         if let Value::String(s) = &v.fields[2] {
-            assert_eq!(s.as_str(), "c3");
+            assert_eq!(s.as_str_or_empty(), "c3");
         }
     } else {
         panic!("expected Variant (List)");
@@ -101,7 +101,7 @@ fn test_regex_replace() {
     let (_, result) = unsafe { pop(stack) };
 
     if let Value::String(s) = result {
-        assert_eq!(s.as_str(), "hello Seq");
+        assert_eq!(s.as_str_or_empty(), "hello Seq");
     } else {
         panic!("expected String");
     }
@@ -120,7 +120,7 @@ fn test_regex_replace_all() {
     let (_, result) = unsafe { pop(stack) };
 
     if let Value::String(s) = result {
-        assert_eq!(s.as_str(), "aX bX cX");
+        assert_eq!(s.as_str_or_empty(), "aX bX cX");
     } else {
         panic!("expected String");
     }
@@ -150,13 +150,13 @@ fn test_regex_captures() {
     if let Value::Variant(v) = groups {
         assert_eq!(v.fields.len(), 3);
         if let Value::String(s) = &v.fields[0] {
-            assert_eq!(s.as_str(), "2024");
+            assert_eq!(s.as_str_or_empty(), "2024");
         }
         if let Value::String(s) = &v.fields[1] {
-            assert_eq!(s.as_str(), "01");
+            assert_eq!(s.as_str_or_empty(), "01");
         }
         if let Value::String(s) = &v.fields[2] {
-            assert_eq!(s.as_str(), "15");
+            assert_eq!(s.as_str_or_empty(), "15");
         }
     } else {
         panic!("expected Variant (List)");
@@ -177,13 +177,13 @@ fn test_regex_split() {
     if let Value::Variant(v) = result {
         assert_eq!(v.fields.len(), 4); // "a", "b", "c", ""
         if let Value::String(s) = &v.fields[0] {
-            assert_eq!(s.as_str(), "a");
+            assert_eq!(s.as_str_or_empty(), "a");
         }
         if let Value::String(s) = &v.fields[1] {
-            assert_eq!(s.as_str(), "b");
+            assert_eq!(s.as_str_or_empty(), "b");
         }
         if let Value::String(s) = &v.fields[2] {
-            assert_eq!(s.as_str(), "c");
+            assert_eq!(s.as_str_or_empty(), "c");
         }
     } else {
         panic!("expected Variant (List)");

@@ -62,7 +62,7 @@ pub unsafe extern "C" fn patch_seq_crypto_ed25519_sign(stack: Stack) -> Stack {
 
     match (msg_val, key_val) {
         (Value::String(message), Value::String(private_key_hex)) => {
-            match ed25519_sign(message.as_str(), private_key_hex.as_str()) {
+            match ed25519_sign(message.as_str_or_empty(), private_key_hex.as_str_or_empty()) {
                 Some(signature) => {
                     let stack = unsafe { push(stack, Value::String(global_string(signature))) };
                     unsafe { push(stack, Value::Bool(true)) }
@@ -102,9 +102,9 @@ pub unsafe extern "C" fn patch_seq_crypto_ed25519_verify(stack: Stack) -> Stack 
     match (msg_val, sig_val, pubkey_val) {
         (Value::String(message), Value::String(signature_hex), Value::String(public_key_hex)) => {
             let valid = ed25519_verify(
-                message.as_str(),
-                signature_hex.as_str(),
-                public_key_hex.as_str(),
+                message.as_str_or_empty(),
+                signature_hex.as_str_or_empty(),
+                public_key_hex.as_str_or_empty(),
             );
             unsafe { push(stack, Value::Bool(valid)) }
         }

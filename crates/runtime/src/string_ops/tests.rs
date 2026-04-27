@@ -16,7 +16,7 @@ fn test_string_split_simple() {
         let (_stack, result) = pop(stack);
         match result {
             Value::Variant(v) => {
-                assert_eq!(v.tag.as_str(), "List");
+                assert_eq!(v.tag.as_str_or_empty(), "List");
                 assert_eq!(v.fields.len(), 3);
                 assert_eq!(v.fields[0], Value::String(global_string("a".to_owned())));
                 assert_eq!(v.fields[1], Value::String(global_string("b".to_owned())));
@@ -40,7 +40,7 @@ fn test_string_split_empty() {
         let (_stack, result) = pop(stack);
         match result {
             Value::Variant(v) => {
-                assert_eq!(v.tag.as_str(), "List");
+                assert_eq!(v.tag.as_str_or_empty(), "List");
                 assert_eq!(v.fields.len(), 1);
                 assert_eq!(v.fields[0], Value::String(global_string("".to_owned())));
             }
@@ -160,7 +160,7 @@ fn test_http_request_line_parsing() {
         let (_stack, result) = pop(stack);
         match result {
             Value::Variant(v) => {
-                assert_eq!(v.tag.as_str(), "List");
+                assert_eq!(v.tag.as_str_or_empty(), "List");
                 assert_eq!(v.fields.len(), 3);
                 assert_eq!(v.fields[0], Value::String(global_string("GET".to_owned())));
                 assert_eq!(
@@ -958,7 +958,7 @@ fn test_string_join_strings() {
 
         let (_stack, result) = pop(stack);
         match result {
-            Value::String(s) => assert_eq!(s.as_str(), "a, b, c"),
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), "a, b, c"),
             _ => panic!("Expected String, got {:?}", result),
         }
     }
@@ -981,7 +981,7 @@ fn test_string_join_empty_list() {
 
         let (_stack, result) = pop(stack);
         match result {
-            Value::String(s) => assert_eq!(s.as_str(), ""),
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), ""),
             _ => panic!("Expected String"),
         }
     }
@@ -1004,7 +1004,7 @@ fn test_string_join_single_element() {
 
         let (_stack, result) = pop(stack);
         match result {
-            Value::String(s) => assert_eq!(s.as_str(), "only"),
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), "only"),
             _ => panic!("Expected String"),
         }
     }
@@ -1031,7 +1031,7 @@ fn test_string_join_mixed_types() {
 
         let (_stack, result) = pop(stack);
         match result {
-            Value::String(s) => assert_eq!(s.as_str(), "1 true x"),
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), "1 true x"),
             _ => panic!("Expected String"),
         }
     }

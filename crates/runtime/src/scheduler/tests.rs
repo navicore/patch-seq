@@ -147,7 +147,7 @@ fn test_arena_reset_with_strands() {
             for i in 0..100 {
                 let temp = arena_string(&format!("temporary string {}", i));
                 // Use the string temporarily
-                assert!(!temp.as_str().is_empty());
+                assert!(!temp.as_str_or_empty().is_empty());
                 // String is dropped, but memory stays in arena
             }
 
@@ -255,7 +255,7 @@ fn test_arena_with_channel_send() {
                 let (_stack, msg_val) = pop(stack);
                 match msg_val {
                     Value::String(s) => {
-                        assert_eq!(s.as_str(), "Hello from sender!");
+                        assert_eq!(s.as_str_or_empty(), "Hello from sender!");
                         RECEIVED_COUNT.fetch_add(1, Ordering::SeqCst);
                     }
                     _ => panic!("Expected String"),
@@ -296,7 +296,7 @@ fn test_no_memory_leak_over_many_iterations() {
             // Simulate request processing: many temp allocations
             for i in 0..50 {
                 let temp = arena_string(&format!("request header {}", i));
-                assert!(!temp.as_str().is_empty());
+                assert!(!temp.as_str_or_empty().is_empty());
                 // Strings dropped here but arena memory stays allocated
             }
             stack

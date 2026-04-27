@@ -14,7 +14,7 @@ pub unsafe extern "C" fn patch_seq_string_empty(stack: Stack) -> Stack {
 
     match value {
         Value::String(s) => {
-            let is_empty = s.as_str().is_empty();
+            let is_empty = s.as_str_or_empty().is_empty();
             unsafe { push(stack, Value::Bool(is_empty)) }
         }
         _ => panic!("string_empty: expected String on stack"),
@@ -37,7 +37,7 @@ pub unsafe extern "C" fn patch_seq_string_concat(stack: Stack) -> Stack {
 
     match (str1_val, str2_val) {
         (Value::String(s1), Value::String(s2)) => {
-            let result = format!("{}{}", s1.as_str(), s2.as_str());
+            let result = format!("{}{}", s1.as_str_or_empty(), s2.as_str_or_empty());
             unsafe { push(stack, Value::String(global_string(result))) }
         }
         _ => panic!("string_concat: expected two strings on stack"),
@@ -61,7 +61,7 @@ pub unsafe extern "C" fn patch_seq_string_length(stack: Stack) -> Stack {
 
     match str_val {
         Value::String(s) => {
-            let len = s.as_str().chars().count() as i64;
+            let len = s.as_str_or_empty().chars().count() as i64;
             unsafe { push(stack, Value::Int(len)) }
         }
         _ => panic!("string_length: expected String on stack"),
@@ -84,7 +84,7 @@ pub unsafe extern "C" fn patch_seq_string_byte_length(stack: Stack) -> Stack {
 
     match str_val {
         Value::String(s) => {
-            let len = s.as_str().len() as i64;
+            let len = s.as_str_or_empty().len() as i64;
             unsafe { push(stack, Value::Int(len)) }
         }
         _ => panic!("string_byte_length: expected String on stack"),
@@ -110,7 +110,7 @@ pub unsafe extern "C" fn patch_seq_string_equal(stack: Stack) -> Stack {
 
     match (str1_val, str2_val) {
         (Value::String(s1), Value::String(s2)) => {
-            let equal = s1.as_str() == s2.as_str();
+            let equal = s1.as_str_or_empty() == s2.as_str_or_empty();
             unsafe { push(stack, Value::Bool(equal)) }
         }
         _ => panic!("string_equal: expected two strings on stack"),

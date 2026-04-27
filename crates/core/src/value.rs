@@ -254,10 +254,13 @@ impl std::fmt::Display for Value {
             Value::Int(n) => write!(f, "{}", n),
             Value::Float(n) => write!(f, "{}", n),
             Value::Bool(b) => write!(f, "{}", b),
-            Value::String(s) => write!(f, "{:?}", s.as_str()),
-            Value::Symbol(s) => write!(f, ":{}", s.as_str()),
+            // Display is human-facing; lossy-display non-UTF-8 strings.
+            // Round-trip data uses `as_bytes()` directly via the
+            // appropriate runtime op, not Display.
+            Value::String(s) => write!(f, "{:?}", s.as_str_lossy()),
+            Value::Symbol(s) => write!(f, ":{}", s.as_str_lossy()),
             Value::Variant(v) => {
-                write!(f, ":{}", v.tag.as_str())?;
+                write!(f, ":{}", v.tag.as_str_lossy())?;
                 if !v.fields.is_empty() {
                     write!(f, "(")?;
                 }

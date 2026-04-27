@@ -18,7 +18,7 @@ fn test_build_response_map_success() {
             // Check body
             let body_key = MapKey::String(global_string("body".to_string()));
             if let Some(Value::String(s)) = map.get(&body_key) {
-                assert_eq!(s.as_str(), "Hello");
+                assert_eq!(s.as_str_or_empty(), "Hello");
             } else {
                 panic!("Expected body to be String");
             }
@@ -54,7 +54,7 @@ fn test_build_response_map_error() {
             // Check error message
             let error_key = MapKey::String(global_string("error".to_string()));
             if let Some(Value::String(s)) = map.get(&error_key) {
-                assert_eq!(s.as_str(), "Not Found");
+                assert_eq!(s.as_str_or_empty(), "Not Found");
             } else {
                 panic!("Expected error to be String");
             }
@@ -82,7 +82,7 @@ fn test_error_response() {
             // Check error message
             let error_key = MapKey::String(global_string("error".to_string()));
             if let Some(Value::String(s)) = map.get(&error_key) {
-                assert_eq!(s.as_str(), "Connection refused");
+                assert_eq!(s.as_str_or_empty(), "Connection refused");
             } else {
                 panic!("Expected error to be String");
             }
