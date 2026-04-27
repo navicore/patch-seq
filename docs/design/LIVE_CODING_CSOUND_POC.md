@@ -1,5 +1,10 @@
 # Live-Coding POC: Seq → OSC → Csound
 
+Status: Phase A and Phase B implemented · PR #434 (UDP runtime),
+#436 (string byte-cleanliness), #437 (OSC encoder + byte
+construction primitives), #439 (OSC-over-UDP loopback) · 2026-04-27 ·
+Phase C (Csound `live.csd` + audible kick) remains.
+
 ## Intent
 
 Validate that Seq is a credible host language for live-coding music by
@@ -80,18 +85,23 @@ literal.
 
 ## Checkpoints
 
-1. **UDP loopback test passes** in patch-seq: send a message to
-   yourself, receive it back, round-trip is byte-exact.
-2. **OSC fixture test passes**: an encoded OSC message from Seq
-   matches the byte layout in the OSC 1.0 spec for a known input
-   (e.g. `/foo` with one int and one float).
-3. **Csound responds**: starting `live.csd` and sending one OSC
-   message from a one-line Seq script produces an audible tone.
-4. **A bar of music plays**: a clock-driven Seq strand sends 8 beats
-   on a metronome; you hear them on time, no audible jitter.
-5. **POC writeup decides the spinout question** with evidence
-   (latency measurements, code size of the example, Seq language
-   gaps surfaced).
+1. **[done · PR #439]** UDP loopback test passes in patch-seq: send
+   a message to yourself, receive it back, round-trip is byte-exact.
+   Lives at `examples/projects/live-coding-csound/test_osc_loopback.seq`
+   and runs as part of `just test-integration`.
+2. **[done · PR #437]** OSC fixture test passes: encoded OSC messages
+   from Seq match the byte layout in the OSC 1.0 spec for `,i`, `,f`,
+   `,if`, and empty-arg payloads. Pinned in
+   `examples/projects/live-coding-csound/test_osc.seq`.
+3. **[Phase C — pending]** Csound responds: starting `live.csd` and
+   sending one OSC message from a one-line Seq script produces an
+   audible tone.
+4. **[Phase C — pending]** A bar of music plays: a clock-driven Seq
+   strand sends 8 beats on a metronome; you hear them on time, no
+   audible jitter.
+5. **[Phase C — pending]** POC writeup decides the spinout question
+   with evidence (latency measurements, code size of the example,
+   Seq language gaps surfaced).
 
 ## Open Question
 

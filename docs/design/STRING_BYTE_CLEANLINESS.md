@@ -1,6 +1,8 @@
 # String Byte-Cleanliness
 
-Status: design · 2026-04-26 · supersedes earlier audit-only sketch
+Status: implemented · PR #436 (invariant drop + consumer audit, plus
+follow-ups CP5b/c/d) and PR #437 (Path B `\xNN` byte literals) · 2026-04-27 ·
+supersedes earlier audit-only sketch
 
 ## Intent
 
@@ -149,28 +151,34 @@ variants if the OSC encoder reads cleaner with them.
 
 ## Checkpoints
 
-1. **Inventory is captured as inline comments** next to every site
-   that crossed the byte/text boundary in the audit pass.
-2. **Round-trip sentinel test passes** for the byte sequence
-   `[0x00, 0xDC, b'x', 0xFF, partial-UTF-8]` through every public
-   path that takes or returns a String.
-3. **`Value::String` constructor stops validating UTF-8** —
-   construction with arbitrary bytes succeeds.
-4. **TCP `read` and UDP `receive_from` return raw bytes** — neither
-   path validates UTF-8 anymore. The old "non-UTF-8 → false" tests
-   are inverted: those bytes now arrive intact.
-5. **Text-required operations degrade to their empty-input behaviour**
-   on invalid UTF-8 input: `string.length` returns 0, `string.find`
-   returns -1, `string.substring` / `string.to-upper` / `regex.match`
-   produce empty/no-match. Users that need to distinguish "non-UTF-8"
-   from "empty" call `string.byte-length` first. Tests cover both the
-   UTF-8 happy path and the invalid-UTF-8 degenerate path.
-6. **String literal `"\xFF"` produces a 1-byte string.** If the
-   tokenizer doesn't already support hex escapes, it does after this.
-7. **OSC encoder works for `,if` and `,f` messages** — Phase B
-   compiles and round-trips through `udp.send-to`.
-8. **`just ci` is green** end-to-end — all stdlib, examples, integration
-   tests pass.
+1. **[done · PR #436]** Inventory is captured as inline comments next
+   to every site that crossed the byte/text boundary in the audit pass.
+2. **[done · PR #436]** Round-trip sentinel test passes for the byte
+   sequence `[0x00, 0xDC, b'x', 0xFF, partial-UTF-8]` through every
+   public path that takes or returns a String.
+3. **[done · PR #436]** `Value::String` constructor stops validating
+   UTF-8 — construction with arbitrary bytes succeeds.
+4. **[done · PR #436]** TCP `read` and UDP `receive_from` return raw
+   bytes — neither path validates UTF-8 anymore. The old "non-UTF-8 →
+   false" tests are inverted: those bytes now arrive intact.
+5. **[done · PR #436]** Text-required operations degrade to their
+   empty-input behaviour on invalid UTF-8 input: `string.length`
+   returns 0, `string.find` returns -1, `string.substring` /
+   `string.to-upper` / `regex.match` produce empty/no-match. Users
+   that need to distinguish "non-UTF-8" from "empty" call
+   `string.byte-length` first. Tests cover both the UTF-8 happy path
+   and the invalid-UTF-8 degenerate path.
+6. **[done · PR #437]** String literal `"\xFF"` produces a 1-byte
+   string. The tokenizer's `unescape_string` returns `Vec<u8>`,
+   `Statement::StringLiteral` carries `Vec<u8>`, and codegen emits
+   `(ptr, len)` to a new `patch_seq_push_string_bytes` runtime FFI
+   so embedded NULs survive.
+7. **[done · PRs #437 + #439]** OSC encoder works for `,i`, `,f`,
+   `,if`, and empty-arg messages — Phase B compiles, byte-format
+   tests pin the wire layout, and the loopback suite proves
+   end-to-end round-trip through `udp.send-to` / `udp.receive-from`.
+8. **[done]** `just ci` is green end-to-end — all stdlib, examples,
+   integration tests pass.
 
 ## Out of scope
 
