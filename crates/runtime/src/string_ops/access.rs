@@ -1,6 +1,6 @@
 //! Character access, slicing, searching, and splitting/joining.
 
-use crate::seqstring::global_string;
+use crate::seqstring::{global_bytes, global_string};
 use crate::stack::{Stack, pop, push};
 use crate::value::Value;
 use std::sync::Arc;
@@ -19,11 +19,42 @@ pub unsafe extern "C" fn patch_seq_string_split(stack: Stack) -> Stack {
 
     match (str_val, delim_val) {
         (Value::String(s), Value::String(d)) => {
-            // Split and collect into Value::String instances
-            let fields: Vec<Value> = s
-                .as_str()
-                .split(d.as_str())
-                .map(|part| Value::String(global_string(part.to_owned())))
+            // Byte-clean split: separate the haystack at every byte
+            // occurrence of the needle. The result is byte-faithful —
+            // splitting an OSC payload on its NUL padding, splitting a
+            // network frame on a binary delimiter, etc. all work.
+            let bytes = s.as_bytes();
+            let needle = d.as_bytes();
+            let parts: Vec<Vec<u8>> = if needle.is_empty() {
+                // Mirror Rust's `&str::split("")` shape: empty leading
+                // and trailing pieces, one piece per byte in between.
+                let mut parts = Vec::with_capacity(bytes.len() + 2);
+                parts.push(Vec::new());
+                for b in bytes {
+                    parts.push(vec![*b]);
+                }
+                parts.push(Vec::new());
+                parts
+            } else {
+                let mut parts: Vec<Vec<u8>> = Vec::new();
+                let mut last = 0usize;
+                let mut i = 0usize;
+                while i + needle.len() <= bytes.len() {
+                    if &bytes[i..i + needle.len()] == needle {
+                        parts.push(bytes[last..i].to_vec());
+                        i += needle.len();
+                        last = i;
+                    } else {
+                        i += 1;
+                    }
+                }
+                parts.push(bytes[last..].to_vec());
+                parts
+            };
+
+            let fields: Vec<Value> = parts
+                .into_iter()
+                .map(|part| Value::String(global_bytes(part)))
                 .collect();
 
             // Create a Variant with :List tag and the split parts as fields
@@ -54,11 +85,22 @@ pub unsafe extern "C" fn patch_seq_string_contains(stack: Stack) -> Stack {
 
     match (str_val, substring_val) {
         (Value::String(s), Value::String(sub)) => {
-            let contains = s.as_str().contains(sub.as_str());
+            // Byte-clean substring search: scan the haystack for the
+            // needle's bytes. Works on any input — text or binary.
+            let contains = byte_contains(s.as_bytes(), sub.as_bytes());
             unsafe { push(stack, Value::Bool(contains)) }
         }
         _ => panic!("string_contains: expected two strings on stack"),
     }
+}
+
+/// Byte-level substring search. Empty needle is contained in any
+/// haystack (matches Rust's `&str::contains` for the same convention).
+fn byte_contains(haystack: &[u8], needle: &[u8]) -> bool {
+    if needle.is_empty() {
+        return true;
+    }
+    haystack.windows(needle.len()).any(|w| w == needle)
 }
 
 /// Check if a string starts with a prefix
@@ -77,7 +119,8 @@ pub unsafe extern "C" fn patch_seq_string_starts_with(stack: Stack) -> Stack {
 
     match (str_val, prefix_val) {
         (Value::String(s), Value::String(prefix)) => {
-            let starts = s.as_str().starts_with(prefix.as_str());
+            // Byte-clean prefix check.
+            let starts = s.as_bytes().starts_with(prefix.as_bytes());
             unsafe { push(stack, Value::Bool(starts)) }
         }
         _ => panic!("string_starts_with: expected two strings on stack"),
@@ -103,7 +146,7 @@ pub unsafe extern "C" fn patch_seq_string_char_at(stack: Stack) -> Stack {
             let result = if index < 0 {
                 -1
             } else {
-                s.as_str()
+                s.as_str_or_empty()
                     .chars()
                     .nth(index as usize)
                     .map(|c| c as i64)
@@ -151,7 +194,7 @@ pub unsafe extern "C" fn patch_seq_string_substring(stack: Stack) -> Stack {
             let result = if start < 0 || len < 0 {
                 String::new()
             } else {
-                s.as_str()
+                s.as_str_or_empty()
                     .chars()
                     .skip(start as usize)
                     .take(len as usize)
@@ -214,8 +257,8 @@ pub unsafe extern "C" fn patch_seq_string_find(stack: Stack) -> Stack {
 
     match (str_val, needle_val) {
         (Value::String(haystack), Value::String(needle)) => {
-            let haystack_str = haystack.as_str();
-            let needle_str = needle.as_str();
+            let haystack_str = haystack.as_str_or_empty();
+            let needle_str = needle.as_str_or_empty();
 
             // Find byte position then convert to character position
             let result = match haystack_str.find(needle_str) {
@@ -243,7 +286,7 @@ pub unsafe extern "C" fn patch_seq_string_join(stack: Stack) -> Stack {
         // Pop separator
         let (stack, sep_val) = pop(stack);
         let sep = match &sep_val {
-            Value::String(s) => s.as_str().to_owned(),
+            Value::String(s) => s.as_str_or_empty().to_owned(),
             _ => panic!("string.join: expected String separator, got {:?}", sep_val),
         };
 
@@ -259,11 +302,11 @@ pub unsafe extern "C" fn patch_seq_string_join(stack: Stack) -> Stack {
             .fields
             .iter()
             .map(|v| match v {
-                Value::String(s) => s.as_str().to_owned(),
+                Value::String(s) => s.as_str_or_empty().to_owned(),
                 Value::Int(n) => n.to_string(),
                 Value::Float(f) => f.to_string(),
                 Value::Bool(b) => if *b { "true" } else { "false" }.to_string(),
-                Value::Symbol(s) => format!(":{}", s.as_str()),
+                Value::Symbol(s) => format!(":{}", s.as_str_or_empty()),
                 _ => format!("{:?}", v),
             })
             .collect();

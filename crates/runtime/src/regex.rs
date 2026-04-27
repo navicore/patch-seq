@@ -61,8 +61,8 @@ pub unsafe extern "C" fn patch_seq_regex_match(stack: Stack) -> Stack {
 
     match (text_val, pattern_val) {
         (Value::String(text), Value::String(pattern)) => {
-            let result = match Regex::new(pattern.as_str()) {
-                Ok(re) => re.is_match(text.as_str()),
+            let result = match Regex::new(pattern.as_str_or_empty()) {
+                Ok(re) => re.is_match(text.as_str_or_empty()),
                 Err(_) => false, // Invalid regex returns false
             };
             unsafe { push(stack, Value::Bool(result)) }
@@ -88,8 +88,8 @@ pub unsafe extern "C" fn patch_seq_regex_find(stack: Stack) -> Stack {
 
     match (text_val, pattern_val) {
         (Value::String(text), Value::String(pattern)) => {
-            match Regex::new(pattern.as_str()) {
-                Ok(re) => match re.find(text.as_str()) {
+            match Regex::new(pattern.as_str_or_empty()) {
+                Ok(re) => match re.find(text.as_str_or_empty()) {
                     Some(m) => {
                         let stack = unsafe {
                             push(stack, Value::String(global_string(m.as_str().to_string())))
@@ -130,21 +130,23 @@ pub unsafe extern "C" fn patch_seq_regex_find_all(stack: Stack) -> Stack {
     let (stack, text_val) = unsafe { pop(stack) };
 
     match (text_val, pattern_val) {
-        (Value::String(text), Value::String(pattern)) => match Regex::new(pattern.as_str()) {
-            Ok(re) => {
-                let matches: Vec<Value> = re
-                    .find_iter(text.as_str())
-                    .map(|m| Value::String(global_string(m.as_str().to_string())))
-                    .collect();
-                let stack = unsafe { push(stack, make_list(matches)) };
-                unsafe { push(stack, Value::Bool(true)) }
+        (Value::String(text), Value::String(pattern)) => {
+            match Regex::new(pattern.as_str_or_empty()) {
+                Ok(re) => {
+                    let matches: Vec<Value> = re
+                        .find_iter(text.as_str_or_empty())
+                        .map(|m| Value::String(global_string(m.as_str().to_string())))
+                        .collect();
+                    let stack = unsafe { push(stack, make_list(matches)) };
+                    unsafe { push(stack, Value::Bool(true)) }
+                }
+                Err(_) => {
+                    // Invalid regex
+                    let stack = unsafe { push(stack, make_list(vec![])) };
+                    unsafe { push(stack, Value::Bool(false)) }
+                }
             }
-            Err(_) => {
-                // Invalid regex
-                let stack = unsafe { push(stack, make_list(vec![])) };
-                unsafe { push(stack, Value::Bool(false)) }
-            }
-        },
+        }
         _ => panic!("regex.find-all: expected two Strings on stack"),
     }
 }
@@ -168,9 +170,11 @@ pub unsafe extern "C" fn patch_seq_regex_replace(stack: Stack) -> Stack {
 
     match (text_val, pattern_val, replacement_val) {
         (Value::String(text), Value::String(pattern), Value::String(replacement)) => {
-            match Regex::new(pattern.as_str()) {
+            match Regex::new(pattern.as_str_or_empty()) {
                 Ok(re) => {
-                    let result = re.replace(text.as_str(), replacement.as_str()).into_owned();
+                    let result = re
+                        .replace(text.as_str_or_empty(), replacement.as_str_or_empty())
+                        .into_owned();
                     let stack = unsafe { push(stack, Value::String(global_string(result))) };
                     unsafe { push(stack, Value::Bool(true)) }
                 }
@@ -179,7 +183,7 @@ pub unsafe extern "C" fn patch_seq_regex_replace(stack: Stack) -> Stack {
                     let stack = unsafe {
                         push(
                             stack,
-                            Value::String(global_string(text.as_str().to_string())),
+                            Value::String(global_string(text.as_str_or_empty().to_string())),
                         )
                     };
                     unsafe { push(stack, Value::Bool(false)) }
@@ -209,10 +213,10 @@ pub unsafe extern "C" fn patch_seq_regex_replace_all(stack: Stack) -> Stack {
 
     match (text_val, pattern_val, replacement_val) {
         (Value::String(text), Value::String(pattern), Value::String(replacement)) => {
-            match Regex::new(pattern.as_str()) {
+            match Regex::new(pattern.as_str_or_empty()) {
                 Ok(re) => {
                     let result = re
-                        .replace_all(text.as_str(), replacement.as_str())
+                        .replace_all(text.as_str_or_empty(), replacement.as_str_or_empty())
                         .into_owned();
                     let stack = unsafe { push(stack, Value::String(global_string(result))) };
                     unsafe { push(stack, Value::Bool(true)) }
@@ -222,7 +226,7 @@ pub unsafe extern "C" fn patch_seq_regex_replace_all(stack: Stack) -> Stack {
                     let stack = unsafe {
                         push(
                             stack,
-                            Value::String(global_string(text.as_str().to_string())),
+                            Value::String(global_string(text.as_str_or_empty().to_string())),
                         )
                     };
                     unsafe { push(stack, Value::Bool(false)) }
@@ -251,8 +255,8 @@ pub unsafe extern "C" fn patch_seq_regex_captures(stack: Stack) -> Stack {
 
     match (text_val, pattern_val) {
         (Value::String(text), Value::String(pattern)) => {
-            match Regex::new(pattern.as_str()) {
-                Ok(re) => match re.captures(text.as_str()) {
+            match Regex::new(pattern.as_str_or_empty()) {
+                Ok(re) => match re.captures(text.as_str_or_empty()) {
                     Some(caps) => {
                         // Skip group 0 (full match), collect groups 1..n
                         let groups: Vec<Value> = caps
@@ -299,22 +303,26 @@ pub unsafe extern "C" fn patch_seq_regex_split(stack: Stack) -> Stack {
     let (stack, text_val) = unsafe { pop(stack) };
 
     match (text_val, pattern_val) {
-        (Value::String(text), Value::String(pattern)) => match Regex::new(pattern.as_str()) {
-            Ok(re) => {
-                let parts: Vec<Value> = re
-                    .split(text.as_str())
-                    .map(|s| Value::String(global_string(s.to_string())))
-                    .collect();
-                let stack = unsafe { push(stack, make_list(parts)) };
-                unsafe { push(stack, Value::Bool(true)) }
+        (Value::String(text), Value::String(pattern)) => {
+            match Regex::new(pattern.as_str_or_empty()) {
+                Ok(re) => {
+                    let parts: Vec<Value> = re
+                        .split(text.as_str_or_empty())
+                        .map(|s| Value::String(global_string(s.to_string())))
+                        .collect();
+                    let stack = unsafe { push(stack, make_list(parts)) };
+                    unsafe { push(stack, Value::Bool(true)) }
+                }
+                Err(_) => {
+                    // Invalid regex returns original as single element
+                    let parts = vec![Value::String(global_string(
+                        text.as_str_or_empty().to_string(),
+                    ))];
+                    let stack = unsafe { push(stack, make_list(parts)) };
+                    unsafe { push(stack, Value::Bool(false)) }
+                }
             }
-            Err(_) => {
-                // Invalid regex returns original as single element
-                let parts = vec![Value::String(global_string(text.as_str().to_string()))];
-                let stack = unsafe { push(stack, make_list(parts)) };
-                unsafe { push(stack, Value::Bool(false)) }
-            }
-        },
+        }
         _ => panic!("regex.split: expected two Strings on stack"),
     }
 }
@@ -335,7 +343,7 @@ pub unsafe extern "C" fn patch_seq_regex_valid(stack: Stack) -> Stack {
 
     match pattern_val {
         Value::String(pattern) => {
-            let is_valid = Regex::new(pattern.as_str()).is_ok();
+            let is_valid = Regex::new(pattern.as_str_or_empty()).is_ok();
             unsafe { push(stack, Value::Bool(is_valid)) }
         }
         _ => panic!("regex.valid?: expected String on stack"),

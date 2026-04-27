@@ -62,7 +62,8 @@ pub unsafe extern "C" fn patch_seq_crypto_ed25519_sign(stack: Stack) -> Stack {
 
     match (msg_val, key_val) {
         (Value::String(message), Value::String(private_key_hex)) => {
-            match ed25519_sign(message.as_str(), private_key_hex.as_str()) {
+            // Message is byte-clean; the key is hex (text).
+            match ed25519_sign(message.as_bytes(), private_key_hex.as_str_or_empty()) {
                 Some(signature) => {
                     let stack = unsafe { push(stack, Value::String(global_string(signature))) };
                     unsafe { push(stack, Value::Bool(true)) }
@@ -101,10 +102,11 @@ pub unsafe extern "C" fn patch_seq_crypto_ed25519_verify(stack: Stack) -> Stack 
 
     match (msg_val, sig_val, pubkey_val) {
         (Value::String(message), Value::String(signature_hex), Value::String(public_key_hex)) => {
+            // Message is byte-clean; signature and key are hex (text).
             let valid = ed25519_verify(
-                message.as_str(),
-                signature_hex.as_str(),
-                public_key_hex.as_str(),
+                message.as_bytes(),
+                signature_hex.as_str_or_empty(),
+                public_key_hex.as_str_or_empty(),
             );
             unsafe { push(stack, Value::Bool(valid)) }
         }
@@ -114,7 +116,9 @@ pub unsafe extern "C" fn patch_seq_crypto_ed25519_verify(stack: Stack) -> Stack 
 
 // Helper functions for Ed25519
 
-pub(super) fn ed25519_sign(message: &str, private_key_hex: &str) -> Option<String> {
+/// Sign arbitrary bytes (binary or text). The key is hex-encoded; the
+/// returned signature is hex-encoded (always valid UTF-8).
+pub(super) fn ed25519_sign(message: &[u8], private_key_hex: &str) -> Option<String> {
     let key_bytes = hex::decode(private_key_hex).ok()?;
     if key_bytes.len() != 32 {
         return None;
@@ -122,12 +126,13 @@ pub(super) fn ed25519_sign(message: &str, private_key_hex: &str) -> Option<Strin
 
     let key_array: [u8; 32] = key_bytes.try_into().ok()?;
     let signing_key = SigningKey::from_bytes(&key_array);
-    let signature = signing_key.sign(message.as_bytes());
+    let signature = signing_key.sign(message);
 
     Some(hex::encode(signature.to_bytes()))
 }
 
-pub(super) fn ed25519_verify(message: &str, signature_hex: &str, public_key_hex: &str) -> bool {
+/// Verify a signature against arbitrary bytes (binary or text).
+pub(super) fn ed25519_verify(message: &[u8], signature_hex: &str, public_key_hex: &str) -> bool {
     let verify_inner = || -> Option<bool> {
         let sig_bytes = hex::decode(signature_hex).ok()?;
         if sig_bytes.len() != 64 {
@@ -145,7 +150,7 @@ pub(super) fn ed25519_verify(message: &str, signature_hex: &str, public_key_hex:
         let signature = Signature::from_bytes(&sig_array);
         let verifying_key = VerifyingKey::from_bytes(&pubkey_array).ok()?;
 
-        Some(verifying_key.verify(message.as_bytes(), &signature).is_ok())
+        Some(verifying_key.verify(message, &signature).is_ok())
     };
 
     verify_inner().unwrap_or(false)

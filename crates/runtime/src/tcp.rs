@@ -287,16 +287,12 @@ pub unsafe extern "C" fn patch_seq_tcp_read(stack: Stack) -> Stack {
             return push(stack, Value::Bool(false));
         }
 
-        match String::from_utf8(buffer) {
-            Ok(data) => {
-                let stack = push(stack, Value::String(data.into()));
-                push(stack, Value::Bool(true))
-            }
-            Err(_) => {
-                let stack = push(stack, Value::String("".into()));
-                push(stack, Value::Bool(false))
-            }
-        }
+        // The bytes go into a byte-clean SeqString unchanged — TCP can
+        // now serve binary protocols (HTTP/2 frames, gRPC, raw TLS,
+        // protocol-buffer streams, anything that isn't text). UTF-8 is
+        // a property of the application protocol, not of the transport.
+        let stack = push(stack, Value::String(crate::seqstring::global_bytes(buffer)));
+        push(stack, Value::Bool(true))
     }
 }
 
@@ -341,7 +337,7 @@ pub unsafe extern "C" fn patch_seq_tcp_write(stack: Stack) -> Stack {
         // Registry lock is now released
 
         // Write data (non-blocking via May, yields strand as needed)
-        let write_result = stream.write_all(data.as_str().as_bytes());
+        let write_result = stream.write_all(data.as_bytes());
         let flush_result = if write_result.is_ok() {
             stream.flush()
         } else {

@@ -1,4 +1,5 @@
 use super::*;
+use crate::seqstring::global_bytes;
 use crate::stack::pop;
 
 #[test]
@@ -10,7 +11,7 @@ fn test_base64_encode() {
         let (_, value) = pop(stack);
 
         match value {
-            Value::String(s) => assert_eq!(s.as_str(), "aGVsbG8="),
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), "aGVsbG8="),
             _ => panic!("Expected String"),
         }
     }
@@ -27,7 +28,7 @@ fn test_base64_decode_success() {
         let (_, decoded) = pop(stack);
 
         match (decoded, success) {
-            (Value::String(s), Value::Bool(true)) => assert_eq!(s.as_str(), "hello"),
+            (Value::String(s), Value::Bool(true)) => assert_eq!(s.as_str_or_empty(), "hello"),
             _ => panic!("Expected (String, true)"),
         }
     }
@@ -47,7 +48,7 @@ fn test_base64_decode_failure() {
         let (_, decoded) = pop(stack);
 
         match (decoded, success) {
-            (Value::String(s), Value::Bool(false)) => assert_eq!(s.as_str(), ""),
+            (Value::String(s), Value::Bool(false)) => assert_eq!(s.as_str_or_empty(), ""),
             _ => panic!("Expected (empty String, false)"),
         }
     }
@@ -65,9 +66,9 @@ fn test_base64url_encode() {
         match value {
             Value::String(s) => {
                 // Should not contain + or / or =
-                assert!(!s.as_str().contains('+'));
-                assert!(!s.as_str().contains('/'));
-                assert!(!s.as_str().contains('='));
+                assert!(!s.as_str_or_empty().contains('+'));
+                assert!(!s.as_str_or_empty().contains('/'));
+                assert!(!s.as_str_or_empty().contains('='));
             }
             _ => panic!("Expected String"),
         }
@@ -87,7 +88,7 @@ fn test_base64url_roundtrip() {
         let (_, decoded) = pop(stack);
 
         match (decoded, success) {
-            (Value::String(s), Value::Bool(true)) => assert_eq!(s.as_str(), original),
+            (Value::String(s), Value::Bool(true)) => assert_eq!(s.as_str_or_empty(), original),
             _ => panic!("Expected (String, true)"),
         }
     }
@@ -102,7 +103,7 @@ fn test_hex_encode() {
         let (_, value) = pop(stack);
 
         match value {
-            Value::String(s) => assert_eq!(s.as_str(), "68656c6c6f"),
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), "68656c6c6f"),
             _ => panic!("Expected String"),
         }
     }
@@ -122,7 +123,7 @@ fn test_hex_decode_success() {
         let (_, decoded) = pop(stack);
 
         match (decoded, success) {
-            (Value::String(s), Value::Bool(true)) => assert_eq!(s.as_str(), "hello"),
+            (Value::String(s), Value::Bool(true)) => assert_eq!(s.as_str_or_empty(), "hello"),
             _ => panic!("Expected (String, true)"),
         }
     }
@@ -142,7 +143,7 @@ fn test_hex_decode_uppercase() {
         let (_, decoded) = pop(stack);
 
         match (decoded, success) {
-            (Value::String(s), Value::Bool(true)) => assert_eq!(s.as_str(), "hello"),
+            (Value::String(s), Value::Bool(true)) => assert_eq!(s.as_str_or_empty(), "hello"),
             _ => panic!("Expected (String, true)"),
         }
     }
@@ -159,7 +160,7 @@ fn test_hex_decode_failure() {
         let (_, decoded) = pop(stack);
 
         match (decoded, success) {
-            (Value::String(s), Value::Bool(false)) => assert_eq!(s.as_str(), ""),
+            (Value::String(s), Value::Bool(false)) => assert_eq!(s.as_str_or_empty(), ""),
             _ => panic!("Expected (empty String, false)"),
         }
     }
@@ -178,8 +179,68 @@ fn test_hex_roundtrip() {
         let (_, decoded) = pop(stack);
 
         match (decoded, success) {
-            (Value::String(s), Value::Bool(true)) => assert_eq!(s.as_str(), original),
+            (Value::String(s), Value::Bool(true)) => assert_eq!(s.as_str_or_empty(), original),
             _ => panic!("Expected (String, true)"),
+        }
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Byte-cleanliness regression tests for encoding round-trips.
+//
+// base64 and hex are encodings *for* arbitrary bytes — the canonical use
+// case is binary-as-text. Round-tripping non-UTF-8 bytes through encode →
+// decode must produce byte-identical output.
+// ----------------------------------------------------------------------------
+
+const ENC_BIN: &[u8] = &[0x00, 0xDC, b'x', 0xFF, 0xC3, b'!', 0x80];
+
+#[test]
+fn byte_clean_base64_round_trips_binary() {
+    unsafe {
+        let stack = crate::stack::alloc_test_stack();
+        let stack = push(stack, Value::String(global_bytes(ENC_BIN.to_vec())));
+        let stack = patch_seq_base64_encode(stack);
+        let (stack, encoded) = pop(stack);
+        let encoded = match encoded {
+            Value::String(s) => s,
+            _ => panic!("expected encoded String"),
+        };
+        // base64 output is always ASCII text.
+        let _ = encoded.as_str().expect("base64 output must be valid UTF-8");
+
+        let stack = push(stack, Value::String(encoded));
+        let stack = patch_seq_base64_decode(stack);
+        let (stack, success) = pop(stack);
+        assert_eq!(success, Value::Bool(true));
+        let (_, decoded) = pop(stack);
+        match decoded {
+            Value::String(s) => assert_eq!(s.as_bytes(), ENC_BIN),
+            _ => panic!("expected decoded String"),
+        }
+    }
+}
+
+#[test]
+fn byte_clean_hex_round_trips_binary() {
+    unsafe {
+        let stack = crate::stack::alloc_test_stack();
+        let stack = push(stack, Value::String(global_bytes(ENC_BIN.to_vec())));
+        let stack = patch_seq_hex_encode(stack);
+        let (stack, encoded) = pop(stack);
+        let encoded = match encoded {
+            Value::String(s) => s,
+            _ => panic!("expected encoded String"),
+        };
+
+        let stack = push(stack, Value::String(encoded));
+        let stack = patch_seq_hex_decode(stack);
+        let (stack, success) = pop(stack);
+        assert_eq!(success, Value::Bool(true));
+        let (_, decoded) = pop(stack);
+        match decoded {
+            Value::String(s) => assert_eq!(s.as_bytes(), ENC_BIN),
+            _ => panic!("expected decoded String"),
         }
     }
 }

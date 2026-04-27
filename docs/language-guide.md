@@ -152,7 +152,7 @@ Seq has these value types:
 | Int | `42`, `-1`, `0xFF`, `0b1010` | 64-bit signed, hex/binary literals |
 | Float | `3.14`, `-0.5` | 64-bit IEEE 754 |
 | Bool | `true`, `false` | |
-| String | `"hello"` | UTF-8 |
+| String | `"hello"` | UTF-8 text; also carries arbitrary bytes for binary I/O |
 | List | (via variant ops) | Ordered collection |
 | Map | (via map ops) | Key-value dictionary |
 | Quotation | `[ code ]` | Deferred execution |

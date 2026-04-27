@@ -77,11 +77,16 @@ fn format_value(value: &Value, config: &SonConfig, depth: usize, buf: &mut Strin
             buf.push_str(if *b { "true" } else { "false" });
         }
         Value::String(s) => {
-            format_string(s.as_str(), buf);
+            // SON is text serialization (Seq-source-syntax compatible).
+            // Non-UTF-8 bytes have no clean Seq-syntax representation,
+            // so we display lossily — round-trip of arbitrary bytes
+            // through SON is *not* supported. Callers needing to
+            // round-trip binary data should base64/hex-encode first.
+            format_string(&s.as_str_lossy(), buf);
         }
         Value::Symbol(s) => {
             buf.push(':');
-            buf.push_str(s.as_str());
+            buf.push_str(&s.as_str_lossy());
         }
         Value::Variant(v) => {
             format_variant(v, config, depth, buf);
@@ -127,15 +132,17 @@ fn format_string(s: &str, buf: &mut String) {
 
 /// Format a variant (includes List as special case)
 fn format_variant(v: &VariantData, config: &SonConfig, depth: usize, buf: &mut String) {
-    let tag = v.tag.as_str();
+    // Variant tags are constructor names — text by design. We compare
+    // bytes for the List discriminator (no UTF-8 dependence) and use
+    // the lossy-display form for the printed tag in non-List cases.
+    let is_list = v.tag.as_bytes() == b"List";
 
-    // Special case: List variant uses list-of/lv syntax
-    if tag == "List" {
+    if is_list {
         format_list(&v.fields, config, depth, buf);
     } else {
         // General variant: :Tag field1 field2 wrap-N
         buf.push(':');
-        buf.push_str(tag);
+        buf.push_str(&v.tag.as_str_lossy());
 
         let field_count = v.fields.len();
 
@@ -219,7 +226,7 @@ fn map_key_sort_string(key: &MapKey) -> String {
     match key {
         MapKey::Int(n) => format!("0_{:020}", n), // Prefix with 0 for ints
         MapKey::Bool(b) => format!("1_{}", b),    // Prefix with 1 for bools
-        MapKey::String(s) => format!("2_{}", s.as_str()), // Prefix with 2 for strings
+        MapKey::String(s) => format!("2_{}", s.as_str_lossy()), // Prefix with 2 for strings
     }
 }
 
@@ -228,7 +235,7 @@ fn format_map_key(key: &MapKey, buf: &mut String) {
     match key {
         MapKey::Int(n) => buf.push_str(&n.to_string()),
         MapKey::Bool(b) => buf.push_str(if *b { "true" } else { "false" }),
-        MapKey::String(s) => format_string(s.as_str(), buf),
+        MapKey::String(s) => format_string(&s.as_str_lossy(), buf),
     }
 }
 

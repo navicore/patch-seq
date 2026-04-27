@@ -144,7 +144,7 @@ pub unsafe extern "C" fn patch_seq_test_set_name(stack: Stack) -> Stack {
     unsafe {
         let (stack, name_val) = pop(stack);
         let name = match name_val {
-            Value::String(s) => s.as_str().to_string(),
+            Value::String(s) => s.as_str_or_empty().to_string(),
             _ => panic!("test.set-name: expected String (test name) on stack"),
         };
         let mut ctx = TEST_CONTEXT.lock().unwrap();
@@ -164,7 +164,7 @@ pub unsafe extern "C" fn patch_seq_test_init(stack: Stack) -> Stack {
     unsafe {
         let (stack, name_val) = pop(stack);
         let name = match name_val {
-            Value::String(s) => s.as_str().to_string(),
+            Value::String(s) => s.as_str_or_empty().to_string(),
             _ => panic!("test.init: expected String (test name) on stack"),
         };
 
@@ -356,9 +356,10 @@ pub unsafe extern "C" fn patch_seq_test_assert_eq_str(stack: Stack) -> Stack {
         let (stack, expected_val) = pop(stack);
 
         let (expected, actual) = match (&expected_val, &actual_val) {
-            (Value::String(e), Value::String(a)) => {
-                (e.as_str().to_string(), a.as_str().to_string())
-            }
+            (Value::String(e), Value::String(a)) => (
+                e.as_str_or_empty().to_string(),
+                a.as_str_or_empty().to_string(),
+            ),
             _ => panic!(
                 "test.assert-eq-str: expected two Strings on stack, got {:?} and {:?}",
                 expected_val, actual_val
@@ -393,7 +394,7 @@ pub unsafe extern "C" fn patch_seq_test_fail(stack: Stack) -> Stack {
     unsafe {
         let (stack, msg_val) = pop(stack);
         let message = match msg_val {
-            Value::String(s) => s.as_str().to_string(),
+            Value::String(s) => s.as_str_or_empty().to_string(),
             _ => panic!("test.fail: expected String (message) on stack"),
         };
 

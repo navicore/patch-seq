@@ -39,7 +39,10 @@ pub unsafe extern "C" fn patch_seq_crypto_pbkdf2_sha256(stack: Stack) -> Stack {
                 return unsafe { push(stack, Value::Bool(false)) };
             }
 
-            let key = derive_key_pbkdf2(password.as_str(), salt.as_str(), iterations as u32);
+            // Password and salt are byte-clean — random bytes for
+            // salts are common, and binary password material (e.g.,
+            // pre-hashed input) survives unchanged.
+            let key = derive_key_pbkdf2(password.as_bytes(), salt.as_bytes(), iterations as u32);
             let key_hex = hex::encode(key);
             let stack = unsafe { push(stack, Value::String(global_string(key_hex))) };
             unsafe { push(stack, Value::Bool(true)) }
@@ -48,8 +51,12 @@ pub unsafe extern "C" fn patch_seq_crypto_pbkdf2_sha256(stack: Stack) -> Stack {
     }
 }
 
-pub(super) fn derive_key_pbkdf2(password: &str, salt: &str, iterations: u32) -> [u8; AES_KEY_SIZE] {
+pub(super) fn derive_key_pbkdf2(
+    password: &[u8],
+    salt: &[u8],
+    iterations: u32,
+) -> [u8; AES_KEY_SIZE] {
     let mut key = [0u8; AES_KEY_SIZE];
-    pbkdf2::pbkdf2_hmac::<Sha256>(password.as_bytes(), salt.as_bytes(), iterations, &mut key);
+    pbkdf2::pbkdf2_hmac::<Sha256>(password, salt, iterations, &mut key);
     key
 }

@@ -247,7 +247,7 @@ pub unsafe extern "C" fn patch_seq_string_to_float(stack: Stack) -> Stack {
     let (stack, val) = unsafe { pop(stack) };
 
     match val {
-        Value::String(s) => match s.as_str().parse::<f64>() {
+        Value::String(s) => match s.as_str_or_empty().parse::<f64>() {
             Ok(f) => {
                 let stack = unsafe { push(stack, Value::Float(f)) };
                 unsafe { push(stack, Value::Bool(true)) }

@@ -32,7 +32,7 @@ fn test_map_set_and_get() {
         assert_eq!(flag, Value::Bool(true));
         let (_stack, result) = pop(stack);
         match result {
-            Value::String(s) => assert_eq!(s.as_str(), "Alice"),
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), "Alice"),
             _ => panic!("Expected String"),
         }
     }
@@ -55,7 +55,7 @@ fn test_map_set_with_int_key() {
         assert_eq!(flag, Value::Bool(true));
         let (_stack, result) = pop(stack);
         match result {
-            Value::String(s) => assert_eq!(s.as_str(), "answer"),
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), "answer"),
             _ => panic!("Expected String"),
         }
     }
@@ -254,7 +254,7 @@ fn test_map_with_bool_key() {
         assert_eq!(flag, Value::Bool(true));
         let (_stack, result) = pop(stack);
         match result {
-            Value::String(s) => assert_eq!(s.as_str(), "yes"),
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), "yes"),
             _ => panic!("Expected String"),
         }
     }
@@ -331,7 +331,7 @@ fn test_map_mixed_key_types() {
         assert_eq!(flag, Value::Bool(true));
         let (stack, result) = pop(stack);
         match result {
-            Value::String(s) => assert_eq!(s.as_str(), "Alice"),
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), "Alice"),
             _ => panic!("Expected String for name key"),
         }
 
@@ -342,7 +342,7 @@ fn test_map_mixed_key_types() {
         assert_eq!(flag, Value::Bool(true));
         let (stack, result) = pop(stack);
         match result {
-            Value::String(s) => assert_eq!(s.as_str(), "answer"),
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), "answer"),
             _ => panic!("Expected String for int key"),
         }
 
@@ -352,7 +352,7 @@ fn test_map_mixed_key_types() {
         assert_eq!(flag, Value::Bool(true));
         let (_stack, result) = pop(stack);
         match result {
-            Value::String(s) => assert_eq!(s.as_str(), "yes"),
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), "yes"),
             _ => panic!("Expected String for bool key"),
         }
     }

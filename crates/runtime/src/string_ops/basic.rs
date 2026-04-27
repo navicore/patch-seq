@@ -1,6 +1,6 @@
 //! Basic string operations: length, byte-length, empty-check, equality, concat.
 
-use crate::seqstring::global_string;
+use crate::seqstring::global_bytes;
 use crate::stack::{Stack, pop, push};
 use crate::value::Value;
 
@@ -14,7 +14,8 @@ pub unsafe extern "C" fn patch_seq_string_empty(stack: Stack) -> Stack {
 
     match value {
         Value::String(s) => {
-            let is_empty = s.as_str().is_empty();
+            // Byte-clean: empty iff there are no bytes, regardless of UTF-8.
+            let is_empty = s.as_bytes().is_empty();
             unsafe { push(stack, Value::Bool(is_empty)) }
         }
         _ => panic!("string_empty: expected String on stack"),
@@ -37,8 +38,14 @@ pub unsafe extern "C" fn patch_seq_string_concat(stack: Stack) -> Stack {
 
     match (str1_val, str2_val) {
         (Value::String(s1), Value::String(s2)) => {
-            let result = format!("{}{}", s1.as_str(), s2.as_str());
-            unsafe { push(stack, Value::String(global_string(result))) }
+            // Byte-clean concat: catenate the underlying byte buffers.
+            // OSC payload assembly, binary file building, MessagePack,
+            // anything that needs to glue arbitrary bytes together
+            // depends on this not going through `&str`.
+            let mut result = Vec::with_capacity(s1.as_bytes().len() + s2.as_bytes().len());
+            result.extend_from_slice(s1.as_bytes());
+            result.extend_from_slice(s2.as_bytes());
+            unsafe { push(stack, Value::String(global_bytes(result))) }
         }
         _ => panic!("string_concat: expected two strings on stack"),
     }
@@ -61,7 +68,7 @@ pub unsafe extern "C" fn patch_seq_string_length(stack: Stack) -> Stack {
 
     match str_val {
         Value::String(s) => {
-            let len = s.as_str().chars().count() as i64;
+            let len = s.as_str_or_empty().chars().count() as i64;
             unsafe { push(stack, Value::Int(len)) }
         }
         _ => panic!("string_length: expected String on stack"),
@@ -84,7 +91,8 @@ pub unsafe extern "C" fn patch_seq_string_byte_length(stack: Stack) -> Stack {
 
     match str_val {
         Value::String(s) => {
-            let len = s.as_str().len() as i64;
+            // Byte-clean: count of underlying bytes, no UTF-8 validation.
+            let len = s.as_bytes().len() as i64;
             unsafe { push(stack, Value::Int(len)) }
         }
         _ => panic!("string_byte_length: expected String on stack"),
@@ -110,7 +118,10 @@ pub unsafe extern "C" fn patch_seq_string_equal(stack: Stack) -> Stack {
 
     match (str1_val, str2_val) {
         (Value::String(s1), Value::String(s2)) => {
-            let equal = s1.as_str() == s2.as_str();
+            // Byte-clean: equality is byte-for-byte. Matches the
+            // `PartialEq for SeqString` impl in seqstring.rs, which
+            // also compares `as_bytes`.
+            let equal = s1.as_bytes() == s2.as_bytes();
             unsafe { push(stack, Value::Bool(equal)) }
         }
         _ => panic!("string_equal: expected two strings on stack"),

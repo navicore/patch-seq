@@ -47,19 +47,17 @@ pub unsafe extern "C" fn patch_seq_compress_gzip(stack: Stack) -> Stack {
     let (stack, data_val) = unsafe { pop(stack) };
 
     match data_val {
-        Value::String(data) => {
-            match gzip_compress(data.as_str().as_bytes(), Compression::default()) {
-                Some(compressed) => {
-                    let encoded = STANDARD.encode(&compressed);
-                    let stack = unsafe { push(stack, Value::String(global_string(encoded))) };
-                    unsafe { push(stack, Value::Bool(true)) }
-                }
-                None => {
-                    let stack = unsafe { push(stack, Value::String(global_string(String::new()))) };
-                    unsafe { push(stack, Value::Bool(false)) }
-                }
+        Value::String(data) => match gzip_compress(data.as_bytes(), Compression::default()) {
+            Some(compressed) => {
+                let encoded = STANDARD.encode(&compressed);
+                let stack = unsafe { push(stack, Value::String(global_string(encoded))) };
+                unsafe { push(stack, Value::Bool(true)) }
             }
-        }
+            None => {
+                let stack = unsafe { push(stack, Value::String(global_string(String::new()))) };
+                unsafe { push(stack, Value::Bool(false)) }
+            }
+        },
         _ => panic!("compress.gzip: expected String on stack"),
     }
 }
@@ -83,7 +81,7 @@ pub unsafe extern "C" fn patch_seq_compress_gzip_level(stack: Stack) -> Stack {
     match (data_val, level_val) {
         (Value::String(data), Value::Int(level)) => {
             let level = level.clamp(1, 9) as u32;
-            match gzip_compress(data.as_str().as_bytes(), Compression::new(level)) {
+            match gzip_compress(data.as_bytes(), Compression::new(level)) {
                 Some(compressed) => {
                     let encoded = STANDARD.encode(&compressed);
                     let stack = unsafe { push(stack, Value::String(global_string(encoded))) };
@@ -117,7 +115,7 @@ pub unsafe extern "C" fn patch_seq_compress_gunzip(stack: Stack) -> Stack {
     match data_val {
         Value::String(data) => {
             // Decode base64
-            let decoded = match STANDARD.decode(data.as_str()) {
+            let decoded = match STANDARD.decode(data.as_str_or_empty()) {
                 Ok(d) => d,
                 Err(_) => {
                     let stack = unsafe { push(stack, Value::String(global_string(String::new()))) };
@@ -156,7 +154,7 @@ pub unsafe extern "C" fn patch_seq_compress_zstd(stack: Stack) -> Stack {
     let (stack, data_val) = unsafe { pop(stack) };
 
     match data_val {
-        Value::String(data) => match zstd::encode_all(data.as_str().as_bytes(), 3) {
+        Value::String(data) => match zstd::encode_all(data.as_bytes(), 3) {
             Ok(compressed) => {
                 let encoded = STANDARD.encode(&compressed);
                 let stack = unsafe { push(stack, Value::String(global_string(encoded))) };
@@ -190,7 +188,7 @@ pub unsafe extern "C" fn patch_seq_compress_zstd_level(stack: Stack) -> Stack {
     match (data_val, level_val) {
         (Value::String(data), Value::Int(level)) => {
             let level = level.clamp(1, 22) as i32;
-            match zstd::encode_all(data.as_str().as_bytes(), level) {
+            match zstd::encode_all(data.as_bytes(), level) {
                 Ok(compressed) => {
                     let encoded = STANDARD.encode(&compressed);
                     let stack = unsafe { push(stack, Value::String(global_string(encoded))) };
@@ -224,7 +222,7 @@ pub unsafe extern "C" fn patch_seq_compress_unzstd(stack: Stack) -> Stack {
     match data_val {
         Value::String(data) => {
             // Decode base64
-            let decoded = match STANDARD.decode(data.as_str()) {
+            let decoded = match STANDARD.decode(data.as_str_or_empty()) {
                 Ok(d) => d,
                 Err(_) => {
                     let stack = unsafe { push(stack, Value::String(global_string(String::new()))) };

@@ -9,6 +9,17 @@ use crate::seqstring::global_string;
 use crate::stack::{Stack, pop, push};
 use crate::value::Value;
 
+/// Path conversion idiom: paths are inherently text on the OS APIs we
+/// target (Linux/macOS POSIX, which expose `&str` via Rust's `Path`),
+/// so non-UTF-8 path bytes can't be handed to the OS as-is.
+/// `SeqString::as_str_or_empty()` returns `""` for non-UTF-8 input,
+/// which routes the call through the OS error path and produces the
+/// standard `(empty, false)` failure tuple — same observable result
+/// as if we'd validated upfront. Mirrors `file::path_str` for parity.
+fn path_str(s: &crate::seqstring::SeqString) -> &str {
+    s.as_str_or_empty()
+}
+
 /// Get an environment variable
 ///
 /// Stack effect: ( name -- value success )
@@ -29,7 +40,7 @@ pub unsafe extern "C" fn patch_seq_getenv(stack: Stack) -> Stack {
             ),
         };
 
-        match std::env::var(name.as_str()) {
+        match std::env::var(name.as_str_or_empty()) {
             Ok(value) => {
                 let stack = push(stack, Value::String(global_string(value)));
                 push(stack, Value::Bool(true)) // success
@@ -117,7 +128,7 @@ pub unsafe extern "C" fn patch_seq_path_exists(stack: Stack) -> Stack {
             ),
         };
 
-        let exists = std::path::Path::new(path.as_str()).exists();
+        let exists = std::path::Path::new(path_str(&path)).exists();
         push(stack, Value::Bool(exists))
     }
 }
@@ -142,7 +153,7 @@ pub unsafe extern "C" fn patch_seq_path_is_file(stack: Stack) -> Stack {
             ),
         };
 
-        let is_file = std::path::Path::new(path.as_str()).is_file();
+        let is_file = std::path::Path::new(path_str(&path)).is_file();
         push(stack, Value::Bool(is_file))
     }
 }
@@ -167,7 +178,7 @@ pub unsafe extern "C" fn patch_seq_path_is_dir(stack: Stack) -> Stack {
             ),
         };
 
-        let is_dir = std::path::Path::new(path.as_str()).is_dir();
+        let is_dir = std::path::Path::new(path_str(&path)).is_dir();
         push(stack, Value::Bool(is_dir))
     }
 }
@@ -202,8 +213,8 @@ pub unsafe extern "C" fn patch_seq_path_join(stack: Stack) -> Stack {
             ),
         };
 
-        let joined = std::path::Path::new(base.as_str())
-            .join(component.as_str())
+        let joined = std::path::Path::new(path_str(&base))
+            .join(path_str(&component))
             .to_string_lossy()
             .into_owned();
 
@@ -231,7 +242,7 @@ pub unsafe extern "C" fn patch_seq_path_parent(stack: Stack) -> Stack {
             ),
         };
 
-        match std::path::Path::new(path.as_str()).parent() {
+        match std::path::Path::new(path_str(&path)).parent() {
             Some(parent) => {
                 let parent_str = parent.to_string_lossy().into_owned();
                 let stack = push(stack, Value::String(global_string(parent_str)));
@@ -265,7 +276,7 @@ pub unsafe extern "C" fn patch_seq_path_filename(stack: Stack) -> Stack {
             ),
         };
 
-        match std::path::Path::new(path.as_str()).file_name() {
+        match std::path::Path::new(path_str(&path)).file_name() {
             Some(filename) => {
                 let filename_str = filename.to_string_lossy().into_owned();
                 let stack = push(stack, Value::String(global_string(filename_str)));

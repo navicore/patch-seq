@@ -27,7 +27,7 @@ pub unsafe extern "C" fn patch_seq_sha256(stack: Stack) -> Stack {
     match value {
         Value::String(s) => {
             let mut hasher = Sha256::new();
-            hasher.update(s.as_str().as_bytes());
+            hasher.update(s.as_bytes());
             let result = hasher.finalize();
             let hex_digest = hex::encode(result);
             unsafe { push(stack, Value::String(global_string(hex_digest))) }
@@ -54,9 +54,9 @@ pub unsafe extern "C" fn patch_seq_hmac_sha256(stack: Stack) -> Stack {
 
     match (msg_value, key_value) {
         (Value::String(msg), Value::String(key)) => {
-            let mut mac = <HmacSha256 as Mac>::new_from_slice(key.as_str().as_bytes())
-                .expect("HMAC can take any key");
-            mac.update(msg.as_str().as_bytes());
+            let mut mac =
+                <HmacSha256 as Mac>::new_from_slice(key.as_bytes()).expect("HMAC can take any key");
+            mac.update(msg.as_bytes());
             let result = mac.finalize();
             let hex_sig = hex::encode(result.into_bytes());
             unsafe { push(stack, Value::String(global_string(hex_sig))) }
@@ -90,8 +90,8 @@ pub unsafe extern "C" fn patch_seq_constant_time_eq(stack: Stack) -> Stack {
 
     match (a_value, b_value) {
         (Value::String(a), Value::String(b)) => {
-            let a_bytes = a.as_str().as_bytes();
-            let b_bytes = b.as_str().as_bytes();
+            let a_bytes = a.as_bytes();
+            let b_bytes = b.as_bytes();
 
             // Use subtle crate for truly constant-time comparison
             // This handles different-length strings correctly without timing leaks

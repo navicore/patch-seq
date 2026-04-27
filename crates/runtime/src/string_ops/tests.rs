@@ -1,5 +1,5 @@
 use super::*;
-use crate::seqstring::global_string;
+use crate::seqstring::{global_bytes, global_string};
 use crate::stack::{pop, push};
 use crate::value::Value;
 
@@ -16,7 +16,7 @@ fn test_string_split_simple() {
         let (_stack, result) = pop(stack);
         match result {
             Value::Variant(v) => {
-                assert_eq!(v.tag.as_str(), "List");
+                assert_eq!(v.tag.as_str_or_empty(), "List");
                 assert_eq!(v.fields.len(), 3);
                 assert_eq!(v.fields[0], Value::String(global_string("a".to_owned())));
                 assert_eq!(v.fields[1], Value::String(global_string("b".to_owned())));
@@ -40,7 +40,7 @@ fn test_string_split_empty() {
         let (_stack, result) = pop(stack);
         match result {
             Value::Variant(v) => {
-                assert_eq!(v.tag.as_str(), "List");
+                assert_eq!(v.tag.as_str_or_empty(), "List");
                 assert_eq!(v.fields.len(), 1);
                 assert_eq!(v.fields[0], Value::String(global_string("".to_owned())));
             }
@@ -160,7 +160,7 @@ fn test_http_request_line_parsing() {
         let (_stack, result) = pop(stack);
         match result {
             Value::Variant(v) => {
-                assert_eq!(v.tag.as_str(), "List");
+                assert_eq!(v.tag.as_str_or_empty(), "List");
                 assert_eq!(v.fields.len(), 3);
                 assert_eq!(v.fields[0], Value::String(global_string("GET".to_owned())));
                 assert_eq!(
@@ -958,7 +958,7 @@ fn test_string_join_strings() {
 
         let (_stack, result) = pop(stack);
         match result {
-            Value::String(s) => assert_eq!(s.as_str(), "a, b, c"),
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), "a, b, c"),
             _ => panic!("Expected String, got {:?}", result),
         }
     }
@@ -981,7 +981,7 @@ fn test_string_join_empty_list() {
 
         let (_stack, result) = pop(stack);
         match result {
-            Value::String(s) => assert_eq!(s.as_str(), ""),
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), ""),
             _ => panic!("Expected String"),
         }
     }
@@ -1004,7 +1004,7 @@ fn test_string_join_single_element() {
 
         let (_stack, result) = pop(stack);
         match result {
-            Value::String(s) => assert_eq!(s.as_str(), "only"),
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), "only"),
             _ => panic!("Expected String"),
         }
     }
@@ -1031,8 +1031,233 @@ fn test_string_join_mixed_types() {
 
         let (_stack, result) = pop(stack);
         match result {
-            Value::String(s) => assert_eq!(s.as_str(), "1 true x"),
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), "1 true x"),
             _ => panic!("Expected String"),
+        }
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Byte-cleanliness regression tests.
+//
+// These guard against the class of bugs that snuck in during the bulk-sed
+// pass of CP4 (byte-clean ops were wrongly routed through `as_str_or_empty()`,
+// silently degenerating non-UTF-8 input to empty / wrong answers). Sentinel
+// bytes include a NUL, a UTF-8 continuation byte standing alone (0xDC), a
+// high byte (0xFF), and a partial UTF-8 lead (0xC3) — the same shape used
+// in `seqstring.rs`'s type-level sentinel tests.
+// ----------------------------------------------------------------------------
+
+const BIN_A: &[u8] = &[0x00, 0xDC, b'x', 0xFF, 0xC3, b'!'];
+const BIN_B: &[u8] = &[0x42, 0x00, 0xFE, b'y'];
+
+#[test]
+fn byte_clean_string_byte_length() {
+    unsafe {
+        let stack = crate::stack::alloc_test_stack();
+        let stack = push(stack, Value::String(global_bytes(BIN_A.to_vec())));
+        let stack = patch_seq_string_byte_length(stack);
+        let (_, len) = pop(stack);
+        assert_eq!(len, Value::Int(BIN_A.len() as i64));
+    }
+}
+
+#[test]
+fn byte_clean_string_empty_distinguishes_zero_from_nonempty_binary() {
+    unsafe {
+        let stack = crate::stack::alloc_test_stack();
+        let stack = push(stack, Value::String(global_bytes(BIN_A.to_vec())));
+        let stack = patch_seq_string_empty(stack);
+        let (_, is_empty) = pop(stack);
+        assert_eq!(
+            is_empty,
+            Value::Bool(false),
+            "non-empty binary buffer must not be reported as empty"
+        );
+
+        let stack = crate::stack::alloc_test_stack();
+        let stack = push(stack, Value::String(global_bytes(Vec::new())));
+        let stack = patch_seq_string_empty(stack);
+        let (_, is_empty) = pop(stack);
+        assert_eq!(is_empty, Value::Bool(true));
+    }
+}
+
+#[test]
+fn byte_clean_string_equal_distinguishes_different_binary_buffers() {
+    unsafe {
+        // Same bytes — equal.
+        let stack = crate::stack::alloc_test_stack();
+        let stack = push(stack, Value::String(global_bytes(BIN_A.to_vec())));
+        let stack = push(stack, Value::String(global_bytes(BIN_A.to_vec())));
+        let stack = patch_seq_string_equal(stack);
+        let (_, eq) = pop(stack);
+        assert_eq!(eq, Value::Bool(true));
+
+        // Different non-UTF-8 bytes — not equal. Pre-fix this returned true
+        // because both were collapsed to "" via as_str_or_empty.
+        let stack = crate::stack::alloc_test_stack();
+        let stack = push(stack, Value::String(global_bytes(BIN_A.to_vec())));
+        let stack = push(stack, Value::String(global_bytes(BIN_B.to_vec())));
+        let stack = patch_seq_string_equal(stack);
+        let (_, eq) = pop(stack);
+        assert_eq!(eq, Value::Bool(false));
+    }
+}
+
+#[test]
+fn byte_clean_string_concat_preserves_binary_bytes() {
+    unsafe {
+        let stack = crate::stack::alloc_test_stack();
+        let stack = push(stack, Value::String(global_bytes(BIN_A.to_vec())));
+        let stack = push(stack, Value::String(global_bytes(BIN_B.to_vec())));
+        let stack = patch_seq_string_concat(stack);
+        let (_, result) = pop(stack);
+        match result {
+            Value::String(s) => {
+                let mut expected = BIN_A.to_vec();
+                expected.extend_from_slice(BIN_B);
+                assert_eq!(s.as_bytes(), expected.as_slice());
+            }
+            other => panic!("expected String, got {:?}", other),
+        }
+    }
+}
+
+#[test]
+fn byte_clean_string_contains_finds_binary_needle() {
+    unsafe {
+        let mut haystack = b"prefix-".to_vec();
+        haystack.extend_from_slice(BIN_A);
+        haystack.extend_from_slice(b"-suffix");
+
+        // Found.
+        let stack = crate::stack::alloc_test_stack();
+        let stack = push(stack, Value::String(global_bytes(haystack.clone())));
+        let stack = push(stack, Value::String(global_bytes(BIN_A.to_vec())));
+        let stack = patch_seq_string_contains(stack);
+        let (_, contains) = pop(stack);
+        assert_eq!(contains, Value::Bool(true));
+
+        // Not found.
+        let stack = crate::stack::alloc_test_stack();
+        let stack = push(stack, Value::String(global_bytes(haystack)));
+        let stack = push(stack, Value::String(global_bytes(BIN_B.to_vec())));
+        let stack = patch_seq_string_contains(stack);
+        let (_, contains) = pop(stack);
+        assert_eq!(contains, Value::Bool(false));
+    }
+}
+
+#[test]
+fn byte_clean_string_starts_with_binary_prefix() {
+    unsafe {
+        let mut haystack = BIN_A.to_vec();
+        haystack.extend_from_slice(b"-tail");
+
+        let stack = crate::stack::alloc_test_stack();
+        let stack = push(stack, Value::String(global_bytes(haystack.clone())));
+        let stack = push(stack, Value::String(global_bytes(BIN_A.to_vec())));
+        let stack = patch_seq_string_starts_with(stack);
+        let (_, starts) = pop(stack);
+        assert_eq!(starts, Value::Bool(true));
+
+        // Different prefix — not starting with.
+        let stack = crate::stack::alloc_test_stack();
+        let stack = push(stack, Value::String(global_bytes(haystack)));
+        let stack = push(stack, Value::String(global_bytes(BIN_B.to_vec())));
+        let stack = patch_seq_string_starts_with(stack);
+        let (_, starts) = pop(stack);
+        assert_eq!(starts, Value::Bool(false));
+    }
+}
+
+#[test]
+fn byte_clean_string_split_on_binary_delimiter() {
+    unsafe {
+        // Build a haystack: BIN_A | NUL-FF | BIN_B | NUL-FF | "tail"
+        let delim: &[u8] = &[0x00, 0xFF];
+        let mut haystack = Vec::new();
+        haystack.extend_from_slice(BIN_A);
+        haystack.extend_from_slice(delim);
+        haystack.extend_from_slice(BIN_B);
+        haystack.extend_from_slice(delim);
+        haystack.extend_from_slice(b"tail");
+
+        let stack = crate::stack::alloc_test_stack();
+        let stack = push(stack, Value::String(global_bytes(haystack)));
+        let stack = push(stack, Value::String(global_bytes(delim.to_vec())));
+        let stack = string_split(stack);
+        let (_, result) = pop(stack);
+        match result {
+            Value::Variant(v) => {
+                assert_eq!(v.fields.len(), 3);
+                if let Value::String(s) = &v.fields[0] {
+                    assert_eq!(s.as_bytes(), BIN_A);
+                } else {
+                    panic!("expected String");
+                }
+                if let Value::String(s) = &v.fields[1] {
+                    assert_eq!(s.as_bytes(), BIN_B);
+                } else {
+                    panic!("expected String");
+                }
+                if let Value::String(s) = &v.fields[2] {
+                    assert_eq!(s.as_bytes(), b"tail");
+                } else {
+                    panic!("expected String");
+                }
+            }
+            other => panic!("expected Variant, got {:?}", other),
+        }
+    }
+}
+
+#[test]
+fn byte_clean_string_split_empty_delimiter_byte_per_byte() {
+    // Empty delimiter is the documented sentinel for "split into
+    // individual bytes." The shape mirrors Rust's `&str::split("")`
+    // exactly: an empty leading element, one element per byte in the
+    // haystack, an empty trailing element. Pinning this so future
+    // implementations don't drift.
+    unsafe {
+        let stack = crate::stack::alloc_test_stack();
+        let stack = push(stack, Value::String(global_bytes(b"abc".to_vec())));
+        let stack = push(stack, Value::String(global_bytes(Vec::new())));
+        let stack = string_split(stack);
+        let (_, result) = pop(stack);
+        match result {
+            Value::Variant(v) => {
+                assert_eq!(v.fields.len(), 5, "expected ['', 'a', 'b', 'c', '']");
+                let extract = |i: usize| match &v.fields[i] {
+                    Value::String(s) => s.as_bytes().to_vec(),
+                    _ => panic!("expected String"),
+                };
+                assert_eq!(extract(0), b"");
+                assert_eq!(extract(1), b"a");
+                assert_eq!(extract(2), b"b");
+                assert_eq!(extract(3), b"c");
+                assert_eq!(extract(4), b"");
+            }
+            other => panic!("expected Variant, got {:?}", other),
+        }
+    }
+}
+
+#[test]
+fn byte_clean_string_chomp_preserves_binary_prefix() {
+    unsafe {
+        // BIN_A followed by \r\n.
+        let mut input = BIN_A.to_vec();
+        input.extend_from_slice(b"\r\n");
+
+        let stack = crate::stack::alloc_test_stack();
+        let stack = push(stack, Value::String(global_bytes(input)));
+        let stack = patch_seq_string_chomp(stack);
+        let (_, result) = pop(stack);
+        match result {
+            Value::String(s) => assert_eq!(s.as_bytes(), BIN_A),
+            other => panic!("expected String, got {:?}", other),
         }
     }
 }

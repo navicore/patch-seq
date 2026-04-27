@@ -2,6 +2,11 @@
 //!
 //! These functions are exported with C ABI for LLVM codegen to call.
 //!
+//! All encode/decode pairs are byte-clean: encode accepts arbitrary
+//! input bytes; decode produces arbitrary output bytes wrapped in a
+//! byte-clean SeqString. This is the canonical use case for these
+//! encodings — round-tripping binary content as text.
+//!
 //! # API
 //!
 //! ```seq
@@ -18,7 +23,7 @@
 //! "68656c6c6f" encoding.hex-decode   # ( String -- String Bool )
 //! ```
 
-use crate::seqstring::global_string;
+use crate::seqstring::{global_bytes, global_string};
 use crate::stack::{Stack, pop, push};
 use crate::value::Value;
 
@@ -38,7 +43,7 @@ pub unsafe extern "C" fn patch_seq_base64_encode(stack: Stack) -> Stack {
 
     match value {
         Value::String(s) => {
-            let encoded = BASE64_STANDARD.encode(s.as_str().as_bytes());
+            let encoded = BASE64_STANDARD.encode(s.as_bytes());
             unsafe { push(stack, Value::String(global_string(encoded))) }
         }
         _ => panic!("base64-encode: expected String on stack, got {:?}", value),
@@ -60,18 +65,14 @@ pub unsafe extern "C" fn patch_seq_base64_decode(stack: Stack) -> Stack {
     let (stack, value) = unsafe { pop(stack) };
 
     match value {
-        Value::String(s) => match BASE64_STANDARD.decode(s.as_str().as_bytes()) {
-            Ok(bytes) => match String::from_utf8(bytes) {
-                Ok(decoded) => {
-                    let stack = unsafe { push(stack, Value::String(global_string(decoded))) };
-                    unsafe { push(stack, Value::Bool(true)) }
-                }
-                Err(_) => {
-                    // Decoded bytes are not valid UTF-8
-                    let stack = unsafe { push(stack, Value::String(global_string(String::new()))) };
-                    unsafe { push(stack, Value::Bool(false)) }
-                }
-            },
+        // Decoded bytes go straight into a byte-clean SeqString —
+        // base64 is the canonical "encode arbitrary bytes as text",
+        // so the decode side must round-trip whatever was encoded.
+        Value::String(s) => match BASE64_STANDARD.decode(s.as_bytes()) {
+            Ok(bytes) => {
+                let stack = unsafe { push(stack, Value::String(global_bytes(bytes))) };
+                unsafe { push(stack, Value::Bool(true)) }
+            }
             Err(_) => {
                 // Invalid Base64 input
                 let stack = unsafe { push(stack, Value::String(global_string(String::new()))) };
@@ -99,7 +100,7 @@ pub unsafe extern "C" fn patch_seq_base64url_encode(stack: Stack) -> Stack {
 
     match value {
         Value::String(s) => {
-            let encoded = BASE64_URL_SAFE_NO_PAD.encode(s.as_str().as_bytes());
+            let encoded = BASE64_URL_SAFE_NO_PAD.encode(s.as_bytes());
             unsafe { push(stack, Value::String(global_string(encoded))) }
         }
         _ => panic!(
@@ -124,17 +125,11 @@ pub unsafe extern "C" fn patch_seq_base64url_decode(stack: Stack) -> Stack {
     let (stack, value) = unsafe { pop(stack) };
 
     match value {
-        Value::String(s) => match BASE64_URL_SAFE_NO_PAD.decode(s.as_str().as_bytes()) {
-            Ok(bytes) => match String::from_utf8(bytes) {
-                Ok(decoded) => {
-                    let stack = unsafe { push(stack, Value::String(global_string(decoded))) };
-                    unsafe { push(stack, Value::Bool(true)) }
-                }
-                Err(_) => {
-                    let stack = unsafe { push(stack, Value::String(global_string(String::new()))) };
-                    unsafe { push(stack, Value::Bool(false)) }
-                }
-            },
+        Value::String(s) => match BASE64_URL_SAFE_NO_PAD.decode(s.as_bytes()) {
+            Ok(bytes) => {
+                let stack = unsafe { push(stack, Value::String(global_bytes(bytes))) };
+                unsafe { push(stack, Value::Bool(true)) }
+            }
             Err(_) => {
                 let stack = unsafe { push(stack, Value::String(global_string(String::new()))) };
                 unsafe { push(stack, Value::Bool(false)) }
@@ -163,7 +158,7 @@ pub unsafe extern "C" fn patch_seq_hex_encode(stack: Stack) -> Stack {
 
     match value {
         Value::String(s) => {
-            let encoded = hex::encode(s.as_str().as_bytes());
+            let encoded = hex::encode(s.as_bytes());
             unsafe { push(stack, Value::String(global_string(encoded))) }
         }
         _ => panic!("hex-encode: expected String on stack, got {:?}", value),
@@ -186,18 +181,13 @@ pub unsafe extern "C" fn patch_seq_hex_decode(stack: Stack) -> Stack {
     let (stack, value) = unsafe { pop(stack) };
 
     match value {
-        Value::String(s) => match hex::decode(s.as_str()) {
-            Ok(bytes) => match String::from_utf8(bytes) {
-                Ok(decoded) => {
-                    let stack = unsafe { push(stack, Value::String(global_string(decoded))) };
-                    unsafe { push(stack, Value::Bool(true)) }
-                }
-                Err(_) => {
-                    // Decoded bytes are not valid UTF-8
-                    let stack = unsafe { push(stack, Value::String(global_string(String::new()))) };
-                    unsafe { push(stack, Value::Bool(false)) }
-                }
-            },
+        // Hex is the same story as base64: an encoding *for* arbitrary
+        // bytes, so the decode result is byte-clean.
+        Value::String(s) => match hex::decode(s.as_bytes()) {
+            Ok(bytes) => {
+                let stack = unsafe { push(stack, Value::String(global_bytes(bytes))) };
+                unsafe { push(stack, Value::Bool(true)) }
+            }
             Err(_) => {
                 // Invalid hex input
                 let stack = unsafe { push(stack, Value::String(global_string(String::new()))) };

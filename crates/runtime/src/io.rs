@@ -60,14 +60,14 @@ pub unsafe extern "C" fn patch_seq_write_line(stack: Stack) -> Stack {
             // Write directly to fd 1 using libc to avoid Rust's std::io::stdout() RefCell.
             // Rust's standard I/O uses RefCell which panics on concurrent access from
             // multiple coroutines on the same thread.
-            let str_slice = s.as_str();
+            // Byte-clean: write the underlying bytes directly to fd 1.
+            // libc::write takes a raw pointer + length, so we don't
+            // need a `&str`. Binary response bodies, ANSI escapes,
+            // arbitrary protocol output all flow through unchanged.
+            let bytes = s.as_bytes();
             let newline = b"\n";
             unsafe {
-                libc::write(
-                    1,
-                    str_slice.as_ptr() as *const libc::c_void,
-                    str_slice.len(),
-                );
+                libc::write(1, bytes.as_ptr() as *const libc::c_void, bytes.len());
                 libc::write(1, newline.as_ptr() as *const libc::c_void, newline.len());
             }
 
@@ -100,13 +100,10 @@ pub unsafe extern "C" fn patch_seq_write(stack: Stack) -> Stack {
         Value::String(s) => {
             let _guard = STDOUT_MUTEX.lock().unwrap();
 
-            let str_slice = s.as_str();
+            // Byte-clean: write the underlying bytes directly to fd 1.
+            let bytes = s.as_bytes();
             unsafe {
-                libc::write(
-                    1,
-                    str_slice.as_ptr() as *const libc::c_void,
-                    str_slice.len(),
-                );
+                libc::write(1, bytes.as_ptr() as *const libc::c_void, bytes.len());
             }
 
             rest

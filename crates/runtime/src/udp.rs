@@ -6,22 +6,14 @@
 //!
 //! These functions are exported with C ABI for LLVM codegen.
 //!
-//! ## Byte-cleanliness limitation
+//! ## Payloads are byte-clean
 //!
-//! Payloads are carried as Seq `String` values, which are UTF-8 by
-//! invariant (`SeqString::as_str` uses `from_utf8_unchecked`). UDP
-//! send rejects nothing here, but a String can only have been
-//! constructed in the first place if it was valid UTF-8 — so the
-//! effective sendable payload is "any UTF-8 byte sequence." UDP
-//! receive validates the same way: non-UTF-8 datagrams are dropped
-//! with a `false` success flag.
-//!
-//! Most binary protocols (DNS records, NTP packets, OSC int32/float32
-//! arguments, multicast TLV) include bytes that aren't valid UTF-8.
-//! Closing this gap is tracked in
-//! `docs/design/STRING_BYTE_CLEANLINESS.md` — the OSC encoder phase
-//! of the live-coding POC is the canonical failing case that will
-//! drive that audit. UDP itself stays as-is.
+//! Datagrams carry whatever bytes the wire delivered — no UTF-8
+//! validation. Binary protocols (DNS records, NTP packets, OSC
+//! int32 / float32 arguments, multicast TLV, MessagePack-over-UDP)
+//! round-trip through `udp.send-to` / `udp.receive-from` byte for
+//! byte. See `docs/design/STRING_BYTE_CLEANLINESS.md` for the
+//! `SeqString` design that makes this possible.
 
 use crate::stack::{Stack, pop, push};
 use crate::value::Value;
@@ -229,8 +221,8 @@ pub unsafe extern "C" fn patch_seq_udp_send_to(stack: Stack) -> Stack {
             }
         };
 
-        let addr = format!("{}:{}", host.as_str(), port);
-        let result = socket.send_to(bytes.as_str().as_bytes(), &addr);
+        let addr = format!("{}:{}", host.as_str_or_empty(), port);
+        let result = socket.send_to(bytes.as_bytes(), &addr);
         push(stack, Value::Bool(result.is_ok()))
     }
 }
@@ -275,12 +267,11 @@ pub unsafe extern "C" fn patch_seq_udp_receive_from(stack: Stack) -> Stack {
         };
 
         buffer.truncate(size);
-        let payload = match String::from_utf8(buffer) {
-            Ok(s) => s,
-            Err(_) => return push_receive_failure(stack),
-        };
-
-        let stack = push(stack, Value::String(payload.into()));
+        // The payload is whatever bytes the wire delivered. We no longer
+        // require UTF-8 — datagrams for OSC, DNS, NTP, MessagePack, etc.
+        // routinely include high-bit bytes from int32 / float32 / blob
+        // fields. The bytes go into a byte-clean SeqString unchanged.
+        let stack = push(stack, Value::String(crate::seqstring::global_bytes(buffer)));
         let stack = push(stack, Value::String(src.ip().to_string().into()));
         let stack = push(stack, Value::Int(src.port() as i64));
         push(stack, Value::Bool(true))

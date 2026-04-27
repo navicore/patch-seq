@@ -27,7 +27,7 @@ fn test_gzip_roundtrip() {
 
     let (_, result) = unsafe { pop(stack) };
     if let Value::String(s) = result {
-        assert_eq!(s.as_str(), "hello world");
+        assert_eq!(s.as_str_or_empty(), "hello world");
     } else {
         panic!("expected string");
     }
@@ -58,7 +58,7 @@ fn test_gzip_level() {
 
     let (_, result) = unsafe { pop(stack) };
     if let Value::String(s) = result {
-        assert_eq!(s.as_str(), "hello world");
+        assert_eq!(s.as_str_or_empty(), "hello world");
     } else {
         panic!("expected string");
     }
@@ -90,7 +90,7 @@ fn test_zstd_roundtrip() {
 
     let (_, result) = unsafe { pop(stack) };
     if let Value::String(s) = result {
-        assert_eq!(s.as_str(), "hello world");
+        assert_eq!(s.as_str_or_empty(), "hello world");
     } else {
         panic!("expected string");
     }
@@ -121,7 +121,7 @@ fn test_zstd_level() {
 
     let (_, result) = unsafe { pop(stack) };
     if let Value::String(s) = result {
-        assert_eq!(s.as_str(), "hello world");
+        assert_eq!(s.as_str_or_empty(), "hello world");
     } else {
         panic!("expected string");
     }
@@ -193,7 +193,7 @@ fn test_empty_string() {
 
     let (_, result) = unsafe { pop(stack) };
     if let Value::String(s) = result {
-        assert_eq!(s.as_str(), "");
+        assert_eq!(s.as_str_or_empty(), "");
     } else {
         panic!("expected string");
     }
@@ -219,7 +219,7 @@ fn test_large_data() {
 
     let (_, result) = unsafe { pop(stack) };
     if let Value::String(s) = result {
-        assert_eq!(s.as_str(), large_data);
+        assert_eq!(s.as_str_or_empty(), large_data);
     } else {
         panic!("expected string");
     }

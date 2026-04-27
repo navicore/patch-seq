@@ -286,7 +286,7 @@ fn test_float_to_string() {
 
         let (_stack, result) = pop(stack);
         match result {
-            Value::String(s) => assert_eq!(s.as_str(), "3.5"),
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), "3.5"),
             _ => panic!("Expected String"),
         }
     }
@@ -302,7 +302,7 @@ fn test_float_to_string_whole_number() {
 
         let (_stack, result) = pop(stack);
         match result {
-            Value::String(s) => assert_eq!(s.as_str(), "42"),
+            Value::String(s) => assert_eq!(s.as_str_or_empty(), "42"),
             _ => panic!("Expected String"),
         }
     }

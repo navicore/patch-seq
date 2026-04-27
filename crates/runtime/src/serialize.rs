@@ -32,6 +32,21 @@
 //!
 //! Uses bincode for fast, compact binary serialization.
 //! For debugging, use `TypedValue::to_debug_string()`.
+//!
+//! # Byte-cleanliness boundary
+//!
+//! `TypedValue::String` and `TypedMapKey::String` hold owned `String` —
+//! UTF-8 by definition. Conversion from a runtime `Value::String`
+//! (which is byte-clean and may carry arbitrary bytes) goes through
+//! `as_str_or_empty()`: invalid UTF-8 collapses to the empty string.
+//! That is the deliberate, narrow contract of this module — it serves
+//! the *text-shaped* payloads of actor persistence, IPC, and
+//! Arrow/Parquet pipelines, not arbitrary binary blobs.
+//!
+//! Programs that need to persist binary `String` payloads should
+//! base64- or hex-encode them at the Seq layer before handing them
+//! to `serialize`, or use a binary-aware transport (file slurp/spit,
+//! HTTP body, channel send) which retains bytes verbatim.
 
 use crate::seqstring::global_string;
 use crate::value::{MapKey as RuntimeMapKey, Value, VariantData};
@@ -118,7 +133,7 @@ impl TypedMapKey {
         match key {
             RuntimeMapKey::Int(v) => TypedMapKey::Int(*v),
             RuntimeMapKey::Bool(v) => TypedMapKey::Bool(*v),
-            RuntimeMapKey::String(s) => TypedMapKey::String(s.as_str().to_string()),
+            RuntimeMapKey::String(s) => TypedMapKey::String(s.as_str_or_empty().to_string()),
         }
     }
 
@@ -169,8 +184,8 @@ impl TypedValue {
                 Ok(TypedValue::Float(*v))
             }
             Value::Bool(v) => Ok(TypedValue::Bool(*v)),
-            Value::String(s) => Ok(TypedValue::String(s.as_str().to_string())),
-            Value::Symbol(s) => Ok(TypedValue::Symbol(s.as_str().to_string())),
+            Value::String(s) => Ok(TypedValue::String(s.as_str_or_empty().to_string())),
+            Value::Symbol(s) => Ok(TypedValue::Symbol(s.as_str_or_empty().to_string())),
             Value::Map(map) => {
                 let mut typed_map = BTreeMap::new();
                 for (k, v) in map.iter() {
@@ -186,7 +201,7 @@ impl TypedValue {
                     typed_fields.push(TypedValue::from_value(field)?);
                 }
                 Ok(TypedValue::Variant {
-                    tag: data.tag.as_str().to_string(),
+                    tag: data.tag.as_str_or_empty().to_string(),
                     fields: typed_fields,
                 })
             }

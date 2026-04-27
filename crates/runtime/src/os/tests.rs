@@ -11,7 +11,7 @@ fn str_val(s: &str) -> Value {
 // Helper to extract String from Value
 fn as_str(v: &Value) -> &str {
     match v {
-        Value::String(s) => s.as_str(),
+        Value::String(s) => s.as_str_or_empty(),
         _ => panic!("expected String, got {:?}", v),
     }
 }

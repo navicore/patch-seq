@@ -814,7 +814,7 @@ mod tests {
             let stack = push(stack, Value::String(s));
             let (_, val) = pop(stack);
             match val {
-                Value::String(s) => assert_eq!(s.as_str(), "hello"),
+                Value::String(s) => assert_eq!(s.as_bytes(), b"hello"),
                 other => panic!("Expected String, got {:?}", other),
             }
         }
@@ -828,7 +828,7 @@ mod tests {
             let stack = push(stack, Value::Symbol(s));
             let (_, val) = pop(stack);
             match val {
-                Value::Symbol(s) => assert_eq!(s.as_str(), "my-sym"),
+                Value::Symbol(s) => assert_eq!(s.as_bytes(), b"my-sym"),
                 other => panic!("Expected Symbol, got {:?}", other),
             }
         }
@@ -844,7 +844,7 @@ mod tests {
             let (_, val) = pop(stack);
             match val {
                 Value::Variant(v) => {
-                    assert_eq!(v.tag.as_str(), "Foo");
+                    assert_eq!(v.tag.as_bytes(), b"Foo");
                     assert_eq!(v.fields.len(), 2);
                 }
                 other => panic!("Expected Variant, got {:?}", other),
