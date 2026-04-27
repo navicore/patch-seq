@@ -29,13 +29,20 @@ include "osc"
   aux>                             # ( socket )
   dup >aux                         # ( socket )                ; aux: [socket] (for close)
   udp.receive-from                 # ( bytes host port ok )
-  drop drop drop                   # ( bytes )
+  drop drop drop                   # drop ok port host → ( bytes )
   aux> udp.close drop              # ( bytes )
 ;
 
 : test-osc-msg-if-roundtrip ( -- )
   "test-osc-msg-if-roundtrip" test.set-name
   "/synth/play" 1000 220.0 osc.msg-if
+  dup udp-loopback
+  test.assert-eq-str
+;
+
+: test-osc-msg-i-roundtrip ( -- )
+  "test-osc-msg-i-roundtrip" test.set-name
+  "/note" 60 osc.msg-i
   dup udp-loopback
   test.assert-eq-str
 ;
@@ -60,6 +67,7 @@ include "osc"
   "OSC over UDP loopback" test.init
 
   test-osc-msg-if-roundtrip
+  test-osc-msg-i-roundtrip
   test-osc-msg-f-roundtrip
   test-osc-msg-no-args-roundtrip
 
