@@ -238,6 +238,41 @@ fn test_variant_append_multiple() {
 }
 
 #[test]
+fn test_variant_first() {
+    unsafe {
+        let variant = Value::Variant(Arc::new(VariantData::new(
+            global_string("List".to_string()),
+            vec![Value::Int(10), Value::Int(20), Value::Int(30)],
+        )));
+
+        let stack = crate::stack::alloc_test_stack();
+        let stack = push(stack, variant);
+        let stack = variant_first(stack);
+
+        let (_stack, result) = pop(stack);
+        assert_eq!(result, Value::Int(10));
+    }
+}
+
+#[test]
+fn test_variant_first_singleton() {
+    // Singleton: first and last must agree.
+    unsafe {
+        let variant = Value::Variant(Arc::new(VariantData::new(
+            global_string("Wrap".to_string()),
+            vec![Value::Int(99)],
+        )));
+
+        let stack = crate::stack::alloc_test_stack();
+        let stack = push(stack, variant);
+        let stack = variant_first(stack);
+
+        let (_stack, result) = pop(stack);
+        assert_eq!(result, Value::Int(99));
+    }
+}
+
+#[test]
 fn test_variant_last() {
     unsafe {
         // Create a variant with 3 fields

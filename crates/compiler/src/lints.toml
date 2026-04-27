@@ -223,6 +223,20 @@ replacement = ""
 message = "`list.set` returns (List Bool) - check the Bool for out-of-bounds access"
 severity = "hint"
 
+[[lint]]
+id = "unchecked-list-first"
+pattern = "list.first drop"
+replacement = ""
+message = "`list.first` returns (value Bool) - check the Bool to detect an empty list"
+severity = "hint"
+
+[[lint]]
+id = "unchecked-list-last"
+pattern = "list.last drop"
+replacement = ""
+message = "`list.last` returns (value Bool) - check the Bool to detect an empty list"
+severity = "hint"
+
 # --- TCP Networking ---
 
 [[lint]]

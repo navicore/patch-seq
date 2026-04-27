@@ -1,5 +1,6 @@
-//! Mutating-by-clone variant helpers: `variant_append`, `variant_last`,
-//! `variant_init`, and the field-unpacker used for match expressions.
+//! Mutating-by-clone variant helpers: `variant_append`, `variant_first`,
+//! `variant_last`, `variant_init`, and the field-unpacker used for match
+//! expressions.
 
 use crate::stack::{Stack, peek_heap_mut_second, pop, push};
 use crate::value::Value;
@@ -57,6 +58,35 @@ pub unsafe extern "C" fn patch_seq_variant_append(stack: Stack) -> Stack {
                 }
             }
             _ => panic!("variant-append: expected Variant, got {:?}", variant_val),
+        }
+    }
+}
+
+/// Get the first field from a variant
+///
+/// Stack effect: ( Variant -- Value )
+///
+/// Returns a clone of the first field. Panics if the variant has no fields.
+/// Mirrors `variant_last` so callers reaching for either head- or
+/// tail-of-fields find the same shape.
+///
+/// # Safety
+/// Stack must have a Variant on top
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn patch_seq_variant_first(stack: Stack) -> Stack {
+    unsafe {
+        let (stack, variant_val) = pop(stack);
+
+        match variant_val {
+            Value::Variant(variant_data) => {
+                if variant_data.fields.is_empty() {
+                    panic!("variant-first: variant has no fields");
+                }
+
+                let first = variant_data.fields[0].clone();
+                push(stack, first)
+            }
+            _ => panic!("variant-first: expected Variant, got {:?}", variant_val),
         }
     }
 }

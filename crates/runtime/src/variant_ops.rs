@@ -34,6 +34,7 @@ pub use patch_seq_unpack_variant as unpack_variant;
 pub use patch_seq_variant_append as variant_append;
 pub use patch_seq_variant_field_at as variant_field_at;
 pub use patch_seq_variant_field_count as variant_field_count;
+pub use patch_seq_variant_first as variant_first;
 pub use patch_seq_variant_init as variant_init;
 pub use patch_seq_variant_last as variant_last;
 pub use patch_seq_variant_tag as variant_tag;

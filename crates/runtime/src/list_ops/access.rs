@@ -1,5 +1,6 @@
-//! Indexed list access: `list_get` (returns success flag) and `list_set`
-//! (functional update returning a new list + success flag).
+//! Indexed list access: `list_get` (returns success flag), `list_set`
+//! (functional update returning a new list + success flag), and the
+//! `list_first` / `list_last` convenience accessors.
 
 use super::combinators::stack_depth;
 use crate::error::set_runtime_error;
@@ -153,6 +154,90 @@ pub unsafe extern "C" fn patch_seq_list_set(stack: Stack) -> Stack {
             new_fields[index as usize] = value;
             let new_list = Value::Variant(Arc::new(VariantData::new(arc.tag.clone(), new_fields)));
             let stack = push(stack, new_list);
+            push(stack, Value::Bool(true))
+        }
+    }
+}
+
+/// First element of a list.
+///
+/// Stack effect: ( V -- T Bool )
+///
+/// Convenience for the common `0 list.get` idiom. Returns the element at
+/// index 0 plus `true` on a non-empty list, or a placeholder `Int 0` plus
+/// `false` on an empty list (matching `list.get`'s out-of-bounds shape).
+///
+/// # Safety
+/// Stack must have a Variant (list) value on top.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn patch_seq_list_first(stack: Stack) -> Stack {
+    unsafe {
+        if stack_depth(stack) < 1 {
+            set_runtime_error("list.first: stack underflow (need 1 value)");
+            return stack;
+        }
+        let (stack, list_val) = pop(stack);
+
+        let variant_data = match list_val {
+            Value::Variant(v) => v,
+            _ => {
+                set_runtime_error(format!(
+                    "list.first: expected Variant (list), got {:?}",
+                    list_val
+                ));
+                let stack = push(stack, Value::Int(0));
+                return push(stack, Value::Bool(false));
+            }
+        };
+
+        if variant_data.fields.is_empty() {
+            let stack = push(stack, Value::Int(0));
+            push(stack, Value::Bool(false))
+        } else {
+            let value = variant_data.fields[0].clone();
+            let stack = push(stack, value);
+            push(stack, Value::Bool(true))
+        }
+    }
+}
+
+/// Last element of a list.
+///
+/// Stack effect: ( V -- T Bool )
+///
+/// Convenience for the `dup list.length 1 i.- list.get` idiom. Returns the
+/// element at the highest index plus `true` on a non-empty list, or a
+/// placeholder `Int 0` plus `false` on an empty list.
+///
+/// # Safety
+/// Stack must have a Variant (list) value on top.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn patch_seq_list_last(stack: Stack) -> Stack {
+    unsafe {
+        if stack_depth(stack) < 1 {
+            set_runtime_error("list.last: stack underflow (need 1 value)");
+            return stack;
+        }
+        let (stack, list_val) = pop(stack);
+
+        let variant_data = match list_val {
+            Value::Variant(v) => v,
+            _ => {
+                set_runtime_error(format!(
+                    "list.last: expected Variant (list), got {:?}",
+                    list_val
+                ));
+                let stack = push(stack, Value::Int(0));
+                return push(stack, Value::Bool(false));
+            }
+        };
+
+        if variant_data.fields.is_empty() {
+            let stack = push(stack, Value::Int(0));
+            push(stack, Value::Bool(false))
+        } else {
+            let value = variant_data.fields.last().unwrap().clone();
+            let stack = push(stack, value);
             push(stack, Value::Bool(true))
         }
     }
