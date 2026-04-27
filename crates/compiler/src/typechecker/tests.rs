@@ -122,8 +122,8 @@ fn test_conditional_branches() {
                     span: None,
                 },
                 Statement::If {
-                    then_branch: vec![Statement::StringLiteral("greater".to_string())],
-                    else_branch: Some(vec![Statement::StringLiteral("not greater".to_string())]),
+                    then_branch: vec![Statement::StringLiteral(b"greater".to_vec())],
+                    else_branch: Some(vec![Statement::StringLiteral(b"not greater".to_vec())]),
                     span: None,
                 },
             ],
@@ -153,7 +153,7 @@ fn test_mismatched_branches() {
                 Statement::BoolLiteral(true),
                 Statement::If {
                     then_branch: vec![Statement::IntLiteral(42)],
-                    else_branch: Some(vec![Statement::StringLiteral("string".to_string())]),
+                    else_branch: Some(vec![Statement::StringLiteral(b"string".to_vec())]),
                     span: None,
                 },
             ],
@@ -520,9 +520,9 @@ fn test_nested_conditionals() {
                             span: None,
                         },
                         Statement::If {
-                            then_branch: vec![Statement::StringLiteral("both true".to_string())],
+                            then_branch: vec![Statement::StringLiteral(b"both true".to_vec())],
                             else_branch: Some(vec![Statement::StringLiteral(
-                                "first true".to_string(),
+                                b"first true".to_vec(),
                             )]),
                             span: None,
                         },
@@ -536,7 +536,7 @@ fn test_nested_conditionals() {
                             name: "drop".to_string(),
                             span: None,
                         },
-                        Statement::StringLiteral("first false".to_string()),
+                        Statement::StringLiteral(b"first false".to_vec()),
                     ]),
                     span: None,
                 },
@@ -752,7 +752,7 @@ fn test_string_literal() {
                 StackType::Empty,
                 StackType::singleton(Type::String),
             )),
-            body: vec![Statement::StringLiteral("hello".to_string())],
+            body: vec![Statement::StringLiteral(b"hello".to_vec())],
             source: None,
             allowed_lints: vec![],
         }],
@@ -815,7 +815,7 @@ fn test_type_error_in_nested_conditional() {
                         },
                     ],
                     else_branch: Some(vec![
-                        Statement::StringLiteral("ok".to_string()),
+                        Statement::StringLiteral(b"ok".to_vec()),
                         Statement::WordCall {
                             name: "io.write-line".to_string(),
                             span: None,
@@ -2605,7 +2605,7 @@ fn test_closure_wrong_call_type() {
                         name: "make-adder".to_string(),
                         span: None,
                     },
-                    Statement::StringLiteral("hello".to_string()), // Wrong type!
+                    Statement::StringLiteral(b"hello".to_vec()), // Wrong type!
                     Statement::WordCall {
                         name: "swap".to_string(),
                         span: None,
@@ -3687,7 +3687,7 @@ fn test_variant_field_at_rejects_string() {
         StackType::Empty,
         StackType::singleton(Type::Int),
         vec![
-            Statement::StringLiteral("alpha beta".to_string()),
+            Statement::StringLiteral(b"alpha beta".to_vec()),
             Statement::IntLiteral(0),
             variant_call("variant.field-at"),
         ],
@@ -3718,7 +3718,7 @@ fn test_variant_field_count_rejects_string() {
         StackType::Empty,
         StackType::singleton(Type::Int),
         vec![
-            Statement::StringLiteral("x".to_string()),
+            Statement::StringLiteral(b"x".to_vec()),
             variant_call("variant.field-count"),
         ],
     );
@@ -3736,7 +3736,7 @@ fn test_variant_init_rejects_string() {
         StackType::Empty,
         StackType::singleton(Type::Variant),
         vec![
-            Statement::StringLiteral("x".to_string()),
+            Statement::StringLiteral(b"x".to_vec()),
             variant_call("variant.init"),
         ],
     );
@@ -3754,7 +3754,7 @@ fn test_variant_append_rejects_string_base() {
         StackType::Empty,
         StackType::singleton(Type::Variant),
         vec![
-            Statement::StringLiteral("x".to_string()),
+            Statement::StringLiteral(b"x".to_vec()),
             Statement::IntLiteral(1),
             variant_call("variant.append"),
         ],
@@ -3773,7 +3773,7 @@ fn test_variant_last_rejects_string() {
         StackType::Empty,
         StackType::Empty.push(Type::Var("T".to_string())),
         vec![
-            Statement::StringLiteral("x".to_string()),
+            Statement::StringLiteral(b"x".to_vec()),
             variant_call("variant.last"),
         ],
     );
@@ -3953,7 +3953,7 @@ fn test_if_combinator_branch_mismatch() {
                 },
                 Statement::Quotation {
                     id: 1,
-                    body: vec![Statement::StringLiteral("string".to_string())],
+                    body: vec![Statement::StringLiteral(b"string".to_vec())],
                     span: None,
                 },
                 Statement::WordCall {

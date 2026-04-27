@@ -1,0 +1,107 @@
+# Byte-exact tests for the OSC 1.0 encoder.
+
+include "osc"
+
+: test-osc-string-aligned-input ( -- )
+  "test-osc-string-aligned-input" test.set-name
+  "/foo" osc.string
+  "/foo\x00\x00\x00\x00" test.assert-eq-str
+;
+
+: test-osc-string-three-bytes ( -- )
+  "test-osc-string-three-bytes" test.set-name
+  ",if" osc.string
+  ",if\x00" test.assert-eq-str
+;
+
+: test-osc-string-empty ( -- )
+  "test-osc-string-empty" test.set-name
+  "" osc.string
+  "\x00\x00\x00\x00" test.assert-eq-str
+;
+
+: test-osc-string-five-bytes ( -- )
+  "test-osc-string-five-bytes" test.set-name
+  "/abcd" osc.string
+  "/abcd\x00\x00\x00" test.assert-eq-str
+;
+
+: test-osc-int32-positive ( -- )
+  "test-osc-int32-positive" test.set-name
+  1000 osc.int32
+  "\x00\x00\x03\xE8" test.assert-eq-str
+;
+
+: test-osc-int32-negative ( -- )
+  "test-osc-int32-negative" test.set-name
+  -1 osc.int32
+  "\xFF\xFF\xFF\xFF" test.assert-eq-str
+;
+
+: test-osc-float32-440 ( -- )
+  "test-osc-float32-440" test.set-name
+  440.0 osc.float32
+  "\x43\xDC\x00\x00" test.assert-eq-str
+;
+
+: test-osc-float32-zero ( -- )
+  "test-osc-float32-zero" test.set-name
+  0.0 osc.float32
+  "\x00\x00\x00\x00" test.assert-eq-str
+;
+
+: test-osc-msg-no-args ( -- )
+  "test-osc-msg-no-args" test.set-name
+  "/foo" osc.msg
+  "/foo\x00\x00\x00\x00,\x00\x00\x00" test.assert-eq-str
+;
+
+: test-osc-msg-i ( -- )
+  "test-osc-msg-i" test.set-name
+  "/foo" 1000 osc.msg-i
+  "/foo\x00\x00\x00\x00,i\x00\x00\x00\x00\x03\xE8" test.assert-eq-str
+;
+
+: test-osc-msg-f ( -- )
+  "test-osc-msg-f" test.set-name
+  "/freq" 440.0 osc.msg-f
+  "/freq\x00\x00\x00,f\x00\x00\x43\xDC\x00\x00" test.assert-eq-str
+;
+
+: test-osc-msg-if-canonical ( -- )
+  "test-osc-msg-if-canonical" test.set-name
+  "/synth/play" 1000 220.0 osc.msg-if
+  "/synth/play\x00,if\x00\x00\x00\x03\xE8\x43\x5C\x00\x00" test.assert-eq-str
+;
+
+: test-osc-msg-if-length-aligned ( -- )
+  "test-osc-msg-if-length-aligned" test.set-name
+  "/synth/play" 1000 220.0 osc.msg-if string.byte-length
+  24 test.assert-eq
+;
+
+: test-osc-msg-if-arg-order ( -- )
+  "test-osc-msg-if-arg-order" test.set-name
+  "/x" 1 2.0 osc.msg-if
+  "/x\x00\x00,if\x00\x00\x00\x00\x01\x40\x00\x00\x00" test.assert-eq-str
+;
+
+: main ( -- Int )
+  "OSC encoder tests" test.init
+  test-osc-string-aligned-input
+  test-osc-string-three-bytes
+  test-osc-string-empty
+  test-osc-string-five-bytes
+  test-osc-int32-positive
+  test-osc-int32-negative
+  test-osc-float32-440
+  test-osc-float32-zero
+  test-osc-msg-no-args
+  test-osc-msg-i
+  test-osc-msg-f
+  test-osc-msg-if-canonical
+  test-osc-msg-if-length-aligned
+  test-osc-msg-if-arg-order
+  test.finish
+  test.has-failures [ 1 ] [ 0 ] if
+;

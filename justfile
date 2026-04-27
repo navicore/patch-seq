@@ -297,9 +297,14 @@ test-critical:
     @echo "✅ Core design validated!"
 
 # Run integration tests (compile and run .seq programs)
-test-integration: build
+test-integration: build build-examples
     @echo "Running integration tests..."
     ./target/release/seqc test tests/integration/src/
+    @echo "Running example-project test binaries..."
+    # OSC encoder byte-format tests live in the live-coding-csound POC dir
+    # because the encoder includes a relative file (`include "osc"`), which
+    # the test runner's tmp-file wrapper can't resolve cross-directory.
+    target/examples/projects-live-coding-csound-test_osc
     @echo "✅ Integration tests passed!"
 
 # Run all benchmarks (Seq vs Go comparison)

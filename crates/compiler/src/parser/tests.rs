@@ -17,7 +17,7 @@ fn test_parse_hello_world() {
     assert_eq!(program.words[0].body.len(), 2);
 
     match &program.words[0].body[0] {
-        Statement::StringLiteral(s) => assert_eq!(s, "Hello, World!"),
+        Statement::StringLiteral(s) => assert_eq!(s, b"Hello, World!"),
         _ => panic!("Expected StringLiteral"),
     }
 
@@ -93,7 +93,7 @@ fn test_parse_escaped_quotes() {
 
     match &program.words[0].body[0] {
         // Escape sequences should be processed: \" becomes actual quote
-        Statement::StringLiteral(s) => assert_eq!(s, "Say \"hello\" there"),
+        Statement::StringLiteral(s) => assert_eq!(s, b"Say \"hello\" there"),
         _ => panic!("Expected StringLiteral with escaped quotes"),
     }
 }
@@ -109,7 +109,7 @@ fn test_escaped_quote_at_end_of_string() {
 
     assert_eq!(program.words.len(), 1);
     match &program.words[0].body[0] {
-        Statement::StringLiteral(s) => assert_eq!(s, "hello\""),
+        Statement::StringLiteral(s) => assert_eq!(s, b"hello\""),
         _ => panic!("Expected StringLiteral ending with escaped quote"),
     }
 }
@@ -123,7 +123,7 @@ fn test_escaped_quote_at_start_of_string() {
     let program = parser.parse().unwrap();
 
     match &program.words[0].body[0] {
-        Statement::StringLiteral(s) => assert_eq!(s, "\"hello"),
+        Statement::StringLiteral(s) => assert_eq!(s, b"\"hello"),
         _ => panic!("Expected StringLiteral starting with escaped quote"),
     }
 }
@@ -136,7 +136,7 @@ fn test_escape_sequences() {
     let program = parser.parse().unwrap();
 
     match &program.words[0].body[0] {
-        Statement::StringLiteral(s) => assert_eq!(s, "Line 1\nLine 2\tTabbed"),
+        Statement::StringLiteral(s) => assert_eq!(s, b"Line 1\nLine 2\tTabbed"),
         _ => panic!("Expected StringLiteral"),
     }
 }
@@ -163,8 +163,8 @@ fn test_hex_escape_sequence() {
     match &program.words[0].body[0] {
         Statement::StringLiteral(s) => {
             assert_eq!(s.len(), 5); // ESC [ 2 K A
-            assert_eq!(s.as_bytes()[0], 0x1b); // ESC
-            assert_eq!(s.as_bytes()[4], 0x41); // 'A'
+            assert_eq!(s[0], 0x1b); // ESC
+            assert_eq!(s[4], 0x41); // 'A'
         }
         _ => panic!("Expected StringLiteral"),
     }
@@ -180,7 +180,7 @@ fn test_hex_escape_null_byte() {
     match &program.words[0].body[0] {
         Statement::StringLiteral(s) => {
             assert_eq!(s.len(), 12); // "before" + NUL + "after"
-            assert_eq!(s.as_bytes()[6], 0x00);
+            assert_eq!(s[6], 0x00);
         }
         _ => panic!("Expected StringLiteral"),
     }
@@ -188,8 +188,10 @@ fn test_hex_escape_null_byte() {
 
 #[test]
 fn test_hex_escape_uppercase() {
-    // Both uppercase and lowercase hex digits should work
-    // Note: Values > 0x7F become Unicode code points (U+00NN), multi-byte in UTF-8
+    // Both uppercase and lowercase hex digits should work.
+    // \xNN is byte-clean: it produces the literal byte 0xNN, not a
+    // Unicode codepoint (which is what the pre-byte-clean tokenizer did
+    // for high-byte escapes — see test_hex_escape_high_bytes).
     let source = r#": main ( -- ) "\x41\x42\x4F" io.write-line ;"#;
 
     let mut parser = Parser::new(source);
@@ -197,7 +199,7 @@ fn test_hex_escape_uppercase() {
 
     match &program.words[0].body[0] {
         Statement::StringLiteral(s) => {
-            assert_eq!(s, "ABO"); // 0x41='A', 0x42='B', 0x4F='O'
+            assert_eq!(s, b"ABO"); // 0x41='A', 0x42='B', 0x4F='O'
         }
         _ => panic!("Expected StringLiteral"),
     }
@@ -205,7 +207,10 @@ fn test_hex_escape_uppercase() {
 
 #[test]
 fn test_hex_escape_high_bytes() {
-    // Values > 0x7F become Unicode code points (Latin-1), which are multi-byte in UTF-8
+    // Byte-clean: \xFF is the single byte 0xFF — *not* the UTF-8
+    // encoding of U+00FF (which would be two bytes, 0xC3 0xBF).
+    // This guarantee is what makes binary protocol literals (OSC pad
+    // NULs, magic numbers, IEEE-754 patterns) expressible in Seq.
     let source = r#": main ( -- ) "\xFF" io.write-line ;"#;
 
     let mut parser = Parser::new(source);
@@ -213,9 +218,25 @@ fn test_hex_escape_high_bytes() {
 
     match &program.words[0].body[0] {
         Statement::StringLiteral(s) => {
-            // \xFF becomes U+00FF (ÿ), which is 2 bytes in UTF-8: C3 BF
-            assert_eq!(s, "\u{00FF}");
-            assert_eq!(s.chars().next().unwrap(), 'ÿ');
+            assert_eq!(s.as_slice(), &[0xFFu8]);
+        }
+        _ => panic!("Expected StringLiteral"),
+    }
+}
+
+#[test]
+fn test_hex_escape_full_byte_range() {
+    // Sanity: every \xNN byte round-trips literally, including the
+    // high-byte range that would have been UTF-8-expanded under the
+    // pre-byte-clean tokenizer.
+    let source = r#": main ( -- ) "\x00\x7F\x80\xC3\xDC\xFF" io.write-line ;"#;
+
+    let mut parser = Parser::new(source);
+    let program = parser.parse().unwrap();
+
+    match &program.words[0].body[0] {
+        Statement::StringLiteral(s) => {
+            assert_eq!(s.as_slice(), &[0x00, 0x7F, 0x80, 0xC3, 0xDC, 0xFF]);
         }
         _ => panic!("Expected StringLiteral"),
     }

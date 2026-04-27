@@ -314,6 +314,9 @@ impl Program {
             "float->int",
             "float->string",
             "string->float",
+            // Byte construction (binary protocol encoders)
+            "int.to-bytes-i32-be",
+            "float.to-bytes-f32-be",
             // Test framework operations
             "test.init",
             "test.set-name",

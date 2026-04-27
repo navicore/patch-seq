@@ -317,7 +317,7 @@ impl CodeGen {
             };
 
             // Compare symbol with C string
-            let str_const = self.get_string_global(variant_name)?;
+            let str_const = self.get_string_global(variant_name.as_bytes())?;
             let cmp_stack = self.fresh_temp();
             writeln!(
                 &mut self.output,

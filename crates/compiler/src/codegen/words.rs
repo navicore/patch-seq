@@ -734,28 +734,37 @@ impl CodeGen {
     }
 
     /// Generate code for a string literal: ( -- s )
+    ///
+    /// String literals are byte-clean — the payload is a `&[u8]`, which
+    /// may contain embedded NULs or arbitrary high-bit bytes. We pass an
+    /// explicit `(ptr, len)` to `patch_seq_push_string_bytes` so embedded
+    /// NULs survive (the C-string-based `push_string` would truncate at
+    /// the first NUL).
     pub(super) fn codegen_string_literal(
         &mut self,
         stack_var: &str,
-        s: &str,
+        bytes: &[u8],
     ) -> Result<String, CodeGenError> {
         // Spill virtual values before calling runtime (Issue #189)
         let stack_var = self.spill_virtual_stack(stack_var)?;
 
-        let global = self.get_string_global(s)?;
+        let global = self.get_string_global(bytes)?;
         let ptr_temp = self.fresh_temp();
         writeln!(
             &mut self.output,
             "  %{} = getelementptr inbounds [{} x i8], ptr {}, i32 0, i32 0",
             ptr_temp,
-            s.len() + 1,
+            bytes.len() + 1,
             global
         )?;
         let result_var = self.fresh_temp();
         writeln!(
             &mut self.output,
-            "  %{} = call ptr @patch_seq_push_string(ptr %{}, ptr %{})",
-            result_var, stack_var, ptr_temp
+            "  %{} = call ptr @patch_seq_push_string_bytes(ptr %{}, ptr %{}, i64 {})",
+            result_var,
+            stack_var,
+            ptr_temp,
+            bytes.len()
         )?;
         Ok(result_var)
     }

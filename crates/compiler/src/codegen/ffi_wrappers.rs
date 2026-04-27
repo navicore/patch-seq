@@ -230,7 +230,7 @@ impl CodeGen {
 
         // NULL case - push empty string
         writeln!(&mut self.ffi_wrapper_code, "null_case:")?;
-        let empty_str = self.get_string_global("")?;
+        let empty_str = self.get_string_global(b"")?;
         writeln!(
             &mut self.ffi_wrapper_code,
             "  %stack_null = call ptr @patch_seq_push_string(ptr %{}, ptr {})",

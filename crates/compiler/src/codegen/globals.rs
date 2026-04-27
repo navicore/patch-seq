@@ -7,39 +7,43 @@ use super::{CodeGen, CodeGenError};
 use std::fmt::Write as _;
 
 impl CodeGen {
-    /// Escape a string for LLVM IR string literals
-    pub(super) fn escape_llvm_string(s: &str) -> Result<String, std::fmt::Error> {
+    /// Escape a byte slice for LLVM IR string literals.
+    ///
+    /// Byte-by-byte: printable ASCII (excluding `"` and `\`) emits as the
+    /// raw character; everything else emits as `\NN` hex. Embedded NULs
+    /// and high-bit bytes (0x80–0xFF) round-trip exactly — Seq strings
+    /// are byte-clean.
+    pub(super) fn escape_llvm_string(bytes: &[u8]) -> Result<String, std::fmt::Error> {
         let mut result = String::new();
-        for ch in s.chars() {
-            match ch {
-                ' '..='!' | '#'..='[' | ']'..='~' => result.push(ch),
-                '\\' => result.push_str(r"\\"),
-                '"' => result.push_str(r#"\22"#),
-                '\n' => result.push_str(r"\0A"),
-                '\r' => result.push_str(r"\0D"),
-                '\t' => result.push_str(r"\09"),
-                _ => {
-                    // Non-printable: use hex escape
-                    for byte in ch.to_string().as_bytes() {
-                        write!(&mut result, r"\{:02X}", byte)?;
-                    }
-                }
+        for &b in bytes {
+            match b {
+                b'\\' => result.push_str(r"\\"),
+                b'"' => result.push_str(r#"\22"#),
+                // Printable ASCII excluding `"` (0x22) and `\` (0x5C).
+                0x20..=0x21 | 0x23..=0x5B | 0x5D..=0x7E => result.push(b as char),
+                _ => write!(&mut result, r"\{:02X}", b)?,
             }
         }
         Ok(result)
     }
 
-    /// Get or create a global string constant
-    pub(super) fn get_string_global(&mut self, s: &str) -> Result<String, CodeGenError> {
-        if let Some(global_name) = self.string_constants.get(s) {
+    /// Get or create a global byte-string constant.
+    ///
+    /// Storage layout is `[len+1 x i8]` with a trailing NUL — that way
+    /// C-string consumers (variant-tag comparison, symbol push) keep
+    /// working without breaking embedded NULs in byte literals, since
+    /// the codegen for byte literals passes an explicit length to the
+    /// runtime and ignores the trailing NUL.
+    pub(super) fn get_string_global(&mut self, bytes: &[u8]) -> Result<String, CodeGenError> {
+        if let Some(global_name) = self.string_constants.get(bytes) {
             return Ok(global_name.clone());
         }
 
         let global_name = format!("@.str.{}", self.string_counter);
         self.string_counter += 1;
 
-        let escaped = Self::escape_llvm_string(s)?;
-        let len = s.len() + 1; // +1 for null terminator
+        let escaped = Self::escape_llvm_string(bytes)?;
+        let len = bytes.len() + 1; // +1 for trailing NUL
 
         writeln!(
             &mut self.string_globals,
@@ -48,7 +52,7 @@ impl CodeGen {
         )?;
 
         self.string_constants
-            .insert(s.to_string(), global_name.clone());
+            .insert(bytes.to_vec(), global_name.clone());
         Ok(global_name)
     }
 
@@ -63,7 +67,7 @@ impl CodeGen {
         }
 
         // Get or create the underlying string data
-        let str_global = self.get_string_global(symbol_name)?;
+        let str_global = self.get_string_global(symbol_name.as_bytes())?;
 
         // Create the SeqString structure global
         let sym_global = format!("@.sym.{}", self.symbol_counter);
