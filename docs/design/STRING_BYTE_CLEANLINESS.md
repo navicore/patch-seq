@@ -33,9 +33,21 @@ invariant from the type itself.
 - **Text operations remain text operations.** `string.length` keeps
   its codepoint semantic (not byte length); `string.to-upper` keeps
   Unicode case folding; `regex.*` keeps Unicode-class support. These
-  ops validate UTF-8 at their boundary and fail loudly with the
-  conventional `(value Bool)` failure tuple on invalid input — same
-  pattern as `string->int`, `list.get`, etc.
+  ops validate UTF-8 at their boundary via `SeqString::as_str_or_empty`
+  — non-UTF-8 input falls back to the empty string, which routes
+  through each op's existing degenerate-input path (`length` → 0,
+  `find` → -1, `substring` → empty, `to-upper` → empty, `regex.match`
+  → no match). The user-visible behaviour for every UTF-8 input is
+  unchanged; non-UTF-8 inputs land in the same "no result" state
+  every op already produces for empty input.
+
+  The design considered failing loudly with a `(value Bool)` failure
+  tuple per op, but rejected it: that would be a breaking API change
+  to ops that currently return a single value (`string.length` is
+  `( str -- int )`, not `( str -- int Bool )`). Users that need to
+  distinguish "non-UTF-8" from "empty" reach for `string.byte-length`
+  (always returns the true byte count) before the codepoint ops. See
+  the audit table in the Approach section for the per-op classification.
 - **Byte operations accept any bytes.** Concat, byte-length,
   starts-with, contains, equal?, split, channel send, list/map
   storage, network I/O, file I/O of binary content, crypto inputs —
@@ -82,7 +94,7 @@ appropriate per-site change:
 | Bucket | Operations | Change |
 |---|---|---|
 | **Byte-clean** | `string.concat`, `string.byte-length`, `string.empty?`, `string.equal?`, `string.contains`, `string.starts-with`, `string.split` (byte-delimiter), `string.chomp`, `string.join` (Vec join), `crypto.*`, `encoding.base64-*`, `encoding.hex-*`, `compress.*`, `serialize` (SON), TCP/UDP/HTTP send & receive, file content slurp/spit/append, channel send, list/map storage, variant fields | switch to `as_bytes()` |
-| **Text-required** | `string.length` (codepoints), `string.char-at`, `string.substring`, `string.find`, `string.to-upper`, `string.to-lower`, `string.trim`, `string.json-escape`, `string->int`, `regex.*`, `symbol.*`, `os.getenv` / paths, `file.*` paths, `io.write-line` (display), value `Display` impls | call `as_str()`, return failure tuple / -1 / empty on `None` |
+| **Text-required** | `string.length` (codepoints), `string.char-at`, `string.substring`, `string.find`, `string.to-upper`, `string.to-lower`, `string.trim`, `string.json-escape`, `string->int`, `regex.*`, `os.getenv` / paths, `file.*` paths, value `Display` impls | call `as_str_or_empty()` — non-UTF-8 input degrades to the same result as empty input (length 0, find -1, etc.). User can distinguish "non-UTF-8" from "empty" via `string.byte-length` before the codepoint op. |
 | **API-internal** | `SeqString` Display, `Value::Display`, `Value::PartialEq`, SON binary frame headers | mostly switches to `as_bytes()`; a few text-level (Display) keep validating |
 
 Per-site classification lives in inline comments next to each call
@@ -147,9 +159,12 @@ variants if the OSC encoder reads cleaner with them.
 4. **TCP `read` and UDP `receive_from` return raw bytes** — neither
    path validates UTF-8 anymore. The old "non-UTF-8 → false" tests
    are inverted: those bytes now arrive intact.
-5. **Text-required operations fail loudly** on invalid UTF-8 input,
-   using the `(value Bool)` failure pattern. New tests cover each
-   operation with an invalid-UTF-8 input.
+5. **Text-required operations degrade to their empty-input behaviour**
+   on invalid UTF-8 input: `string.length` returns 0, `string.find`
+   returns -1, `string.substring` / `string.to-upper` / `regex.match`
+   produce empty/no-match. Users that need to distinguish "non-UTF-8"
+   from "empty" call `string.byte-length` first. Tests cover both the
+   UTF-8 happy path and the invalid-UTF-8 degenerate path.
 6. **String literal `"\xFF"` produces a 1-byte string.** If the
    tokenizer doesn't already support hex escapes, it does after this.
 7. **OSC encoder works for `,if` and `,f` messages** — Phase B

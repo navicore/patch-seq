@@ -32,6 +32,21 @@
 //!
 //! Uses bincode for fast, compact binary serialization.
 //! For debugging, use `TypedValue::to_debug_string()`.
+//!
+//! # Byte-cleanliness boundary
+//!
+//! `TypedValue::String` and `TypedMapKey::String` hold owned `String` —
+//! UTF-8 by definition. Conversion from a runtime `Value::String`
+//! (which is byte-clean and may carry arbitrary bytes) goes through
+//! `as_str_or_empty()`: invalid UTF-8 collapses to the empty string.
+//! That is the deliberate, narrow contract of this module — it serves
+//! the *text-shaped* payloads of actor persistence, IPC, and
+//! Arrow/Parquet pipelines, not arbitrary binary blobs.
+//!
+//! Programs that need to persist binary `String` payloads should
+//! base64- or hex-encode them at the Seq layer before handing them
+//! to `serialize`, or use a binary-aware transport (file slurp/spit,
+//! HTTP body, channel send) which retains bytes verbatim.
 
 use crate::seqstring::global_string;
 use crate::value::{MapKey as RuntimeMapKey, Value, VariantData};

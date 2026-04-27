@@ -1214,6 +1214,37 @@ fn byte_clean_string_split_on_binary_delimiter() {
 }
 
 #[test]
+fn byte_clean_string_split_empty_delimiter_byte_per_byte() {
+    // Empty delimiter is the documented sentinel for "split into
+    // individual bytes." The shape mirrors Rust's `&str::split("")`
+    // exactly: an empty leading element, one element per byte in the
+    // haystack, an empty trailing element. Pinning this so future
+    // implementations don't drift.
+    unsafe {
+        let stack = crate::stack::alloc_test_stack();
+        let stack = push(stack, Value::String(global_bytes(b"abc".to_vec())));
+        let stack = push(stack, Value::String(global_bytes(Vec::new())));
+        let stack = string_split(stack);
+        let (_, result) = pop(stack);
+        match result {
+            Value::Variant(v) => {
+                assert_eq!(v.fields.len(), 5, "expected ['', 'a', 'b', 'c', '']");
+                let extract = |i: usize| match &v.fields[i] {
+                    Value::String(s) => s.as_bytes().to_vec(),
+                    _ => panic!("expected String"),
+                };
+                assert_eq!(extract(0), b"");
+                assert_eq!(extract(1), b"a");
+                assert_eq!(extract(2), b"b");
+                assert_eq!(extract(3), b"c");
+                assert_eq!(extract(4), b"");
+            }
+            other => panic!("expected Variant, got {:?}", other),
+        }
+    }
+}
+
+#[test]
 fn byte_clean_string_chomp_preserves_binary_prefix() {
     unsafe {
         // BIN_A followed by \r\n.

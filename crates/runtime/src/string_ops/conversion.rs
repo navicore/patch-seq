@@ -21,8 +21,13 @@ pub unsafe extern "C" fn patch_seq_symbol_equal(stack: Stack) -> Stack {
             let equal = if s1.is_interned() && s2.is_interned() {
                 s1.as_ptr() == s2.as_ptr()
             } else {
-                // Fallback: string comparison for runtime-created symbols
-                s1.as_str_or_empty() == s2.as_str_or_empty()
+                // Fallback: byte-level comparison for runtime-created
+                // symbols. Must be `as_bytes()`, not `as_str_or_empty()` —
+                // otherwise two distinct non-UTF-8 symbols both collapse
+                // to "" and are reported equal. (Symbols are normally
+                // ASCII identifiers so this rarely matters in practice,
+                // but the contract should be byte-precise.)
+                s1.as_bytes() == s2.as_bytes()
             };
             unsafe { push(stack, Value::Bool(equal)) }
         }

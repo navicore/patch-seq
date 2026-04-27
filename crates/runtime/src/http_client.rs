@@ -53,7 +53,7 @@
 //! - **TLS**: Enabled by default via rustls (no OpenSSL dependency)
 //! - **Connection pooling**: Enabled via shared agent instance
 
-use crate::seqstring::global_string;
+use crate::seqstring::{global_bytes, global_string};
 use crate::stack::{Stack, pop, push};
 use crate::value::{MapKey, Value};
 
@@ -198,8 +198,14 @@ fn validate_url_for_ssrf(url: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Build a response map from status, body, ok flag, and optional error
-fn build_response_map(status: i64, body: String, ok: bool, error: Option<String>) -> Value {
+/// Build a response map from status, body, ok flag, and optional error.
+///
+/// `body` is the raw response payload — HTTP bodies are arbitrary
+/// octets per RFC 7230, so we store them in a byte-clean SeqString
+/// without UTF-8 validation. Seq programs that need text decode
+/// the bytes themselves; programs handling binary downloads keep
+/// the original bytes intact.
+fn build_response_map(status: i64, body: Vec<u8>, ok: bool, error: Option<String>) -> Value {
     let mut map: HashMap<MapKey, Value> = HashMap::new();
 
     map.insert(
@@ -208,7 +214,7 @@ fn build_response_map(status: i64, body: String, ok: bool, error: Option<String>
     );
     map.insert(
         MapKey::String(global_string("body".to_string())),
-        Value::String(global_string(body)),
+        Value::String(global_bytes(body)),
     );
     map.insert(
         MapKey::String(global_string("ok".to_string())),
@@ -227,7 +233,7 @@ fn build_response_map(status: i64, body: String, ok: bool, error: Option<String>
 
 /// Build an error response map
 fn error_response(error: String) -> Value {
-    build_response_map(0, String::new(), false, Some(error))
+    build_response_map(0, Vec::new(), false, Some(error))
 }
 
 /// Perform HTTP GET request
@@ -274,9 +280,10 @@ pub unsafe extern "C" fn patch_seq_http_post(stack: Stack) -> Stack {
 
     match (url_value, body_value, content_type_value) {
         (Value::String(url), Value::String(body), Value::String(content_type)) => {
+            // Body is byte-clean; URL and Content-Type stay text.
             let response = perform_post(
                 url.as_str_or_empty(),
-                body.as_str_or_empty(),
+                body.as_bytes(),
                 content_type.as_str_or_empty(),
             );
             unsafe { push(stack, response) }
@@ -306,9 +313,10 @@ pub unsafe extern "C" fn patch_seq_http_put(stack: Stack) -> Stack {
 
     match (url_value, body_value, content_type_value) {
         (Value::String(url), Value::String(body), Value::String(content_type)) => {
+            // Body is byte-clean (see http.post); URL and Content-Type stay text.
             let response = perform_put(
                 url.as_str_or_empty(),
-                body.as_str_or_empty(),
+                body.as_bytes(),
                 content_type.as_str_or_empty(),
             );
             unsafe { push(stack, response) }
@@ -346,6 +354,18 @@ pub unsafe extern "C" fn patch_seq_http_delete(stack: Stack) -> Stack {
     }
 }
 
+/// Read up to `MAX_BODY_SIZE` bytes from a ureq response. Returns the
+/// raw byte buffer on success — callers wrap it in a byte-clean
+/// SeqString so binary response bodies (image downloads, Protobuf,
+/// MessagePack, etc.) round-trip intact.
+fn read_response_bytes(response: ureq::Response) -> Result<Vec<u8>, std::io::Error> {
+    use std::io::Read;
+    let mut reader = response.into_reader().take((MAX_BODY_SIZE as u64) + 1);
+    let mut buf = Vec::new();
+    reader.read_to_end(&mut buf)?;
+    Ok(buf)
+}
+
 /// Handle HTTP response result and convert to Value
 fn handle_response(result: Result<ureq::Response, ureq::Error>) -> Value {
     match result {
@@ -353,7 +373,7 @@ fn handle_response(result: Result<ureq::Response, ureq::Error>) -> Value {
             let status = response.status() as i64;
             let ok = (200..300).contains(&response.status());
 
-            match response.into_string() {
+            match read_response_bytes(response) {
                 Ok(body) => {
                     if body.len() > MAX_BODY_SIZE {
                         error_response(format!(
@@ -369,8 +389,8 @@ fn handle_response(result: Result<ureq::Response, ureq::Error>) -> Value {
             }
         }
         Err(ureq::Error::Status(code, response)) => {
-            // HTTP error status (4xx, 5xx)
-            let body = response.into_string().unwrap_or_default();
+            // HTTP error status (4xx, 5xx) — body might still be useful.
+            let body = read_response_bytes(response).unwrap_or_default();
             build_response_map(
                 code as i64,
                 body,
@@ -394,8 +414,10 @@ fn perform_get(url: &str) -> Value {
     handle_response(HTTP_AGENT.get(url).call())
 }
 
-/// Internal: Perform POST request
-fn perform_post(url: &str, body: &str, content_type: &str) -> Value {
+/// Internal: Perform POST request. Body is byte-clean — HTTP request
+/// bodies are arbitrary octets per RFC 7230, so binary content
+/// (Protobuf, MessagePack, image uploads) flows through unchanged.
+fn perform_post(url: &str, body: &[u8], content_type: &str) -> Value {
     // SSRF protection: validate URL before making request
     if let Err(msg) = validate_url_for_ssrf(url) {
         return error_response(msg);
@@ -404,12 +426,12 @@ fn perform_post(url: &str, body: &str, content_type: &str) -> Value {
         HTTP_AGENT
             .post(url)
             .set("Content-Type", content_type)
-            .send_string(body),
+            .send_bytes(body),
     )
 }
 
-/// Internal: Perform PUT request
-fn perform_put(url: &str, body: &str, content_type: &str) -> Value {
+/// Internal: Perform PUT request. Body is byte-clean (see `perform_post`).
+fn perform_put(url: &str, body: &[u8], content_type: &str) -> Value {
     // SSRF protection: validate URL before making request
     if let Err(msg) = validate_url_for_ssrf(url) {
         return error_response(msg);
@@ -418,7 +440,7 @@ fn perform_put(url: &str, body: &str, content_type: &str) -> Value {
         HTTP_AGENT
             .put(url)
             .set("Content-Type", content_type)
-            .send_string(body),
+            .send_bytes(body),
     )
 }
 

@@ -5,7 +5,7 @@ use super::*;
 
 #[test]
 fn test_build_response_map_success() {
-    let response = build_response_map(200, "Hello".to_string(), true, None);
+    let response = build_response_map(200, b"Hello".to_vec(), true, None);
 
     match response {
         Value::Map(map_data) => {
@@ -37,7 +37,7 @@ fn test_build_response_map_success() {
 
 #[test]
 fn test_build_response_map_error() {
-    let response = build_response_map(404, String::new(), false, Some("Not Found".to_string()));
+    let response = build_response_map(404, Vec::new(), false, Some("Not Found".to_string()));
 
     match response {
         Value::Map(map_data) => {
@@ -88,6 +88,27 @@ fn test_error_response() {
             }
         }
         _ => panic!("Expected Map"),
+    }
+}
+
+// Byte-cleanliness: HTTP response bodies are arbitrary octets per
+// RFC 7230. The response map's "body" field must round-trip non-UTF-8
+// bytes intact so binary downloads (images, Protobuf, MessagePack)
+// reach Seq programs unmodified.
+
+const HTTP_BIN: &[u8] = &[0x00, 0xDC, b'x', 0xFF, 0xC3, b'!', 0x80];
+
+#[test]
+fn byte_clean_response_body_round_trips_binary() {
+    let response = build_response_map(200, HTTP_BIN.to_vec(), true, None);
+    let map = match response {
+        Value::Map(m) => m,
+        _ => panic!("expected Map"),
+    };
+    let body_key = MapKey::String(global_string("body".to_string()));
+    match map.get(&body_key) {
+        Some(Value::String(s)) => assert_eq!(s.as_bytes(), HTTP_BIN),
+        other => panic!("expected body String, got {:?}", other),
     }
 }
 
