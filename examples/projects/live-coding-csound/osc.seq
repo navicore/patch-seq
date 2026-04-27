@@ -32,6 +32,9 @@ include std:imath
 # Produce the trailing zero-pad for an OSC-string. `count` is the number
 # of zero bytes to emit and is always 1, 2, 3, or 4 (since OSC pads to
 # the next multiple of 4 *after* the mandatory NUL terminator).
+# Contract: count is in 1..4 (set by `osc.string` as `4 - len%4`).
+# The else-of-else arm handles count=4; passing values outside 1..4
+# silently produces 4 NULs.
 : osc.zero-pad ( Int -- String )
   dup 1 = [ drop "\x00" ]
   [ dup 2 = [ drop "\x00\x00" ]

@@ -17,7 +17,10 @@ impl CodeGen {
         let mut result = String::new();
         for &b in bytes {
             match b {
-                b'\\' => result.push_str(r"\\"),
+                // LLVM IR string constants only spec the `\NN` hex escape.
+                // `\\` happens to be tolerated by the assembler today but
+                // isn't documented; emit `\5C` to stay strictly on-spec.
+                b'\\' => result.push_str(r"\5C"),
                 b'"' => result.push_str(r#"\22"#),
                 // Printable ASCII excluding `"` (0x22) and `\` (0x5C).
                 0x20..=0x21 | 0x23..=0x5B | 0x5D..=0x7E => result.push(b as char),

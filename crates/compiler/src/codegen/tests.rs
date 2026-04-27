@@ -168,6 +168,10 @@ fn test_escape_llvm_string() {
     assert_eq!(CodeGen::escape_llvm_string(b"a\nb").unwrap(), r"a\0Ab");
     assert_eq!(CodeGen::escape_llvm_string(b"a\tb").unwrap(), r"a\09b");
     assert_eq!(CodeGen::escape_llvm_string(b"a\"b").unwrap(), r"a\22b");
+    // Backslash is emitted as the hex escape `\5C`, matching LLVM IR's
+    // documented escape syntax (only `\NN` is spec'd inside string
+    // constants).
+    assert_eq!(CodeGen::escape_llvm_string(b"a\\b").unwrap(), r"a\5Cb");
     // Byte-clean: high-bit bytes round-trip as `\NN` hex escapes,
     // not as multi-byte UTF-8 sequences.
     assert_eq!(CodeGen::escape_llvm_string(&[0xDC]).unwrap(), r"\DC");

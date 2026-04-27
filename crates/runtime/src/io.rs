@@ -332,6 +332,10 @@ pub unsafe extern "C" fn patch_seq_int_to_string(stack: Stack) -> Stack {
 /// embedded NULs, so the C-string convention is fine. Byte-clean
 /// string *literals* go through `patch_seq_push_string_bytes` instead.
 ///
+/// In debug builds, this asserts the input is ASCII to catch a future
+/// codegen path that accidentally routes binary data here. In release
+/// the bytes are taken as-is — the comment above is the contract.
+///
 /// Stack effect: ( -- str )
 ///
 /// # Safety
@@ -341,6 +345,12 @@ pub unsafe extern "C" fn patch_seq_push_string(stack: Stack, c_str: *const i8) -
     assert!(!c_str.is_null(), "push_string: null string pointer");
 
     let bytes = unsafe { CStr::from_ptr(c_str).to_bytes() };
+    debug_assert!(
+        std::str::from_utf8(bytes).is_ok(),
+        "push_string: input must be valid UTF-8 (variant tags, identifier-shaped \
+         literals, FFI fallbacks); arbitrary binary string literals must use \
+         push_string_bytes instead",
+    );
     let seqstr = crate::seqstring::global_bytes(bytes.to_vec());
     unsafe { push(stack, Value::String(seqstr)) }
 }
