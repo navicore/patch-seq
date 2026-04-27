@@ -1,0 +1,76 @@
+# OSC over UDP loopback test.
+#
+# Build an OSC message in Seq, send it to ourselves via UDP, receive it
+# back, and assert byte-equality. This is the integration check that
+# proves the byte-cleanliness work, the OSC encoder, and the UDP runtime
+# all line up — the moment the wire-format tests turn into a real
+# round-trip.
+
+include "osc"
+
+# Round-trip a payload through localhost UDP. Binds a fresh socket,
+# sends `msg` to it, receives one datagram back, closes the socket,
+# returns the received bytes.
+#
+# `0 udp.bind` lets the OS pick the port so concurrent CI test runs
+# can't collide. The success flags from bind / send-to / close are
+# dropped intentionally — loopback bind / send rarely fail and we'd
+# rather hang in receive than swallow a real failure silently. If
+# loopback ever does start failing, the receive blocks and the test
+# times out instead of asserting bogus equality.
+: udp-loopback ( String -- String )
+  0 udp.bind drop                  # ( msg socket port )
+  swap                             # ( msg port socket )
+  dup >aux                         # ( msg port socket )       ; aux: [socket]
+  swap                             # ( msg socket port )
+  "127.0.0.1" swap                 # ( msg socket "127.0.0.1" port )
+  rot                              # ( msg "127.0.0.1" port socket )
+  udp.send-to drop                 # ( )                       ; aux: [socket]
+  aux>                             # ( socket )
+  dup >aux                         # ( socket )                ; aux: [socket] (for close)
+  udp.receive-from                 # ( bytes host port ok )
+  drop drop drop                   # drop ok port host → ( bytes )
+  aux> udp.close drop              # ( bytes )
+;
+
+: test-osc-msg-if-roundtrip ( -- )
+  "test-osc-msg-if-roundtrip" test.set-name
+  "/synth/play" 1000 220.0 osc.msg-if
+  dup udp-loopback
+  test.assert-eq-str
+;
+
+: test-osc-msg-i-roundtrip ( -- )
+  "test-osc-msg-i-roundtrip" test.set-name
+  "/note" 60 osc.msg-i
+  dup udp-loopback
+  test.assert-eq-str
+;
+
+: test-osc-msg-f-roundtrip ( -- )
+  "test-osc-msg-f-roundtrip" test.set-name
+  "/freq" 440.0 osc.msg-f
+  dup udp-loopback
+  test.assert-eq-str
+;
+
+# Empty-arg message: short payload (12 bytes) — exercises the smallest
+# OSC datagram we can produce.
+: test-osc-msg-no-args-roundtrip ( -- )
+  "test-osc-msg-no-args-roundtrip" test.set-name
+  "/ping" osc.msg
+  dup udp-loopback
+  test.assert-eq-str
+;
+
+: main ( -- Int )
+  "OSC over UDP loopback" test.init
+
+  test-osc-msg-if-roundtrip
+  test-osc-msg-i-roundtrip
+  test-osc-msg-f-roundtrip
+  test-osc-msg-no-args-roundtrip
+
+  test.finish
+  test.has-failures [ 1 ] [ 0 ] if
+;

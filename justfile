@@ -305,6 +305,10 @@ test-integration: build build-examples
     # because the encoder includes a relative file (`include "osc"`), which
     # the test runner's tmp-file wrapper can't resolve cross-directory.
     target/examples/projects-live-coding-csound-test_osc
+    # Same dir: end-to-end round-trip through UDP loopback. Proves the
+    # byte-cleanliness landing, the Seq OSC encoder, and the UDP runtime
+    # all line up.
+    target/examples/projects-live-coding-csound-test_osc_loopback
     @echo "✅ Integration tests passed!"
 
 # Run all benchmarks (Seq vs Go comparison)
