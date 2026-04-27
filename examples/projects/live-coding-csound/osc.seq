@@ -1,0 +1,111 @@
+# OSC 1.0 encoder, written in Seq.
+#
+# Lives inside the live-coding-csound POC dir per the design doc — not
+# yet promoted to stdlib, since the wider project is likely to spin out
+# into its own repository as it matures.
+#
+# OSC 1.0 wire format reminders:
+#
+#   message := osc-string(address)
+#              osc-string(",<type-tags>")
+#              <argument bytes, in tag order>
+#
+#   osc-string := <utf-8 bytes>
+#                 <NUL>
+#                 <0..3 zero pad bytes>     ; total length is multiple of 4
+#
+#   int32  := big-endian i32, 4 bytes
+#   float32:= big-endian IEEE-754 binary32, 4 bytes
+#
+# This encoder relies on Seq strings being byte-clean (PR #436):
+# `\x00` is a literal NUL, `string.concat` preserves arbitrary bytes,
+# and `int.to-bytes-i32-be` / `float.to-bytes-f32-be` produce 4-byte
+# big-endian payloads. The output of every word here is a bag-of-bytes
+# String suitable for `udp.send-to`.
+
+include std:imath
+
+# --------------------------------------------------------------------------
+# Padding
+# --------------------------------------------------------------------------
+
+# Produce the trailing zero-pad for an OSC-string. `count` is the number
+# of zero bytes to emit and is always 1, 2, 3, or 4 (since OSC pads to
+# the next multiple of 4 *after* the mandatory NUL terminator).
+# Contract: count is in 1..4 (set by `osc.string` as `4 - len%4`).
+# The else-of-else arm handles count=4; passing values outside 1..4
+# silently produces 4 NULs.
+: osc.zero-pad ( Int -- String )
+  dup 1 = [ drop "\x00" ]
+  [ dup 2 = [ drop "\x00\x00" ]
+    [ dup 3 = [ drop "\x00\x00\x00" ]
+              [ drop "\x00\x00\x00\x00" ] if ] if ] if
+;
+
+# --------------------------------------------------------------------------
+# Primitive encoders
+# --------------------------------------------------------------------------
+
+# Encode an OSC-string: original bytes, then a terminating NUL, then
+# zero-pad to a 4-byte boundary.
+# The Bool from `i.%` is dropped intentionally — the divisor is the
+# literal `4`, so divide-by-zero is statically impossible.
+# seq:allow(unchecked-mod)
+: osc.string ( String -- String )
+  dup string.byte-length      # ( s len )
+  4 i.%                       # ( s rem ok )
+  drop                        # ( s rem )
+  4 swap i.-                  # ( s pad-count )   ; always 1..4
+  osc.zero-pad                # ( s pad-bytes )
+  string.concat
+;
+
+: osc.int32   ( Int   -- String ) int.to-bytes-i32-be ;
+: osc.float32 ( Float -- String ) float.to-bytes-f32-be ;
+
+# --------------------------------------------------------------------------
+# Message builders
+#
+# One word per type-tag pattern we actually need today. Each takes the
+# argument values in left-to-right order and returns the full message
+# bytes. Add new variants as the live-coding driver demands them.
+# --------------------------------------------------------------------------
+
+# Empty-arg message: just an address and a `,` type-tag.
+# OSC 1.0 requires the type-tag string even when there are no args.
+: osc.msg ( String -- String )
+  osc.string
+  "," osc.string
+  string.concat
+;
+
+# Single int32 argument: `,i`.
+: osc.msg-i ( String Int -- String )
+  swap osc.string             # ( i addr-bytes )
+  ",i" osc.string             # ( i addr-bytes type-bytes )
+  string.concat               # ( i header-bytes )
+  swap osc.int32              # ( header-bytes arg-bytes )
+  string.concat
+;
+
+# Single float32 argument: `,f`.
+: osc.msg-f ( String Float -- String )
+  swap osc.string             # ( f addr-bytes )
+  ",f" osc.string             # ( f addr-bytes type-bytes )
+  string.concat               # ( f header-bytes )
+  swap osc.float32            # ( header-bytes arg-bytes )
+  string.concat
+;
+
+# Int32 + float32: `,if`. The Csound POC's bread-and-butter: trigger
+# an instrument with a frequency parameter.
+: osc.msg-if ( String Int Float -- String )
+  >aux >aux                   # ( addr ; i f )    stash args
+  osc.string                  # ( addr-bytes ; i f )
+  ",if" osc.string            # ( addr-bytes type-bytes ; i f )
+  string.concat               # ( header-bytes ; i f )
+  aux> osc.int32              # ( header-bytes i-bytes ; f )
+  string.concat               # ( so-far ; f )
+  aux> osc.float32            # ( so-far f-bytes )
+  string.concat
+;

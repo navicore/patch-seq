@@ -14,7 +14,7 @@ fn test_codegen_hello_world() {
             name: "main".to_string(),
             effect: None,
             body: vec![
-                Statement::StringLiteral("Hello, World!".to_string()),
+                Statement::StringLiteral(b"Hello, World!".to_vec()),
                 Statement::WordCall {
                     name: "io.write-line".to_string(),
                     span: None,
@@ -49,7 +49,7 @@ fn test_codegen_io_write() {
             name: "main".to_string(),
             effect: None,
             body: vec![
-                Statement::StringLiteral("no newline".to_string()),
+                Statement::StringLiteral(b"no newline".to_vec()),
                 Statement::WordCall {
                     name: "io.write".to_string(),
                     span: None,
@@ -164,10 +164,21 @@ fn test_pure_inline_test_mode() {
 
 #[test]
 fn test_escape_llvm_string() {
-    assert_eq!(CodeGen::escape_llvm_string("hello").unwrap(), "hello");
-    assert_eq!(CodeGen::escape_llvm_string("a\nb").unwrap(), r"a\0Ab");
-    assert_eq!(CodeGen::escape_llvm_string("a\tb").unwrap(), r"a\09b");
-    assert_eq!(CodeGen::escape_llvm_string("a\"b").unwrap(), r"a\22b");
+    assert_eq!(CodeGen::escape_llvm_string(b"hello").unwrap(), "hello");
+    assert_eq!(CodeGen::escape_llvm_string(b"a\nb").unwrap(), r"a\0Ab");
+    assert_eq!(CodeGen::escape_llvm_string(b"a\tb").unwrap(), r"a\09b");
+    assert_eq!(CodeGen::escape_llvm_string(b"a\"b").unwrap(), r"a\22b");
+    // Backslash is emitted as the hex escape `\5C`, matching LLVM IR's
+    // documented escape syntax (only `\NN` is spec'd inside string
+    // constants).
+    assert_eq!(CodeGen::escape_llvm_string(b"a\\b").unwrap(), r"a\5Cb");
+    // Byte-clean: high-bit bytes round-trip as `\NN` hex escapes,
+    // not as multi-byte UTF-8 sequences.
+    assert_eq!(CodeGen::escape_llvm_string(&[0xDC]).unwrap(), r"\DC");
+    assert_eq!(
+        CodeGen::escape_llvm_string(&[0x00, 0xFF]).unwrap(),
+        r"\00\FF"
+    );
 }
 
 #[test]

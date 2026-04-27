@@ -220,8 +220,14 @@ pub enum Statement {
     /// Boolean literal: pushes true/false onto stack
     BoolLiteral(bool),
 
-    /// String literal: pushes string onto stack
-    StringLiteral(String),
+    /// String literal: pushes a byte-clean string onto the stack.
+    ///
+    /// The payload is `Vec<u8>` because Seq strings are arbitrary byte
+    /// sequences (`\xNN` escapes produce literal bytes, embedded NULs are
+    /// legal). Most literals happen to be UTF-8 text; the type stays
+    /// general so binary-protocol authors can write magic numbers,
+    /// alignment NULs, and IEEE-754 byte patterns inline.
+    StringLiteral(Vec<u8>),
 
     /// Symbol literal: pushes symbol onto stack
     /// Syntax: :foo, :some-name, :ok

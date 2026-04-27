@@ -14,6 +14,10 @@ pub(super) static DECLS: &[RuntimeDecl] = &[
         category: None,
     },
     RuntimeDecl {
+        decl: "declare ptr @patch_seq_push_string_bytes(ptr, ptr, i64)",
+        category: None,
+    },
+    RuntimeDecl {
         decl: "declare ptr @patch_seq_push_symbol(ptr, ptr)",
         category: None,
     },

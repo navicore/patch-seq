@@ -37,6 +37,13 @@ pub(super) fn add_signatures(sigs: &mut HashMap<String, Effect>) {
     builtin!(sigs, "char->string", (a Int -- a String));
     builtin!(sigs, "symbol->string", (a Symbol -- a String));
     builtin!(sigs, "string->symbol", (a String -- a Symbol));
+
+    // =========================================================================
+    // Byte construction (for binary protocol encoders written in Seq)
+    // =========================================================================
+
+    builtin!(sigs, "int.to-bytes-i32-be", (a Int -- a String));
+    builtin!(sigs, "float.to-bytes-f32-be", (a Float -- a String));
 }
 
 pub(super) fn add_docs(docs: &mut HashMap<&'static str, &'static str>) {
@@ -97,4 +104,14 @@ pub(super) fn add_docs(docs: &mut HashMap<&'static str, &'static str>) {
         "Convert a symbol to its string representation.",
     );
     docs.insert("string->symbol", "Intern a string as a symbol.");
+
+    // Byte construction
+    docs.insert(
+        "int.to-bytes-i32-be",
+        "Encode an Int as a 4-byte big-endian i32 String. Truncates to 32 bits if out of range; result is byte-clean for binary protocols.",
+    );
+    docs.insert(
+        "float.to-bytes-f32-be",
+        "Encode a Float as a 4-byte big-endian IEEE-754 f32 String. Precision-converts the f64 to f32; result is byte-clean for binary protocols.",
+    );
 }

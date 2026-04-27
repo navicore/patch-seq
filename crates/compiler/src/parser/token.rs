@@ -57,7 +57,9 @@ pub(super) fn is_float_literal(token: &str) -> bool {
     s.contains('.') || s.contains('e') || s.contains('E')
 }
 
-/// Process escape sequences in a string literal
+/// Process escape sequences in a string literal, returning the raw byte
+/// payload. Seq strings are byte-clean — `\xNN` produces the literal byte
+/// `0xNN`, not the UTF-8 encoding of the codepoint U+00NN.
 ///
 /// Supported escape sequences:
 /// - `\"` -> `"`  (quote)
@@ -65,37 +67,41 @@ pub(super) fn is_float_literal(token: &str) -> bool {
 /// - `\n` -> newline
 /// - `\r` -> carriage return
 /// - `\t` -> tab
-/// - `\xNN` -> Unicode code point U+00NN (hex value 00-FF)
+/// - `\xNN` -> the single byte `0xNN` (00-FF)
 ///
-/// # Note on `\xNN` encoding
+/// # `\xNN` byte semantics
 ///
-/// The `\xNN` escape creates a Unicode code point U+00NN, not a raw byte.
-/// For values 0x00-0x7F (ASCII), this maps directly to the byte value.
-/// For values 0x80-0xFF (Latin-1 Supplement), the character is stored as
-/// a multi-byte UTF-8 sequence. For example:
-/// - `\x41` -> 'A' (1 byte in UTF-8)
-/// - `\x1b` -> ESC (1 byte in UTF-8, used for ANSI terminal codes)
-/// - `\xFF` -> 'ÿ' (U+00FF, 2 bytes in UTF-8: 0xC3 0xBF)
+/// `\xNN` is a *byte*, not a codepoint:
+/// - `\x41` -> `0x41` ('A')
+/// - `\x1b` -> `0x1B` (ESC, for ANSI terminal codes)
+/// - `\xDC` -> `0xDC` (one byte; not the 2-byte UTF-8 of U+00DC)
+/// - `\x00` -> `0x00` (one NUL byte; embedded NULs are legal)
 ///
-/// This matches Python 3 and Rust string behavior. For terminal ANSI codes,
-/// which are the primary use case, all values are in the ASCII range.
+/// Non-escape characters in the source are copied to the output as their
+/// UTF-8 byte sequence — so `"héllo"` is still 6 UTF-8 bytes. The change
+/// is only that `\xNN` no longer round-trips through `char` (which it
+/// did before, silently producing 2-byte UTF-8 for high-byte escapes).
+///
+/// This makes byte-clean binary protocol literals (OSC alignment NULs,
+/// raw IEEE-754 byte patterns, magic-number headers) expressible in
+/// Seq source.
 ///
 /// # Errors
-/// Returns error if an unknown escape sequence is encountered
-pub(super) fn unescape_string(s: &str) -> Result<String, String> {
-    let mut result = String::new();
+/// Returns error if an unknown escape sequence is encountered.
+pub(super) fn unescape_string(s: &str) -> Result<Vec<u8>, String> {
+    let mut result: Vec<u8> = Vec::with_capacity(s.len());
     let mut chars = s.chars();
 
     while let Some(ch) = chars.next() {
         if ch == '\\' {
             match chars.next() {
-                Some('"') => result.push('"'),
-                Some('\\') => result.push('\\'),
-                Some('n') => result.push('\n'),
-                Some('r') => result.push('\r'),
-                Some('t') => result.push('\t'),
+                Some('"') => result.push(b'"'),
+                Some('\\') => result.push(b'\\'),
+                Some('n') => result.push(b'\n'),
+                Some('r') => result.push(b'\r'),
+                Some('t') => result.push(b'\t'),
                 Some('x') => {
-                    // Hex escape: \xNN
+                    // Hex escape: \xNN — emit the literal byte 0xNN.
                     let hex1 = chars.next().ok_or_else(|| {
                         "Incomplete hex escape sequence '\\x' - expected 2 hex digits".to_string()
                     })?;
@@ -114,7 +120,7 @@ pub(super) fn unescape_string(s: &str) -> Result<String, String> {
                         )
                     })?;
 
-                    result.push(byte_val as char);
+                    result.push(byte_val);
                 }
                 Some(c) => {
                     return Err(format!(
@@ -128,7 +134,9 @@ pub(super) fn unescape_string(s: &str) -> Result<String, String> {
                 }
             }
         } else {
-            result.push(ch);
+            // Source-level char: emit its UTF-8 bytes verbatim.
+            let mut buf = [0u8; 4];
+            result.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
         }
     }
 

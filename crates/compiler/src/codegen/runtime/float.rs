@@ -64,6 +64,14 @@ pub(super) static DECLS: &[RuntimeDecl] = &[
         decl: "declare ptr @patch_seq_string_to_float(ptr)",
         category: None,
     },
+    RuntimeDecl {
+        decl: "declare ptr @patch_seq_int_to_bytes_i32_be(ptr)",
+        category: Some("; Byte construction (binary protocol encoders)"),
+    },
+    RuntimeDecl {
+        decl: "declare ptr @patch_seq_float_to_bytes_f32_be(ptr)",
+        category: None,
+    },
 ];
 
 pub(super) static SYMBOLS: &[(&str, &str)] = &[
@@ -96,4 +104,7 @@ pub(super) static SYMBOLS: &[(&str, &str)] = &[
     ("float->int", "patch_seq_float_to_int"),
     ("float->string", "patch_seq_float_to_string"),
     ("string->float", "patch_seq_string_to_float"),
+    // Byte construction (binary protocol encoders)
+    ("int.to-bytes-i32-be", "patch_seq_int_to_bytes_i32_be"),
+    ("float.to-bytes-f32-be", "patch_seq_float_to_bytes_f32_be"),
 ];

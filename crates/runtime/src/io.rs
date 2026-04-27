@@ -325,7 +325,16 @@ pub unsafe extern "C" fn patch_seq_int_to_string(stack: Stack) -> Stack {
     }
 }
 
-/// Push a C string literal onto the stack (for compiler-generated code)
+/// Push a C string literal onto the stack (for compiler-generated code).
+///
+/// Used by codegen paths whose source is always an ASCII identifier
+/// (variant tag comparisons, NULL-FFI fallbacks, etc.) — they have no
+/// embedded NULs, so the C-string convention is fine. Byte-clean
+/// string *literals* go through `patch_seq_push_string_bytes` instead.
+///
+/// In debug builds, this asserts the input is ASCII to catch a future
+/// codegen path that accidentally routes binary data here. In release
+/// the bytes are taken as-is — the comment above is the contract.
 ///
 /// Stack effect: ( -- str )
 ///
@@ -335,14 +344,44 @@ pub unsafe extern "C" fn patch_seq_int_to_string(stack: Stack) -> Stack {
 pub unsafe extern "C" fn patch_seq_push_string(stack: Stack, c_str: *const i8) -> Stack {
     assert!(!c_str.is_null(), "push_string: null string pointer");
 
-    let s = unsafe {
-        CStr::from_ptr(c_str)
-            .to_str()
-            .expect("push_string: invalid UTF-8 in string literal")
-            .to_owned()
-    };
+    let bytes = unsafe { CStr::from_ptr(c_str).to_bytes() };
+    debug_assert!(
+        std::str::from_utf8(bytes).is_ok(),
+        "push_string: input must be valid UTF-8 (variant tags, identifier-shaped \
+         literals, FFI fallbacks); arbitrary binary string literals must use \
+         push_string_bytes instead",
+    );
+    let seqstr = crate::seqstring::global_bytes(bytes.to_vec());
+    unsafe { push(stack, Value::String(seqstr)) }
+}
 
-    unsafe { push(stack, Value::String(s.into())) }
+/// Push a byte-clean string literal onto the stack (for compiler-generated
+/// code). Carries an explicit length so embedded NULs and arbitrary bytes
+/// flow through unchanged — this is the codegen target for Seq string
+/// literals after the byte-cleanliness landing.
+///
+/// Stack effect: ( -- str )
+///
+/// # Safety
+/// `ptr` must point to at least `len` valid bytes. `ptr` may not be null
+/// unless `len` is zero.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn patch_seq_push_string_bytes(
+    stack: Stack,
+    ptr: *const u8,
+    len: usize,
+) -> Stack {
+    let bytes = if len == 0 {
+        Vec::new()
+    } else {
+        assert!(
+            !ptr.is_null(),
+            "push_string_bytes: null pointer with non-zero length"
+        );
+        unsafe { std::slice::from_raw_parts(ptr, len).to_vec() }
+    };
+    let seqstr = crate::seqstring::global_bytes(bytes);
+    unsafe { push(stack, Value::String(seqstr)) }
 }
 
 /// Push a C string literal onto the stack as a Symbol (for compiler-generated code)

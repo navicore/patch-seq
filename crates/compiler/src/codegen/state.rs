@@ -143,7 +143,7 @@ pub struct CodeGen {
     pub(super) string_counter: usize,
     pub(super) block_counter: usize, // For generating unique block labels
     pub(super) quot_counter: usize,  // For generating unique quotation function names
-    pub(super) string_constants: HashMap<String, String>, // string content -> global name
+    pub(super) string_constants: HashMap<Vec<u8>, String>, // byte payload -> global name
     pub(super) quotation_functions: String, // Accumulates generated quotation functions
     pub(super) type_map: HashMap<usize, Type>, // Maps quotation ID to inferred type (from typechecker)
     pub(super) external_builtins: HashMap<String, String>, // seq_name -> symbol (for external builtins)

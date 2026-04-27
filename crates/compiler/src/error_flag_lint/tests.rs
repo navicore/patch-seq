@@ -30,7 +30,7 @@ fn test_adjacent_drop_not_flagged() {
     let word = make_word(
         "test",
         vec![
-            Statement::StringLiteral("foo".to_string()),
+            Statement::StringLiteral(b"foo".to_vec()),
             word_call("file.slurp", 1),
             word_call("drop", 1),
         ],
@@ -51,7 +51,7 @@ fn test_non_adjacent_drop_flagged() {
     let word = make_word(
         "test",
         vec![
-            Statement::StringLiteral("foo".to_string()),
+            Statement::StringLiteral(b"foo".to_vec()),
             word_call("file.slurp", 1),
             word_call("swap", 5),
             word_call("nip", 10),
@@ -70,7 +70,7 @@ fn test_checked_by_if() {
     let word = make_word(
         "test",
         vec![
-            Statement::StringLiteral("foo".to_string()),
+            Statement::StringLiteral(b"foo".to_vec()),
             word_call("file.slurp", 1),
             Statement::If {
                 then_branch: vec![word_call("io.write-line", 3)],
@@ -94,10 +94,10 @@ fn test_aux_round_trip_drop() {
     let word = make_word(
         "test",
         vec![
-            Statement::StringLiteral("foo".to_string()),
+            Statement::StringLiteral(b"foo".to_vec()),
             word_call("file.slurp", 1),
             word_call(">aux", 5),
-            Statement::StringLiteral("other work".to_string()),
+            Statement::StringLiteral(b"other work".to_vec()),
             word_call("drop", 8),
             word_call("aux>", 12),
             word_call("drop", 15),
@@ -141,7 +141,7 @@ fn test_nip_preserves_flag_on_top() {
     let word = make_word(
         "test",
         vec![
-            Statement::StringLiteral("42".to_string()),
+            Statement::StringLiteral(b"42".to_vec()),
             word_call("string->int", 1),
             word_call("nip", 2),
         ],
@@ -157,7 +157,7 @@ fn test_swap_nip_drops_flag() {
     let word = make_word(
         "test",
         vec![
-            Statement::StringLiteral("42".to_string()),
+            Statement::StringLiteral(b"42".to_vec()),
             word_call("string->int", 1),
             word_call("swap", 5),
             word_call("nip", 10),
@@ -176,7 +176,7 @@ fn test_allow_suppresses_warning() {
         name: "test".to_string(),
         effect: Some(Effect::new(StackType::Empty, StackType::Empty)),
         body: vec![
-            Statement::StringLiteral("foo".to_string()),
+            Statement::StringLiteral(b"foo".to_vec()),
             word_call("file.slurp", 1),
             word_call("swap", 5),
             word_call("nip", 10),
@@ -200,7 +200,7 @@ fn test_multiple_flags_both_dropped() {
     let word = make_word(
         "test",
         vec![
-            Statement::StringLiteral("foo".to_string()),
+            Statement::StringLiteral(b"foo".to_vec()),
             word_call("file.slurp", 1),   // pushes (String, Flag)
             word_call("swap", 5),         // (Flag, String)
             word_call("nip", 10),         // drops Flag #1
@@ -221,7 +221,7 @@ fn test_dip_clears_flags_no_false_positive() {
     let word = make_word(
         "test",
         vec![
-            Statement::StringLiteral("foo".to_string()),
+            Statement::StringLiteral(b"foo".to_vec()),
             word_call("file.slurp", 1), // (String, Flag)
             Statement::Quotation {
                 id: 0,
