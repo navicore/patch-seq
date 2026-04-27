@@ -1,4 +1,5 @@
 use super::*;
+use crate::seqstring::global_bytes;
 use crate::stack::pop;
 
 #[test]
@@ -180,6 +181,66 @@ fn test_hex_roundtrip() {
         match (decoded, success) {
             (Value::String(s), Value::Bool(true)) => assert_eq!(s.as_str_or_empty(), original),
             _ => panic!("Expected (String, true)"),
+        }
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Byte-cleanliness regression tests for encoding round-trips.
+//
+// base64 and hex are encodings *for* arbitrary bytes — the canonical use
+// case is binary-as-text. Round-tripping non-UTF-8 bytes through encode →
+// decode must produce byte-identical output.
+// ----------------------------------------------------------------------------
+
+const ENC_BIN: &[u8] = &[0x00, 0xDC, b'x', 0xFF, 0xC3, b'!', 0x80];
+
+#[test]
+fn byte_clean_base64_round_trips_binary() {
+    unsafe {
+        let stack = crate::stack::alloc_test_stack();
+        let stack = push(stack, Value::String(global_bytes(ENC_BIN.to_vec())));
+        let stack = patch_seq_base64_encode(stack);
+        let (stack, encoded) = pop(stack);
+        let encoded = match encoded {
+            Value::String(s) => s,
+            _ => panic!("expected encoded String"),
+        };
+        // base64 output is always ASCII text.
+        let _ = encoded.as_str().expect("base64 output must be valid UTF-8");
+
+        let stack = push(stack, Value::String(encoded));
+        let stack = patch_seq_base64_decode(stack);
+        let (stack, success) = pop(stack);
+        assert_eq!(success, Value::Bool(true));
+        let (_, decoded) = pop(stack);
+        match decoded {
+            Value::String(s) => assert_eq!(s.as_bytes(), ENC_BIN),
+            _ => panic!("expected decoded String"),
+        }
+    }
+}
+
+#[test]
+fn byte_clean_hex_round_trips_binary() {
+    unsafe {
+        let stack = crate::stack::alloc_test_stack();
+        let stack = push(stack, Value::String(global_bytes(ENC_BIN.to_vec())));
+        let stack = patch_seq_hex_encode(stack);
+        let (stack, encoded) = pop(stack);
+        let encoded = match encoded {
+            Value::String(s) => s,
+            _ => panic!("expected encoded String"),
+        };
+
+        let stack = push(stack, Value::String(encoded));
+        let stack = patch_seq_hex_decode(stack);
+        let (stack, success) = pop(stack);
+        assert_eq!(success, Value::Bool(true));
+        let (_, decoded) = pop(stack);
+        match decoded {
+            Value::String(s) => assert_eq!(s.as_bytes(), ENC_BIN),
+            _ => panic!("expected decoded String"),
         }
     }
 }

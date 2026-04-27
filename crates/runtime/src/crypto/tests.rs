@@ -328,9 +328,9 @@ fn test_aes_gcm_invalid_ciphertext() {
 fn test_aes_gcm_empty_plaintext() {
     let key = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
-    let ciphertext = aes_gcm_encrypt("", key).unwrap();
+    let ciphertext = aes_gcm_encrypt(b"", key).unwrap();
     let decrypted = aes_gcm_decrypt(&ciphertext, key).unwrap();
-    assert_eq!(decrypted, "");
+    assert_eq!(decrypted, b"");
 }
 
 #[test]
@@ -338,9 +338,9 @@ fn test_aes_gcm_special_characters() {
     let key = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
     let plaintext = "Hello\nWorld\tTab\"Quote\\Backslash";
 
-    let ciphertext = aes_gcm_encrypt(plaintext, key).unwrap();
+    let ciphertext = aes_gcm_encrypt(plaintext.as_bytes(), key).unwrap();
     let decrypted = aes_gcm_decrypt(&ciphertext, key).unwrap();
-    assert_eq!(decrypted, plaintext);
+    assert_eq!(decrypted, plaintext.as_bytes());
 }
 
 // PBKDF2 Tests
@@ -381,12 +381,12 @@ fn test_pbkdf2_sha256() {
 #[test]
 fn test_pbkdf2_deterministic() {
     // Same inputs should produce same key
-    let key1 = derive_key_pbkdf2("password", "salt", 10000);
-    let key2 = derive_key_pbkdf2("password", "salt", 10000);
+    let key1 = derive_key_pbkdf2(b"password", b"salt", 10000);
+    let key2 = derive_key_pbkdf2(b"password", b"salt", 10000);
     assert_eq!(key1, key2);
 
     // Different inputs should produce different keys
-    let key3 = derive_key_pbkdf2("password", "different-salt", 10000);
+    let key3 = derive_key_pbkdf2(b"password", b"different-salt", 10000);
     assert_ne!(key1, key3);
 }
 
@@ -414,16 +414,16 @@ fn test_encrypt_decrypt_with_derived_key() {
     let iterations = 10000u32;
 
     // Derive key
-    let key = derive_key_pbkdf2(password, salt, iterations);
+    let key = derive_key_pbkdf2(password.as_bytes(), salt.as_bytes(), iterations);
     let key_hex = hex::encode(key);
 
     // Encrypt
     let plaintext = "sensitive data to protect";
-    let ciphertext = aes_gcm_encrypt(plaintext, &key_hex).unwrap();
+    let ciphertext = aes_gcm_encrypt(plaintext.as_bytes(), &key_hex).unwrap();
 
     // Decrypt
     let decrypted = aes_gcm_decrypt(&ciphertext, &key_hex).unwrap();
-    assert_eq!(decrypted, plaintext);
+    assert_eq!(decrypted, plaintext.as_bytes());
 }
 
 // Ed25519 tests
@@ -440,11 +440,11 @@ fn test_ed25519_sign_verify() {
     let public_hex = hex::encode(verifying_key.to_bytes());
 
     // Sign
-    let signature = ed25519_sign(message, &private_hex).unwrap();
+    let signature = ed25519_sign(message.as_bytes(), &private_hex).unwrap();
     assert_eq!(signature.len(), 128); // 64 bytes = 128 hex chars
 
     // Verify
-    assert!(ed25519_verify(message, &signature, &public_hex));
+    assert!(ed25519_verify(message.as_bytes(), &signature, &public_hex));
 }
 
 #[test]
@@ -458,10 +458,14 @@ fn test_ed25519_wrong_message() {
     let private_hex = hex::encode(signing_key.to_bytes());
     let public_hex = hex::encode(verifying_key.to_bytes());
 
-    let signature = ed25519_sign(message, &private_hex).unwrap();
+    let signature = ed25519_sign(message.as_bytes(), &private_hex).unwrap();
 
     // Verify with wrong message should fail
-    assert!(!ed25519_verify(wrong_message, &signature, &public_hex));
+    assert!(!ed25519_verify(
+        wrong_message.as_bytes(),
+        &signature,
+        &public_hex
+    ));
 }
 
 #[test]
@@ -474,10 +478,14 @@ fn test_ed25519_wrong_key() {
     let private_hex = hex::encode(signing_key1.to_bytes());
     let wrong_public_hex = hex::encode(signing_key2.verifying_key().to_bytes());
 
-    let signature = ed25519_sign(message, &private_hex).unwrap();
+    let signature = ed25519_sign(message.as_bytes(), &private_hex).unwrap();
 
     // Verify with wrong public key should fail
-    assert!(!ed25519_verify(message, &signature, &wrong_public_hex));
+    assert!(!ed25519_verify(
+        message.as_bytes(),
+        &signature,
+        &wrong_public_hex
+    ));
 }
 
 #[test]
@@ -486,7 +494,7 @@ fn test_ed25519_invalid_key_length() {
     let invalid_key = "tooshort";
 
     // Sign with invalid key should fail
-    assert!(ed25519_sign(message, invalid_key).is_none());
+    assert!(ed25519_sign(message.as_bytes(), invalid_key).is_none());
 }
 
 #[test]
@@ -499,7 +507,11 @@ fn test_ed25519_invalid_signature() {
     let invalid_signature = "0".repeat(128); // Valid length but wrong signature
 
     // Verify with invalid signature should fail
-    assert!(!ed25519_verify(message, &invalid_signature, &public_hex));
+    assert!(!ed25519_verify(
+        message.as_bytes(),
+        &invalid_signature,
+        &public_hex
+    ));
 }
 
 #[test]
@@ -513,10 +525,10 @@ fn test_ed25519_empty_message() {
     let public_hex = hex::encode(verifying_key.to_bytes());
 
     // Sign empty message
-    let signature = ed25519_sign(message, &private_hex).unwrap();
+    let signature = ed25519_sign(message.as_bytes(), &private_hex).unwrap();
 
     // Verify should succeed
-    assert!(ed25519_verify(message, &signature, &public_hex));
+    assert!(ed25519_verify(message.as_bytes(), &signature, &public_hex));
 }
 
 #[test]
@@ -586,7 +598,7 @@ fn test_ed25519_verify_ffi() {
         let public_hex = hex::encode(verifying_key.to_bytes());
 
         let message = "Verify this message";
-        let signature = ed25519_sign(message, &private_hex).unwrap();
+        let signature = ed25519_sign(message.as_bytes(), &private_hex).unwrap();
 
         let stack = push(stack, Value::String(global_string(message.to_string())));
         let stack = push(stack, Value::String(global_string(signature)));
@@ -750,4 +762,61 @@ fn test_random_int_uniformity() {
             tolerance
         );
     }
+}
+
+// ----------------------------------------------------------------------------
+// Byte-cleanliness regression tests.
+//
+// Crypto plaintext, message, password, and salt arguments are all arbitrary
+// bytes — they must round-trip without UTF-8 validation eating high-byte
+// content. Bug class: pre-fix, the FFI wrappers passed `as_str_or_empty()`
+// to the inner functions, silently encrypting / signing / hashing the empty
+// string for any non-UTF-8 input.
+// ----------------------------------------------------------------------------
+
+const CRYPTO_BIN: &[u8] = &[0x00, 0xDC, b'x', 0xFF, 0xC3, b'!', 0x80];
+
+#[test]
+fn aes_gcm_round_trips_binary_plaintext() {
+    let key_hex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    let ciphertext = aes_gcm_encrypt(CRYPTO_BIN, key_hex).unwrap();
+    let decrypted = aes_gcm_decrypt(&ciphertext, key_hex).unwrap();
+    assert_eq!(
+        decrypted, CRYPTO_BIN,
+        "binary plaintext must survive AES-GCM round trip byte-for-byte"
+    );
+}
+
+#[test]
+fn ed25519_signs_and_verifies_binary_message() {
+    let signing_key = SigningKey::generate(&mut OsRng);
+    let private_hex = hex::encode(signing_key.to_bytes());
+    let public_hex = hex::encode(signing_key.verifying_key().to_bytes());
+
+    let signature =
+        ed25519_sign(CRYPTO_BIN, &private_hex).expect("signing arbitrary bytes must succeed");
+    assert!(
+        ed25519_verify(CRYPTO_BIN, &signature, &public_hex),
+        "verification of a binary message must succeed"
+    );
+
+    // A different message — same key — must not verify.
+    let other = &[0x01, 0x02, 0x03];
+    assert!(
+        !ed25519_verify(other, &signature, &public_hex),
+        "signature must not verify against a different message"
+    );
+}
+
+#[test]
+fn pbkdf2_derives_from_binary_password_and_salt() {
+    let key1 = derive_key_pbkdf2(CRYPTO_BIN, &[0x00, 0xFF, 0x42], 1000);
+    let key2 = derive_key_pbkdf2(CRYPTO_BIN, &[0x00, 0xFF, 0x42], 1000);
+    assert_eq!(key1, key2, "deterministic for same binary inputs");
+
+    // Differ only in one byte of the password — must produce a different key.
+    let mut alt = CRYPTO_BIN.to_vec();
+    alt[0] = 0x01;
+    let key3 = derive_key_pbkdf2(&alt, &[0x00, 0xFF, 0x42], 1000);
+    assert_ne!(key1, key3, "byte-level sensitivity in password");
 }

@@ -1,6 +1,6 @@
 //! Character access, slicing, searching, and splitting/joining.
 
-use crate::seqstring::global_string;
+use crate::seqstring::{global_bytes, global_string};
 use crate::stack::{Stack, pop, push};
 use crate::value::Value;
 use std::sync::Arc;
@@ -19,11 +19,42 @@ pub unsafe extern "C" fn patch_seq_string_split(stack: Stack) -> Stack {
 
     match (str_val, delim_val) {
         (Value::String(s), Value::String(d)) => {
-            // Split and collect into Value::String instances
-            let fields: Vec<Value> = s
-                .as_str_or_empty()
-                .split(d.as_str_or_empty())
-                .map(|part| Value::String(global_string(part.to_owned())))
+            // Byte-clean split: separate the haystack at every byte
+            // occurrence of the needle. The result is byte-faithful —
+            // splitting an OSC payload on its NUL padding, splitting a
+            // network frame on a binary delimiter, etc. all work.
+            let bytes = s.as_bytes();
+            let needle = d.as_bytes();
+            let parts: Vec<Vec<u8>> = if needle.is_empty() {
+                // Mirror Rust's `&str::split("")` shape: empty leading
+                // and trailing pieces, one piece per byte in between.
+                let mut parts = Vec::with_capacity(bytes.len() + 2);
+                parts.push(Vec::new());
+                for b in bytes {
+                    parts.push(vec![*b]);
+                }
+                parts.push(Vec::new());
+                parts
+            } else {
+                let mut parts: Vec<Vec<u8>> = Vec::new();
+                let mut last = 0usize;
+                let mut i = 0usize;
+                while i + needle.len() <= bytes.len() {
+                    if &bytes[i..i + needle.len()] == needle {
+                        parts.push(bytes[last..i].to_vec());
+                        i += needle.len();
+                        last = i;
+                    } else {
+                        i += 1;
+                    }
+                }
+                parts.push(bytes[last..].to_vec());
+                parts
+            };
+
+            let fields: Vec<Value> = parts
+                .into_iter()
+                .map(|part| Value::String(global_bytes(part)))
                 .collect();
 
             // Create a Variant with :List tag and the split parts as fields
@@ -54,11 +85,22 @@ pub unsafe extern "C" fn patch_seq_string_contains(stack: Stack) -> Stack {
 
     match (str_val, substring_val) {
         (Value::String(s), Value::String(sub)) => {
-            let contains = s.as_str_or_empty().contains(sub.as_str_or_empty());
+            // Byte-clean substring search: scan the haystack for the
+            // needle's bytes. Works on any input — text or binary.
+            let contains = byte_contains(s.as_bytes(), sub.as_bytes());
             unsafe { push(stack, Value::Bool(contains)) }
         }
         _ => panic!("string_contains: expected two strings on stack"),
     }
+}
+
+/// Byte-level substring search. Empty needle is contained in any
+/// haystack (matches Rust's `&str::contains` for the same convention).
+fn byte_contains(haystack: &[u8], needle: &[u8]) -> bool {
+    if needle.is_empty() {
+        return true;
+    }
+    haystack.windows(needle.len()).any(|w| w == needle)
 }
 
 /// Check if a string starts with a prefix
@@ -77,7 +119,8 @@ pub unsafe extern "C" fn patch_seq_string_starts_with(stack: Stack) -> Stack {
 
     match (str_val, prefix_val) {
         (Value::String(s), Value::String(prefix)) => {
-            let starts = s.as_str_or_empty().starts_with(prefix.as_str_or_empty());
+            // Byte-clean prefix check.
+            let starts = s.as_bytes().starts_with(prefix.as_bytes());
             unsafe { push(stack, Value::Bool(starts)) }
         }
         _ => panic!("string_starts_with: expected two strings on stack"),
