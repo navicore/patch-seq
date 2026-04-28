@@ -1,0 +1,48 @@
+# live.seq — 8-beat metronome driver for the Csound POC.
+#
+# Sends 8 `/kick 220.0` OSC messages to localhost:7770, one per beat.
+# Run alongside `csound -odac live.csd`; you should hear 8 evenly
+# spaced clicks over ~3.5 seconds.
+#
+# The constants below are the live-codable knobs: change them and
+# re-run (Csound stays up between Seq runs since the listener
+# instrument is held open by `i 1 0 -1` in the score).
+
+include "osc"
+
+# Tunable knobs. 120 BPM × 8 beats ≈ 4 seconds of audio.
+: bpm-ms ( -- Int ) 500 ;
+: beats  ( -- Int ) 8 ;
+
+# Send one /kick at 220 Hz to localhost:7770, then sleep one beat.
+# Threads the socket through unchanged so the recursive driver can
+# call this on every iteration.
+: send-kick ( Int -- Int )
+  dup                                      # ( socket socket )
+  "/kick" 220.0 osc.msg-f                  # ( socket socket msg )
+  swap                                     # ( socket msg socket )
+  "127.0.0.1" swap                         # ( socket msg "127.0.0.1" socket )
+  7770 swap                                # ( socket msg "127.0.0.1" 7770 socket )
+  udp.send-to drop                         # ( socket )
+  bpm-ms time.sleep-ms                     # ( socket )
+;
+
+# Drive the metronome: send N kicks with an inter-beat sleep.
+# Tail-recursive on (count, socket).
+: send-n-kicks ( Int Int -- Int )
+  over 0 i.<= [
+    nip                                    # base: drop count, keep socket
+  ] [
+    send-kick                              # ( count socket' )
+    swap 1 i.- swap                        # ( count-1 socket' )
+    send-n-kicks
+  ] if
+;
+
+: main ( -- Int )
+  0 udp.bind drop drop                     # ( socket )
+  beats swap                               # ( beats socket )
+  send-n-kicks                             # ( socket )
+  udp.close drop
+  0
+;
