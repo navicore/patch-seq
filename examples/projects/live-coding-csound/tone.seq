@@ -1,0 +1,31 @@
+# tone.seq — minimal one-shot OSC sender for the Csound POC.
+#
+# Sends one `/kick 220.0` message to localhost:7770 and exits. Run
+# alongside `csound -odac live.csd` to hear a single percussive tone.
+#
+# This is the simplest end-to-end audible test of the
+# Seq -> OSC -> UDP -> Csound chain. Use it to confirm your Csound
+# install and OSC port are working before running the metronome
+# (`live.seq`).
+
+include "osc"
+
+: main ( -- Int )
+  # Bind a fresh outbound socket. We don't need to receive anything,
+  # so port=0 (OS-assigned) is fine; drop both port and the success
+  # flag.
+  0 udp.bind drop drop                     # ( socket )
+
+  # Build the message: /kick with one float arg (the pitch).
+  "/kick" 220.0 osc.msg-f                  # ( socket msg )
+
+  # Reorder for udp.send-to ( bytes host port socket -- Bool ).
+  swap                                     # ( msg socket )
+  dup >aux                                 # ( msg socket )       ; aux: [socket]
+  "127.0.0.1" swap                         # ( msg "127.0.0.1" socket )
+  7770 swap                                # ( msg "127.0.0.1" 7770 socket )
+  udp.send-to drop                         # ( )                  ; aux: [socket]
+
+  aux> udp.close drop                      # ( )
+  0
+;
