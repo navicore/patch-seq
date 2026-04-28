@@ -105,6 +105,8 @@ This document covers:
 | `char->string` | `( Int -- String )` | Convert Unicode codepoint to single-char string |
 | `symbol->string` | `( Symbol -- String )` | Convert symbol to string |
 | `string->symbol` | `( String -- Symbol )` | Intern string as symbol |
+| `int.to-bytes-i32-be` | `( Int -- String )` | Encode Int as 4-byte big-endian i32 (low 32 bits). For binary protocol encoders |
+| `float.to-bytes-f32-be` | `( Float -- String )` | Encode Float as 4-byte big-endian IEEE-754 f32. For binary protocol encoders |
 
 ## Integer Arithmetic
 
@@ -340,6 +342,7 @@ All regex operations return a Bool success flag (false for invalid regex).
 | `variant.tag` | `( Variant -- Symbol )` | Get tag (constructor name) |
 | `variant.field-at` | `( Variant Int -- T )` | Get field at index |
 | `variant.append` | `( Variant T -- Variant )` | Append value to variant |
+| `variant.first` | `( Variant -- T )` | Get first field |
 | `variant.last` | `( Variant -- T )` | Get last field |
 | `variant.init` | `( Variant -- Variant )` | Get all fields except last |
 | `variant.make-0` / `wrap-0` | `( Symbol -- Variant )` | Create variant with 0 fields |
@@ -358,6 +361,9 @@ All regex operations return a Bool success flag (false for invalid regex).
 | `list.set` | `( List Int T -- List Bool )` | Set value at index. Returns (list, success) |
 | `list.length` | `( List -- Int )` | Get number of elements |
 | `list.empty?` | `( List -- Bool )` | Check if empty |
+| `list.reverse` | `( List -- List )` | Return list with elements reversed |
+| `list.first` | `( List -- T Bool )` | Get first element. Returns (value, success) — false on empty list |
+| `list.last` | `( List -- T Bool )` | Get last element. Returns (value, success) — false on empty list |
 | `list.map` | `( List [T -- U] -- List )` | Apply quotation to each element |
 | `list.filter` | `( List [T -- Bool] -- List )` | Keep elements where quotation returns true |
 | `list.fold` | `( List Acc [Acc T -- Acc] -- Acc )` | Reduce with accumulator |
