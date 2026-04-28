@@ -31,18 +31,18 @@ gihandle OSCinit 7770
 ; --------------------------------------------------------------------------
 ; instr 1 — always-on OSC listener.
 ;
-; Pulls one /kick message per iteration and schedules instr 2 to play it.
-; Note: event "i", ... is k-rate, so the kgoto loop polls OSClisten and
-; only fires when a new message arrives.
+; Each k-cycle polls OSClisten once. If a /kick arrived, schedule instr 2
+; and printk the freq so we can see in the Csound terminal that the
+; message round-tripped. At sr=44100/ksmps=64 the k-rate is ~689 Hz,
+; far above the rate at which we send messages, so we never miss one.
 ; --------------------------------------------------------------------------
 instr 1
   kfreq   init 0
-loop:
   kk      OSClisten gihandle, "/kick", "f", kfreq
   if (kk > 0) then
-    event "i", 2, 0, 0.4, kfreq
+            printks "got /kick %f Hz\n", 0, kfreq
+            event   "i", 2, 0, 0.4, kfreq
   endif
-          kgoto loop
 endin
 
 ; --------------------------------------------------------------------------
