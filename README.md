@@ -1,3 +1,8 @@
+<!-- ghmig:moved -->
+> **This repository has moved to [https://git.navicore.tech/navicore/patch-seq](https://git.navicore.tech/navicore/patch-seq).**
+>
+> The GitHub copy is archived and no longer maintained.
+
 [![CI - Linux](https://github.com/navicore/patch-seq/actions/workflows/ci-linux.yml/badge.svg)](https://github.com/navicore/patch-seq/actions/workflows/ci-linux.yml)
 [![Daily Benchmarks](https://github.com/navicore/patch-seq/actions/workflows/bench.yml/badge.svg)](https://github.com/navicore/patch-seq/actions/workflows/bench.yml)
 
