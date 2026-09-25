@@ -88,13 +88,7 @@ static RUNTIME_LIB_BASE: &[u8] = &[];
 /// Word namespaces whose implementations live in optional runtime
 /// features. Mirrors the runtime crate's feature table (http, crypto,
 /// regex, compression). Keep in sync with crates/runtime/Cargo.toml.
-const CAPABILITY_PREFIXES: &[&str] = &[
-    "net.http.",
-    "net.tls.",
-    "crypto.",
-    "regex.",
-    "compress.",
-];
+const CAPABILITY_PREFIXES: &[&str] = &["net.http.", "net.tls.", "crypto.", "regex.", "compress."];
 
 /// Does this program need the full (all-capabilities) runtime archive?
 /// Conservative by design: scans every defined word's body, so a
