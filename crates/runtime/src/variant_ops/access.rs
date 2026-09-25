@@ -2,6 +2,7 @@
 
 use crate::stack::{Stack, pop, push};
 use crate::value::Value;
+use std::ffi::{CStr, c_char};
 
 /// Get the number of fields in a variant
 ///
@@ -57,9 +58,7 @@ pub unsafe extern "C" fn patch_seq_variant_tag(stack: Stack) -> Stack {
 /// - Stack must have a Symbol on top
 /// - c_str must be a valid null-terminated C string
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn patch_seq_symbol_eq_cstr(stack: Stack, c_str: *const i8) -> Stack {
-    use std::ffi::CStr;
-
+pub unsafe extern "C" fn patch_seq_symbol_eq_cstr(stack: Stack, c_str: *const c_char) -> Stack {
     unsafe {
         let (stack, value) = pop(stack);
         let symbol_str = match value {

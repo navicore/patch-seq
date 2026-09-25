@@ -24,7 +24,7 @@
 
 use crate::stack::{Stack, push};
 use crate::value::Value;
-use std::ffi::CStr;
+use std::ffi::{CStr, c_char};
 use std::sync::OnceLock;
 
 /// Global storage for command-line arguments
@@ -39,7 +39,7 @@ static ARGS: OnceLock<Vec<String>> = OnceLock::new();
 /// - argv must contain argc valid, null-terminated C strings
 /// - argv pointers must remain valid for the duration of this call
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn patch_seq_args_init(argc: i32, argv: *const *const i8) {
+pub unsafe extern "C" fn patch_seq_args_init(argc: i32, argv: *const *const c_char) {
     let args: Vec<String> = (0..argc)
         .map(|i| {
             let ptr = unsafe { *argv.offset(i as isize) };
