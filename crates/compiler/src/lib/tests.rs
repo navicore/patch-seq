@@ -29,3 +29,35 @@ fn test_parse_clang_version_invalid() {
     assert_eq!(parse_clang_version("no version here"), None);
     assert_eq!(parse_clang_version("version "), None);
 }
+
+#[test]
+fn test_runtime_archive_selection_by_capability_words() {
+    // io-only program: no capability words -> base archive
+    let hello = ": main ( -- )  \"Hello, World!\" io.write-line ;";
+    let program = Parser::new(hello).parse().unwrap();
+    assert!(
+        !program_needs_full_runtime(&program),
+        "io-only program must select the base runtime"
+    );
+
+    // each capability namespace selects full
+    for src in [
+        ": main ( -- )  \"https://x\" net.http.get drop ;",
+        ": main ( -- )  0 0 net.tls.client drop ;",
+        ": main ( -- )  \"a\" crypto.sha256 drop ;",
+        ": main ( -- )  \"a\" \"b\" regex.match? drop ;",
+        ": main ( -- )  \"a\" compress.zstd drop ;",
+    ] {
+        let program = Parser::new(src).parse().unwrap();
+        assert!(
+            program_needs_full_runtime(&program),
+            "capability word must select the full runtime: {src}"
+        );
+    }
+
+    // capability word in an *unreachable* word still selects full
+    // (conservative by design)
+    let dead = ": unused ( -- )  \"a\" crypto.sha256 drop ;\n: main ( -- )  1 drop ;";
+    let program = Parser::new(dead).parse().unwrap();
+    assert!(program_needs_full_runtime(&program));
+}

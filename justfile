@@ -8,7 +8,7 @@ default:
     @just --list
 
 # Build everything (compiler + runtime + lsp)
-build: build-runtime build-compiler build-lsp
+build: build-runtime build-runtime-base build-compiler build-lsp
 
 # `install` depends on `build` so the canonical
 # `target/release/libseq_runtime.a` is refreshed before
@@ -30,6 +30,15 @@ build-runtime:
     @echo "Building runtime (clean concatenative foundation)..."
     cargo build --locked --release -p seq-runtime
     @echo "✅ Runtime built: target/release/libseq_runtime.a"
+
+# Base runtime archive: no http/tls, crypto, regex, or compression
+# (RUNTIME_CAPABILITY_LINKING design). Separate target dir because the
+# staticlib name collides with the full archive. seqc embeds both and
+# links the base for programs that reference no capability words.
+build-runtime-base:
+    @echo "Building base runtime (no optional capabilities)..."
+    CARGO_TARGET_DIR=target/runtime-base cargo build --locked --release -p seq-runtime --no-default-features --features diagnostics,report-json
+    @echo "✅ Base runtime built: target/runtime-base/release/libseq_runtime.a"
 
 # Build the compiler
 build-compiler:

@@ -38,7 +38,7 @@ crypto = [
     "dep:ed25519-dalek",
     "dep:rand_core",
 ]
-http = ["dep:url"]
+http = ["dep:url", "dep:rustls", "dep:webpki-roots"]
 regex = ["dep:regex"]
 compression = ["dep:flate2", "dep:zstd"]
 
@@ -81,10 +81,11 @@ rand_core = { workspace = true, optional = true }
 # The HTTP client itself is hand-rolled over TCP/TLS now; ureq is gone.
 url = { workspace = true, optional = true }
 
-# TLS — always-on. Underpins net.tls.client (PR3) and the planned
-# may-aware HTTP rewrite (PR4) that retires ureq.
-rustls = { workspace = true }
-webpki-roots = { workspace = true }
+# TLS — optional, part of the "http" capability (net.tls.client + the
+# hand-rolled HTTP client). Base builds contain no rustls/ring at all —
+# the structural fix for aarch64 no-dead-code (RUNTIME_CAPABILITY_LINKING).
+rustls = { workspace = true, optional = true }
+webpki-roots = { workspace = true, optional = true }
 
 # Regular expressions (optional via "regex" feature)
 regex = { workspace = true, optional = true }

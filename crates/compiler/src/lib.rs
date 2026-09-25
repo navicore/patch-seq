@@ -72,6 +72,40 @@ static RUNTIME_LIB: &[u8] = include_bytes!(env!("SEQ_RUNTIME_LIB_PATH"));
 #[cfg(docsrs)]
 static RUNTIME_LIB: &[u8] = &[];
 
+/// Base runtime archive — no http/tls, crypto, regex, or compression
+/// (built by `just build-runtime-base`). Programs referencing no
+/// capability words link this instead of the full archive, which makes
+/// the no-dead-code guarantee structural: there is no rustls/ring in
+/// the archive to survive `--gc-sections` on architectures where it
+/// cannot see through ring's hand-written asm (aarch64-linux).
+/// See docs/design/RUNTIME_CAPABILITY_LINKING.md.
+#[cfg(not(docsrs))]
+static RUNTIME_LIB_BASE: &[u8] = include_bytes!(env!("SEQ_RUNTIME_BASE_LIB_PATH"));
+
+#[cfg(docsrs)]
+static RUNTIME_LIB_BASE: &[u8] = &[];
+
+/// Word namespaces whose implementations live in optional runtime
+/// features. Mirrors the runtime crate's feature table (http, crypto,
+/// regex, compression). Keep in sync with crates/runtime/Cargo.toml.
+const CAPABILITY_PREFIXES: &[&str] = &[
+    "net.http.",
+    "net.tls.",
+    "crypto.",
+    "regex.",
+    "compress.",
+];
+
+/// Does this program need the full (all-capabilities) runtime archive?
+/// Conservative by design: scans every defined word's body, so a
+/// capability word in dead user code still selects full.
+fn program_needs_full_runtime(program: &Program) -> bool {
+    program
+        .referenced_word_calls()
+        .iter()
+        .any(|w| CAPABILITY_PREFIXES.iter().any(|p| w.starts_with(p)))
+}
+
 /// Minimum clang/LLVM version required.
 /// Our generated IR uses opaque pointers (`ptr`), which requires LLVM 15+.
 const MIN_CLANG_VERSION: u32 = 15;
@@ -342,12 +376,25 @@ pub fn compile_file_with_config(
     // Check clang version before attempting to compile
     check_clang_version()?;
 
-    // Extract embedded runtime library to a temp file
-    let runtime_path = std::env::temp_dir().join("libseq_runtime.a");
+    // Extract the capability-selected runtime archive to a temp file.
+    // Unique subdirectory: -lseq_runtime searches for the literal name
+    // libseq_runtime.a, so uniqueness must come from the directory, not
+    // the filename — and the old fixed path let concurrent seqc builds
+    // clobber each other's archive mid-link.
+    let (runtime_bytes, variant) = if program_needs_full_runtime(&program) {
+        (RUNTIME_LIB, "full")
+    } else {
+        (RUNTIME_LIB_BASE, "base")
+    };
+    let runtime_dir =
+        std::env::temp_dir().join(format!("seq_runtime_{variant}_{}", std::process::id()));
+    let runtime_path = runtime_dir.join("libseq_runtime.a");
+    fs::create_dir_all(&runtime_dir)
+        .map_err(|e| format!("Failed to create runtime lib dir: {}", e))?;
     {
         let mut file = fs::File::create(&runtime_path)
             .map_err(|e| format!("Failed to create runtime lib: {}", e))?;
-        file.write_all(RUNTIME_LIB)
+        file.write_all(runtime_bytes)
             .map_err(|e| format!("Failed to write runtime lib: {}", e))?;
     }
 
@@ -412,6 +459,7 @@ pub fn compile_file_with_config(
 
     // Clean up temp runtime lib
     fs::remove_file(&runtime_path).ok();
+    fs::remove_dir(&runtime_dir).ok();
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

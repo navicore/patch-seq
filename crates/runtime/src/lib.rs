@@ -44,7 +44,10 @@ pub mod tcp_test;
 pub mod terminal;
 pub mod test;
 pub mod time_ops;
+#[cfg(feature = "http")]
 pub mod tls;
+#[cfg(not(feature = "http"))]
+pub mod tls_stub;
 pub mod udp;
 pub mod variant_ops;
 pub mod watchdog;
@@ -270,7 +273,10 @@ pub use udp::{
 pub use dns::patch_seq_dns_resolve as dns_resolve;
 
 // TLS operations (exported for LLVM linking)
+#[cfg(feature = "http")]
 pub use tls::patch_seq_tls_client as tls_client;
+#[cfg(not(feature = "http"))]
+pub use tls_stub::patch_seq_tls_client as tls_client;
 
 // OS operations (exported for LLVM linking)
 pub use os::{
