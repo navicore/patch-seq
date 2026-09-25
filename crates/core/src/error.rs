@@ -22,7 +22,7 @@
 //! ```
 
 use std::cell::RefCell;
-use std::ffi::CString;
+use std::ffi::{CString, c_char};
 use std::ptr;
 
 thread_local! {
@@ -68,7 +68,7 @@ pub fn clear_runtime_error() {
 /// The returned pointer is valid until the next call to `set_runtime_error`,
 /// `patch_seq_get_error`, `patch_seq_take_error`, or `patch_seq_clear_error`
 /// replaces or clears the cached `CString`.
-fn cache_error_cstring(msg: &str) -> *const i8 {
+fn cache_error_cstring(msg: &str) -> *const c_char {
     let safe_msg: String = msg
         .chars()
         .map(|c| if c == '\0' { '?' } else { c })
@@ -96,7 +96,7 @@ pub extern "C" fn patch_seq_has_error() -> bool {
 /// `get_error`, `take_error`, or `clear_error`. Callers must copy the string
 /// immediately if they need to retain it.
 #[unsafe(no_mangle)]
-pub extern "C" fn patch_seq_get_error() -> *const i8 {
+pub extern "C" fn patch_seq_get_error() -> *const c_char {
     LAST_ERROR.with(|e| match e.borrow().as_deref() {
         Some(msg) => cache_error_cstring(msg),
         None => ptr::null(),
@@ -112,7 +112,7 @@ pub extern "C" fn patch_seq_get_error() -> *const i8 {
 /// `get_error`, `take_error`, or `clear_error`. Callers must copy the string
 /// immediately if they need to retain it.
 #[unsafe(no_mangle)]
-pub extern "C" fn patch_seq_take_error() -> *const i8 {
+pub extern "C" fn patch_seq_take_error() -> *const c_char {
     match take_runtime_error() {
         Some(msg) => cache_error_cstring(&msg),
         None => ptr::null(),

@@ -260,7 +260,7 @@ fn read_word_counts() -> Option<Vec<(String, u64)>> {
         for i in 0..data.count {
             let counter_val = std::ptr::read_volatile(data.counters.add(i));
             let name_ptr = *data.names.add(i);
-            let name = std::ffi::CStr::from_ptr(name_ptr as *const i8)
+            let name = std::ffi::CStr::from_ptr(name_ptr as *const std::ffi::c_char)
                 .to_string_lossy()
                 .into_owned();
             counts.push((name, counter_val));

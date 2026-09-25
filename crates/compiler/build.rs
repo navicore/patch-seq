@@ -63,8 +63,31 @@ fn main() {
         runtime_lib.display()
     );
 
+    // Base runtime archive (no optional capabilities) for capability-
+    // scoped linking — see docs/design/RUNTIME_CAPABILITY_LINKING.md.
+    // Built by `just build-runtime-base` into target/runtime-base/ (a
+    // separate target dir: cargo would otherwise clobber the full
+    // archive, which shares the libseq_runtime.a name). Falls back to
+    // the full archive when absent so standalone `cargo build` still
+    // works (selection then degrades to always-full).
+    let base_lib = target_dir
+        .parent()
+        .map(|t| t.join("runtime-base/release/libseq_runtime.a"))
+        .filter(|p| p.exists())
+        .unwrap_or_else(|| {
+            println!(
+                "cargo:warning=base runtime archive not found (run: just build-runtime-base); embedding full archive for both variants"
+            );
+            runtime_lib.clone()
+        });
+    println!(
+        "cargo:rustc-env=SEQ_RUNTIME_BASE_LIB_PATH={}",
+        base_lib.display()
+    );
+
     // Rerun if the runtime library changes
     println!("cargo:rerun-if-changed={}", runtime_lib.display());
+    println!("cargo:rerun-if-changed={}", base_lib.display());
 }
 
 fn find_runtime_in_deps(deps_dir: &PathBuf) -> Option<PathBuf> {

@@ -20,7 +20,7 @@
 
 use crate::stack::{Stack, pop, push};
 use crate::value::Value;
-use std::ffi::CStr;
+use std::ffi::{CStr, c_char};
 use std::io;
 use std::sync::LazyLock;
 
@@ -291,7 +291,7 @@ pub unsafe extern "C" fn patch_seq_int_to_string(stack: Stack) -> Stack {
 /// # Safety
 /// The c_str pointer must be valid and null-terminated
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn patch_seq_push_string(stack: Stack, c_str: *const i8) -> Stack {
+pub unsafe extern "C" fn patch_seq_push_string(stack: Stack, c_str: *const c_char) -> Stack {
     assert!(!c_str.is_null(), "push_string: null string pointer");
 
     let bytes = unsafe { CStr::from_ptr(c_str).to_bytes() };
@@ -341,7 +341,7 @@ pub unsafe extern "C" fn patch_seq_push_string_bytes(
 /// # Safety
 /// The c_str pointer must be valid and null-terminated
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn patch_seq_push_symbol(stack: Stack, c_str: *const i8) -> Stack {
+pub unsafe extern "C" fn patch_seq_push_symbol(stack: Stack, c_str: *const c_char) -> Stack {
     assert!(!c_str.is_null(), "push_symbol: null string pointer");
 
     let s = unsafe {

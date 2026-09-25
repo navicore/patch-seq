@@ -462,6 +462,47 @@ impl Program {
         Ok(())
     }
 
+    /// All word names called anywhere in the program — inside
+    /// quotations, if/match branches, and words not reachable from
+    /// `main` included. Conservative by design: drives runtime archive
+    /// selection (see docs/design/RUNTIME_CAPABILITY_LINKING.md), where
+    /// a missed capability word would produce a binary that panics at
+    /// runtime, so over-reporting is safe and under-reporting is not.
+    pub fn referenced_word_calls(&self) -> Vec<&str> {
+        let mut out = Vec::new();
+        for word in &self.words {
+            self.collect_word_calls(&word.body, &mut out);
+        }
+        out
+    }
+
+    fn collect_word_calls<'a>(&'a self, statements: &'a [Statement], out: &mut Vec<&'a str>) {
+        for statement in statements {
+            match statement {
+                Statement::WordCall { name, .. } => out.push(name.as_str()),
+                Statement::If {
+                    then_branch,
+                    else_branch,
+                    span: _,
+                } => {
+                    self.collect_word_calls(then_branch, out);
+                    if let Some(eb) = else_branch {
+                        self.collect_word_calls(eb, out);
+                    }
+                }
+                Statement::Quotation { body, .. } => {
+                    self.collect_word_calls(body, out);
+                }
+                Statement::Match { arms, span: _ } => {
+                    for arm in arms {
+                        self.collect_word_calls(&arm.body, out);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
     /// Maximum number of fields a variant can have (limited by runtime support)
     const MAX_VARIANT_FIELDS: usize = 12;
 

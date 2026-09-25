@@ -8,6 +8,7 @@
 use crate::stack::{Stack, pop, push};
 use crate::value::Value;
 use may::net::{TcpListener, TcpStream};
+#[cfg(feature = "http")]
 use rustls::{ClientConnection, StreamOwned};
 use std::io::{Read, Write};
 use std::net::{IpAddr, SocketAddr};
@@ -30,6 +31,10 @@ use std::sync::Mutex;
 /// to find a contiguous chunk large enough for the TLS variant.
 enum StreamKind {
     Tcp(TcpStream),
+    /// TLS-upgraded stream (`net.tls.client`) — exists only when the
+    /// `http` capability (TLS + HTTP) is compiled in; base builds have
+    /// no rustls at all (see docs/design/RUNTIME_CAPABILITY_LINKING.md).
+    #[cfg(feature = "http")]
     Tls(Box<StreamOwned<ClientConnection, TcpStream>>),
 }
 
@@ -37,6 +42,7 @@ impl Read for StreamKind {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         match self {
             StreamKind::Tcp(s) => s.read(buf),
+            #[cfg(feature = "http")]
             StreamKind::Tls(s) => s.read(buf),
         }
     }
@@ -46,12 +52,14 @@ impl Write for StreamKind {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         match self {
             StreamKind::Tcp(s) => s.write(buf),
+            #[cfg(feature = "http")]
             StreamKind::Tls(s) => s.write(buf),
         }
     }
     fn flush(&mut self) -> std::io::Result<()> {
         match self {
             StreamKind::Tcp(s) => s.flush(),
+            #[cfg(feature = "http")]
             StreamKind::Tls(s) => s.flush(),
         }
     }
@@ -183,6 +191,7 @@ fn take_tcp(id: usize) -> Option<may::net::TcpStream> {
 /// Bypasses the `slot.is_some()` guard in plain `free()` (which
 /// would silently no-op against a reserved-None slot, leaking the
 /// id for the lifetime of the process).
+#[cfg(feature = "http")] // only the TLS upgrade path reserves-and-fails
 fn release_reserved_stream(id: usize) {
     STREAMS.lock().unwrap().release_reserved(id);
 }
@@ -205,6 +214,7 @@ fn release_reserved_stream(id: usize) {
 ///
 /// Crate-internal entry point for `tls::patch_seq_tls_client`. Keeps
 /// the "reserve across yield" invariant inside this module.
+#[cfg(feature = "http")]
 pub(crate) fn upgrade_tcp_in_place<F>(id: usize, f: F) -> bool
 where
     F: FnOnce(
@@ -731,6 +741,7 @@ pub unsafe extern "C" fn patch_seq_tcp_local_port(stack: Stack) -> Stack {
                 .and_then(|slot| slot.as_ref())
                 .and_then(|sk| match sk {
                     StreamKind::Tcp(s) => s.local_addr().ok().map(|a| a.port()),
+                    #[cfg(feature = "http")]
                     StreamKind::Tls(s) => s.sock.local_addr().ok().map(|a| a.port()),
                 })
         };
